@@ -6,14 +6,15 @@
 | Date | 2026-10-27 |
 | Related | ADR-001 §10, `PRODUCT_REQUIREMENTS.md`, `DEVELOPMENT_WORKFLOW.md` §4 |
 
-No tests exist yet. Results quoted anywhere in the project must come from actual runs; skipped
-checks are reported as "NOT RUN — reason" (DEVELOPMENT_WORKFLOW).
+Phase 4 M0 (2026-10-27): the spike solution `Halo.slnx` has 37 tests in `spikes/tests/Halo.Spikes.Tests`
+(35 unit, 2 desktop integration), all passing. Results quoted anywhere in the project must come from
+actual runs; skipped checks are reported as "NOT RUN — reason" (DEVELOPMENT_WORKFLOW).
 
 ## 1. Test levels
 
 | Level | What | Where it runs | Gate |
 |---|---|---|---|
-| Unit | `Halo.Core`: state machine, arbitration, alert coalescing, timers/reminders with virtual time, settings validation/migrations, geometry (DPI, work area, monitor selection), LRC parser (Adv), log redaction | Any machine, `dotnet test` | Every commit touching code |
+| Unit | Spikes (M0): `Halo.Spikes.Measurement` budgets, percentiles, CPU normalisation, frame pacing, log privacy. Production: `Halo.Core`: state machine, arbitration, alert coalescing, timers/reminders with virtual time, settings validation/migrations, geometry (DPI, work area, monitor selection), LRC parser (Adv), log redaction | Any machine, `dotnet test` | Every commit touching code |
 | Integration | `Halo.Platform.Windows` adapters and `Halo.Infrastructure` against the real OS/filesystem | Dev machine; tests tagged `Category=Integration`, some require manual setup (player running, charger) | Before merging a module milestone |
 | UI automation | App launched as a process; driven through UIA (FlaUI) | Dev machine, interactive desktop | Before milestone completion |
 | Accessibility | Automated rules (Axe.Windows) + scripted manual checks | Dev machine | Before milestone completion and release |
@@ -25,7 +26,7 @@ checks are reported as "NOT RUN — reason" (DEVELOPMENT_WORKFLOW).
 
 | Purpose | Tool | Licence | Install? |
 |---|---|---|---|
-| Test framework | xUnit v3 | Apache-2.0 | NuGet (project-local) |
+| Test framework | xUnit v3 (4.0.2 in M0) on Microsoft.Testing.Platform (`global.json` `test.runner`; required on the .NET 10 SDK). The platform sends usage telemetry unless `DOTNET_CLI_TELEMETRY_OPTOUT=1` or `TESTINGPLATFORM_TELEMETRY_OPTOUT=1` is set | Apache-2.0 | NuGet (project-local) |
 | Virtual time | `Microsoft.Extensions.TimeProvider.Testing` (`FakeTimeProvider`) | MIT | NuGet |
 | UI automation | FlaUI (UIA3) | MIT | NuGet |
 | Accessibility rules | Axe.Windows | MIT | NuGet |
@@ -92,8 +93,13 @@ recovery; simulated crash between temp write and replace; read-only folder.
 
 ### 4.8 Performance (scripted)
 
+Running tests: unit tests with `dotnet test --solution Halo.slnx -- --filter-not-trait "Category=Integration"`;
+desktop integration tests with `--filter-trait "Category=Integration"` (see `spikes/README.md`).
+The S1/S2 measurement protocol (methods, calibration, run matrix, S2 checklist) is **PROPOSED** in
+`PROTOTYPE_S1_S2_REPORT.md` §5. Until it is approved, the methods in ADR §9 remain the reference.
+
 Each PB-xx has a PowerShell or C# harness that records machine state (power source, refresh rate,
-DPI, build), runs N iterations and writes a CSV to `perf-results/` (to be added to `.gitignore` in
+DPI, build), runs N iterations and writes a CSV to `perf-results/` (ignored by Git since
 M0; summaries are copied into a dated report under `docs/` by hand). Budgets are pass/fail; results are never
 estimated.
 
@@ -107,8 +113,8 @@ Windows App Certification Kit (WACK).
 
 | Milestone | Acceptance |
 |---|---|
-| M0 Toolchain & skeleton | Solution builds with zero warnings-as-errors violations; one passing unit test per project; `dotnet test` green; analyzers enabled |
-| M1 Spikes S1–S8 | Each spike has a written result in ADR §13 with raw numbers; S1/S2 pass or the owner approves a fallback |
+| M0 Toolchain & skeleton | Solution builds with zero warnings-as-errors violations; one passing unit test per project; `dotnet test` green; analyzers enabled — **met 2026-10-27** for the spike solution (production projects deferred to M2, see PROTOTYPE_S1_S2_REPORT §3 C1) |
+| M1 Spikes S1–S8 | Each spike has a written result in ADR §13 with raw numbers; S1/S2 pass or the owner approves a fallback. S1/S2: protocol and results in `PROTOTYPE_S1_S2_REPORT.md` — **NOT RUN, protocol awaiting approval** |
 | M2 Island shell | FR-ISL-01…13, FR-APP-01…05/07/08 tests green; §4.1, §4.4 pass; PB-01–PB-03, PB-05, PB-06, PB-09, PB-10 measured |
 | M3 Media + system indicators | FR-MED-01…06, FR-SYS-01…04 tests green; §4.5 pass; PB-04, PB-07, PB-08 measured |
 | M4 Timer + tasks | FR-TIM, FR-TSK-01/02 tests green; sleep/resume reminder test passes |

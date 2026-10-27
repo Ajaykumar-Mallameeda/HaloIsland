@@ -361,6 +361,13 @@ spike S1 shows the WPF baseline above 120 MB, escalate to the owner (fallback C 
 Each spike is a throw-away prototype in `spikes/` (not shipped), time-boxed, with a written result
 appended to this ADR. Spikes S1 and S2 must pass before feature work starts.
 
+**Phase 4 status (2026-10-27):** M0 skeleton exists (`spikes/`, .NET SDK 10.0.403). S1 and S2 are
+**NOT RUN**: their definitions below were not precise enough to implement (no S2 checklist; the
+PB-02/03/05 methods need tools that are not installed or approved; PB-04 needs media). A detailed
+protocol is **PROPOSED** in [`PROTOTYPE_S1_S2_REPORT.md`](PROTOTYPE_S1_S2_REPORT.md) §5. It proposes
+built-in measurement methods for PB-02/03/05 (with a calibration step) and moving PB-04 to M3. No
+budget value in §9 is changed. On approval, the §9 *Method* column is amended accordingly.
+
 | Spike | Question | Pass criteria |
 |---|---|---|
 | S1 | Which transparency technique (A/B/C) meets PB-01–PB-05, PB-10, PB-12 on this machine? | All listed budgets met at 60 and 120 Hz |

@@ -4,8 +4,12 @@ Last updated: 2026-10-27
 
 ## Current phase
 
-**Phase 3 (architecture evaluation and proposal) — complete. Stopped at the Phase 3 approval gate.**
-Phase 2 (evidence inventory) complete. No application code exists. Phase 4 has not started.
+**Phase 4, Execution 1 — M0 complete; stopped before S1/S2 for protocol review.**
+S1 and S2 were not precise enough to implement, so the execution plan's rule applied: propose the
+missing protocol and stop. The protocol is in [`PROTOTYPE_S1_S2_REPORT.md`](PROTOTYPE_S1_S2_REPORT.md) §5.
+**The S1/S2 architecture gate has not been run. No pass is claimed.**
+
+Phase 4 Execution 2 (S3–S8) has not started. It requires the S1/S2 gate to pass first.
 
 ## Completed
 
@@ -13,78 +17,92 @@ Phase 2 (evidence inventory) complete. No application code exists. Phase 4 has n
 |---|---|
 | Bootstrap, Phase 0, Phase 1 | Repository, workflow, environment audit, website audit, installer static analysis, first feature matrix |
 | Node.js upgrade; workspace relocation | 24.22.1; `C:\dev\Notch\` |
-| **Phase 2.1 — REA verification** | `doctor` healthy for Claude Code; MCP connected; skill v49 discoverable; target-free PE tools and browser capture work; target-bound analysis unavailable without an engine (TOOLING_MATRIX) |
-| **Phase 2.2 — evidence inventory** | NUSA_EVIDENCE_REGISTER (new, 89 entries); NUSA_FEATURE_MATRIX rebuilt (11 categories, 59 rows) |
-| **Phase 2.3 — research docs** | NUSA_WEBSITE_AUDIT §9–10, NUSA_INSTALLER_STATIC_ANALYSIS §10, NUSA_RUNTIME_ANALYSIS (16 open runtime questions), EXTERNAL_REFERENCES (new) |
-| **Phase 2 — environment capture** | Display/DPI/GPU/brightness/battery; Windows SDK 10.0.26100; Rust 1.97; MSVC 14.43 |
-| **Phase 3 — architecture** | ARCHITECTURE_DECISION_RECORD (ADR-001, proposed), PRODUCT_REQUIREMENTS, SECURITY_AND_PRIVACY_DESIGN, TESTING_STRATEGY |
+| Phase 2 — REA verification and evidence inventory | NUSA_EVIDENCE_REGISTER (89 entries), NUSA_FEATURE_MATRIX (59 rows), research docs |
+| Phase 3 — architecture | ADR-001 (proposed), PRODUCT_REQUIREMENTS, SECURITY_AND_PRIVACY_DESIGN, TESTING_STRATEGY |
+| **Phase 4 — .NET 10 SDK** | **10.0.403** installed from the official Microsoft installer (SHA-512 matched release metadata, Authenticode valid); runtime 10.0.14; existing SDKs kept (ENVIRONMENT_AUDIT §2) |
+| **Phase 4 — M0 skeleton** | `Halo.slnx` with `spikes/` projects: Measurement (net10.0), Windows (interop), Overlay (WPF, `--smoke` only), Tests. Clean Release build 0 warnings; 35/35 unit + 2/2 desktop integration tests pass |
+| **Phase 4 — S1/S2 protocol** | Gaps G1–G7 and conflicts C1–C6 recorded; protocol PROPOSED (PROTOTYPE_S1_S2_REPORT) |
 
 ## Key findings
 
-1. The supplied installer matches the hash in the vendor's GitHub **v1.1.0** pre-release notes; the
-   Phase 1 mismatch came from the website still describing v1.0.0.
-2. No evidence of UI Automation, system reduced-motion or high-contrast support in the reference.
-3. `UserNotificationListener` needs package identity + user consent → MSIX packaging is strategic.
-4. Windows sends no notification when a full-screen app starts or stops → event-driven heuristics.
-5. **.NET 8 and .NET 9 reach end of support on 2026-11-10**; only .NET 10 LTS is viable.
+1. The supplied installer matches the vendor's GitHub **v1.1.0** pre-release hash.
+2. `UserNotificationListener` needs package identity → MSIX is strategic.
+3. .NET 8/9 end of support 2026-11-10 → **resolved**: the .NET 10 SDK is installed and pinned in `global.json`.
+4. **S2 has no written checklist, and S1's PB-02/03/05 methods depend on PresentMon/WPA**, which are
+   not installed and not approved. PresentMon also cannot see layered-window (technique A) frames.
+   The proposed replacement uses the system-wide DWM timing API, performance counters and a
+   calibration step that must be able to fail.
+5. The .NET SDK and the xUnit v3 test platform send usage telemetry by default. Phase 4 commands
+   opted out per process. One SDK event may have been sent by the first command, before opt-out.
 
 ## Architectural decisions
 
 | ADR | Decision | Status |
 |---|---|---|
-| ADR-001 | C# on .NET 10 LTS + WPF, isolated Win32/WinRT adapters, overlay transparency chosen by spike S1 (fallback: Win32 + Windows.UI.Composition), versioned JSON storage, MSIX via Microsoft Store | **PROPOSED — awaiting owner approval** |
+| ADR-001 | C# on .NET 10 LTS + WPF, isolated Win32/WinRT adapters, overlay technique chosen by S1 (fallback C), JSON storage, MSIX | **PROPOSED** — rendering path unresolved until S1/S2 run |
 
 ## Decisions required from the owner
 
 | # | Decision | Recommendation |
 |---|---|---|
-| D1 | Approve ADR-001 | Approve, with spikes S1–S2 as a hard gate before feature work |
-| D2 | Install the **.NET 10 SDK** (and optionally the VS ".NET desktop development" workload) at Phase 4 start | Approve — required by every .NET option; .NET 9 support ends 2026-11-10 |
-| D3 | Distribution channel | Microsoft Store (free signing); decide on a paid certificate only if direct download is wanted (Artifact Signing for individuals is USA/Canada only) |
-| D4 | Include synced lyrics? | Defer; requires licensing review of lyrics/LRCLIB terms |
-| D5 | Include keyboard indicators (input monitoring)? | Defer to Advanced, opt-in only, after spike S6 |
-| D6 | Accept memory budget PB-10 ≤ 120 MB | Accept for v1; re-evaluate after spike S1 numbers |
-| D7 | Test hardware: external monitor; spare PC or VM for clean installs | Provide before milestone M5 |
-| D8 | Install test tools in Phase 4 (PresentMon, WPA, Accessibility Insights, PerfView) | Approve when M1 starts |
-| D9 | Project licence | Decide before any public repository or release |
-| D10 | Old OneDrive copy; pre-existing Nusa install | Unchanged; separate decisions |
-| D11 | Runtime analysis of Nusa | Keep skipped; reconsider only if a spare PC is available and a runtime question becomes decision-relevant |
+| **Q1** | Approve the S1/S2 protocol (PROTOTYPE_S1_S2_REPORT §5), including built-in methods for PB-02/03/05 | Approve |
+| **Q2** | Move PB-04 (music playing) from S1 to M3 | Approve |
+| **Q3** | Build technique C as a minimal composition baseline | Approve |
+| **Q4** | 60 Hz runs: owner switches the refresh rate manually (a) or harness switches temporarily (b) | (a) |
+| **Q5** | PresentMon only if calibration fails | Approve that condition |
+| **Q6** | About 3–3.5 h unattended machine time plus about 30 min attended for S2 manual items | Schedule |
+| **Q7** | FlaUI (MIT, NuGet) for S2 automation | Approve |
+| **Q8** | Set `DOTNET_CLI_TELEMETRY_OPTOUT=1` permanently at user level | Recommend |
+| D1 | Approve ADR-001 | After S1/S2 results |
+| D3 | Distribution channel | Microsoft Store (unchanged) |
+| D4/D5 | Lyrics; keyboard indicators | Defer (unchanged) |
+| D6 | PB-10 ≤ 120 MB | Provisional ceiling; S1 will measure |
+| D7 | External monitor; spare PC or VM | Needed for multi-monitor, mixed-DPI and clean-install tests |
+| D8 | PresentMon, WPA, Accessibility Insights, PerfView | Not installed; see Q5 |
+| D9 | Project licence | Before any public release |
+| D10 | Old OneDrive copy; installed Nusa | Unchanged |
+| D11 | Nusa runtime analysis | Keep skipped |
 
-## Proposed Phase 4 plan (not started)
+D2 (.NET 10 SDK) is done.
 
-| Milestone | Scope | Exit criteria (see TESTING_STRATEGY §5) |
+## Phase 4 plan
+
+| Milestone | Scope | Status |
 |---|---|---|
-| M0 Toolchain & skeleton | .NET 10 SDK (after D2); solution with `Halo.Core`, `Halo.Platform.Windows`, `Halo.Infrastructure`, `Halo.App`, test projects; analyzers; lock files; `.gitignore` additions | Build + `dotnet test` green |
-| M1 Spikes S1–S8 | Overlay transparency A/B/C, hit-testing/focus, GSMTC packaged/unpackaged, Core Audio callbacks, brightness, keyboard indicators, full-screen matrix, MSIX size/startup | Results with raw numbers recorded in ADR §13; S1/S2 pass or approved fallback |
-| M2 Island shell | Geometry, window, state machine, hover/click/keyboard, full-screen suppression, tray, settings, persistence, single instance, logging, module supervisor | FR-ISL/FR-APP tests; PB-01–03, 05, 06, 09, 10 measured |
-| M3 Media + indicators | GSMTC module, volume HUD, battery, network | FR-MED/FR-SYS-01…04; PB-04, 07, 08 |
-| M4 Timer + tasks | Timer/Pomodoro, tasks with reminders | FR-TIM/FR-TSK tests incl. sleep/resume |
-| M5 Accessibility + packaging | UIA polish, Narrator/keyboard/HC/reduced-motion scripts, MSIX, soak | TESTING_STRATEGY §4.7, §4.9; privacy checklist |
-| Advanced (later approval) | Brightness, keyboard indicators, Bluetooth, water, shelf, lyrics, notifications | Per PRODUCT_REQUIREMENTS §3.7 |
+| M0 Toolchain & skeleton | SDK, spike solution, tests, analyzers, lock files | **Done** (production projects deferred to M2 — conflict C1) |
+| M1a S1/S2 | Overlay techniques A/B/C, harness, calibration, S2 checklist | **Protocol proposed — awaiting Q1–Q7** |
+| M1b S3–S8 | Remaining spikes | Not started; requires the S1/S2 gate |
+| M2–M5 | Island shell, media and indicators, timer and tasks, accessibility and packaging | Not started |
 
 ## Blocked / pending
 
 | Item | Blocker | Needs |
 |---|---|---|
-| Phase 4 start | Phase 3 approval gate | Owner decisions D1–D2 |
-| Multi-monitor / mixed-DPI testing | One display attached | External monitor (D7) |
-| Clean-install packaging tests | No VM, Home edition | Spare PC or VM (D7) |
-| Old workspace copy at OneDrive Desktop | Removal needs separate approval | Owner confirmation |
-
-## Session note
-
-The Phase 2/3 Claude Code session was started from the old OneDrive copy; all work used absolute
-paths in the canonical repository `C:\dev\Notch\advanced-windows-island`. The OneDrive copy
-(2 commits behind) was not modified. Start future sessions from the canonical path.
+| S1/S2 implementation | Protocol review | Q1–Q7 |
+| S1 at 60 Hz | Display setting change | Q4 |
+| Multi-monitor / mixed-DPI | One display | D7 |
+| Clean-install packaging tests | No VM, Home edition | D7 |
+| Old OneDrive copy | Separate approval | Owner |
 
 ## Tests
 
-No code yet — no automated tests exist. Documentation validation is listed in each commit message.
+| Suite | Command | Last result (2026-10-27, clean Release build) |
+|---|---|---|
+| Unit | `dotnet test --solution Halo.slnx -c Release -- --filter-not-trait "Category=Integration"` | 35/35 passed |
+| Desktop integration | `... -- --filter-trait "Category=Integration"` | 2/2 passed |
+| S1/S2 performance and interaction | — | NOT RUN — protocol awaiting approval |
 
 ## Known defects
 
-None (no code).
+None known in the M0 skeleton.
+
+## Session note
+
+The Phase 4 session started from the old OneDrive copy. All work used absolute paths in the canonical
+repository `C:\dev\Notch\advanced-windows-island`; the OneDrive copy was not modified. Start future
+sessions from the canonical path.
 
 ## Next recommended action
 
-Owner reviews ADR-001 and decisions D1–D11. On approval: Phase 4 milestone M0, then spikes S1–S2.
+Owner reviews PROTOTYPE_S1_S2_REPORT §2–§5 and answers Q1–Q8. On approval: implement S1 (A, B, C,
+harness, calibration), run the matrix, then S2, and stop at the gate with results.

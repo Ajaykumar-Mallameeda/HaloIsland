@@ -7,8 +7,8 @@ An original Windows desktop application that turns the top edge of the screen in
 "island": a compact, non-intrusive surface for live activities such as media playback, timers,
 reminders, file staging and system indicators.
 
-> **Status:** Pre-implementation. The repository currently contains research, environment audits
-> and engineering process documents only. No application code exists yet.
+> **Status:** Phase 4 started. The repository contains research and design documents and a
+> throw-away spike solution (`spikes/`) on .NET 10. No production application code exists yet.
 > See [`docs/PROJECT_STATUS.md`](docs/PROJECT_STATUS.md).
 
 ## Goals
@@ -33,12 +33,17 @@ extraction output are kept outside this repository and are never committed.
 
 ```
 docs/                     Research, audits, workflow and status documents
+spikes/                   Throw-away Phase 4 prototypes and their tests (not shipped)
 tools/re-analysis/        Read-only Python scripts used for reference static analysis
+Halo.slnx                 .NET solution (spikes only for now)
+global.json               Pins the .NET SDK (10.0.403) and the test runner
+Directory.*.props         Shared build settings and central package versions
+nuget.config              nuget.org-only package source
 .gitignore                Excludes binaries, extraction output, build output, secrets
 .gitmessage               Commit message template (Conventional Commits)
 ```
 
-Source, tests and build tooling will be added from Phase 4 onward.
+Production source projects are added from milestone M2. Build and test commands: `spikes/README.md`.
 
 ## Documentation index
 
@@ -61,6 +66,7 @@ Source, tests and build tooling will be added from Phase 4 onward.
 | [PRODUCT_REQUIREMENTS](docs/PRODUCT_REQUIREMENTS.md) | Functional and non-functional requirements (proposed) |
 | [SECURITY_AND_PRIVACY_DESIGN](docs/SECURITY_AND_PRIVACY_DESIGN.md) | Threat model, data inventory, licensing, distribution security |
 | [TESTING_STRATEGY](docs/TESTING_STRATEGY.md) | Test levels, tooling, catalogues, milestone acceptance |
+| [PROTOTYPE_S1_S2_REPORT](docs/PROTOTYPE_S1_S2_REPORT.md) | S1/S2 architecture gate: proposed protocol, setup, results (not run yet) |
 
 ## License
 
