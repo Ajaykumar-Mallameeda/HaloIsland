@@ -6,5 +6,8 @@
   <ItemGroup>
     <!-- Test-only package (Apache-2.0). Runs on Microsoft.Testing.Platform, selected in global.json. -->
     <PackageVersion Include="xunit.v3" Version="4.0.2" />
+    <!-- S2 UI automation in the spike harness only (MIT; validated in PROTOTYPE_S1_S2_REPORT §8.13). -->
+    <PackageVersion Include="FlaUI.Core" Version="5.0.0" />
+    <PackageVersion Include="FlaUI.UIA3" Version="5.0.0" />
   </ItemGroup>
 </Project>

@@ -44,7 +44,7 @@ public static class FramePacing
         return new TransitionPacing(intervals, intervals.Count(v => v > threshold), intervals.Max());
     }
 
-    /// <summary>Returns <see cref="Outcome.Inconclusive"/> when fewer than <paramref name="requiredTransitions"/> were measured.</summary>
+    /// <summary>Returns <see cref="Outcome.Invalid"/> when fewer than <paramref name="requiredTransitions"/> were measured.</summary>
     public static PacingVerdict Evaluate(
         IReadOnlyCollection<TransitionPacing> transitions,
         double refreshIntervalMs,
@@ -66,7 +66,7 @@ public static class FramePacing
         Outcome outcome;
         if (transitions.Count < requiredTransitions)
         {
-            outcome = Outcome.Inconclusive;
+            outcome = Outcome.Invalid;
         }
         else
         {

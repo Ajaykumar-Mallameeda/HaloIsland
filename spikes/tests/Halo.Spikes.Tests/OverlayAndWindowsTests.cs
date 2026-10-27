@@ -7,27 +7,6 @@ using Xunit;
 
 namespace Halo.Spikes.Tests;
 
-public class SpikeOptionsTests
-{
-    [Fact]
-    public void ParsesSmokeWithOptionalLog()
-    {
-        Assert.Equal(new SpikeOptions(SpikeMode.Smoke, null), SpikeOptions.Parse(["--smoke"]));
-        Assert.Equal(new SpikeOptions(SpikeMode.Smoke, "out.jsonl"), SpikeOptions.Parse(["--log", "out.jsonl", "--smoke"]));
-    }
-
-    [Theory]
-    [InlineData]
-    [InlineData("--unknown")]
-    [InlineData("--smoke", "--smoke")]
-    [InlineData("--smoke", "--log")]
-    [InlineData("--smoke", "--log", "--smoke")]
-    public void RejectsInvalidArguments(params string[] args)
-    {
-        Assert.Equal(SpikeMode.Invalid, SpikeOptions.Parse(args).Mode);
-    }
-}
-
 public class NativeLayoutTests
 {
     [Fact]

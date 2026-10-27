@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    S1/S2 measurement harness (PROTOTYPE_S1_S2_REPORT §8.3). Test tool, never shipped. Starts the overlays,
+    shows the backdrop and probe windows, records Desktop Duplication metadata and counters, runs the S2
+    checklist with FlaUI and writes artifacts under perf-results/ (ignored by Git).
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- Required by the LibraryImport source generator (SendInput). -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="FlaUI.Core" />
+    <PackageReference Include="FlaUI.UIA3" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Halo.Spikes.Measurement\Halo.Spikes.Measurement.csproj" />
+    <ProjectReference Include="..\Halo.Spikes.Windows\Halo.Spikes.Windows.csproj" />
+  </ItemGroup>
+</Project>

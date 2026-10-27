@@ -7,5 +7,12 @@
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Halo.Spikes.Tests" />
+    <InternalsVisibleTo Include="Halo.Spikes.Overlay" />
+    <InternalsVisibleTo Include="Halo.Spikes.CompositionBaseline" />
+    <InternalsVisibleTo Include="Halo.Spikes.Harness" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Platform code may depend on the pure measurement types, never the reverse. -->
+    <ProjectReference Include="..\Halo.Spikes.Measurement\Halo.Spikes.Measurement.csproj" />
   </ItemGroup>
 </Project>

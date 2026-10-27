@@ -157,11 +157,11 @@ public class FramePacingTests
     }
 
     [Fact]
-    public void TooFewTransitionsIsInconclusiveEvenIfSmooth()
+    public void TooFewTransitionsIsInvalidEvenIfSmooth()
     {
         var smooth = FramePacing.AnalyzeTransition(Frames(Enumerable.Repeat(Hz120, 40).ToArray()), Hz120);
 
-        Assert.Equal(Outcome.Inconclusive, FramePacing.Evaluate(Enumerable.Repeat(smooth, 49).ToArray(), Hz120).Outcome);
+        Assert.Equal(Outcome.Invalid, FramePacing.Evaluate(Enumerable.Repeat(smooth, 49).ToArray(), Hz120).Outcome);
         Assert.Equal(Outcome.NotRun, FramePacing.Evaluate(Array.Empty<TransitionPacing>(), Hz120).Outcome);
     }
 }

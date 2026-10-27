@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Option C minimal comparison baseline (ADR-001 §4.5, PROTOTYPE_S1_S2_REPORT §6): Win32 host window with
+    WS_EX_NOREDIRECTIONBITMAP and a Windows.UI.Composition visual tree via ICompositorDesktopInterop.
+    Separate executable so the Windows SDK projection stays out of the WPF overlay and the tests. Throw-away code.
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Halo.Spikes.Measurement\Halo.Spikes.Measurement.csproj" />
+    <ProjectReference Include="..\Halo.Spikes.Windows\Halo.Spikes.Windows.csproj" />
+  </ItemGroup>
+</Project>

@@ -140,7 +140,10 @@
         }
       },
       "halo.spikes.windows": {
-        "type": "Project"
+        "type": "Project",
+        "dependencies": {
+          "Halo.Spikes.Measurement": "[1.0.0, )"
+        }
       }
     }
   }
