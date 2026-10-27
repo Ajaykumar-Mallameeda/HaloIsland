@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Host for the S1/S2 overlay spikes (ADR-001 §13). Throw-away prototype code, never shipped and not the
+    start of the production app. M0 contains only a smoke mode that proves WPF builds and renders on .NET 10.
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <StartupObject>Halo.Spikes.Overlay.Program</StartupObject>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Halo.Spikes.Measurement\Halo.Spikes.Measurement.csproj" />
+    <ProjectReference Include="..\Halo.Spikes.Windows\Halo.Spikes.Windows.csproj" />
+  </ItemGroup>
+</Project>

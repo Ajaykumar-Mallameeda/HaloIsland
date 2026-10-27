@@ -1,0 +1,10 @@
+<Project>
+  <!-- Central package versions. Every package must be permissively licensed (SECURITY_AND_PRIVACY_DESIGN §7). -->
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Test-only package (Apache-2.0). Runs on Microsoft.Testing.Platform, selected in global.json. -->
+    <PackageVersion Include="xunit.v3" Version="4.0.2" />
+  </ItemGroup>
+</Project>

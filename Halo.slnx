@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/spikes/">
+    <Project Path="spikes/src/Halo.Spikes.Measurement/Halo.Spikes.Measurement.csproj" />
+    <Project Path="spikes/src/Halo.Spikes.Overlay/Halo.Spikes.Overlay.csproj" />
+    <Project Path="spikes/src/Halo.Spikes.Windows/Halo.Spikes.Windows.csproj" />
+    <Project Path="spikes/tests/Halo.Spikes.Tests/Halo.Spikes.Tests.csproj" />
+  </Folder>
+</Solution>

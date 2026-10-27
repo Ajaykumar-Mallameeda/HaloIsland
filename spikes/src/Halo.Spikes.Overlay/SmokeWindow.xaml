@@ -1,0 +1,12 @@
+<Window x:Class="Halo.Spikes.Overlay.SmokeWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Halo spike smoke test"
+        Width="240" Height="48"
+        WindowStyle="None" ResizeMode="NoResize"
+        ShowInTaskbar="False" ShowActivated="False"
+        WindowStartupLocation="CenterScreen"
+        Background="Black">
+  <TextBlock Text="Halo spike smoke test" Foreground="White"
+             HorizontalAlignment="Center" VerticalAlignment="Center" />
+</Window>

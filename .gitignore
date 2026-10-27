@@ -101,3 +101,6 @@ __pycache__/
 Thumbs.db
 desktop.ini
 .DS_Store
+
+# --- Spike / performance measurement output (summaries are copied into docs/ by hand) ---
+perf-results/
