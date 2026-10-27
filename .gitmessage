@@ -1,0 +1,8 @@
+
+# <type>: <imperative summary, <= 72 chars>
+#
+# Types: docs | chore | feat | fix | test | refactor | perf | build | ci
+#
+# Body (optional): explain WHY, not what. Wrap at 72 columns.
+# Validation: list the checks actually run and their results.
+#             Write "NOT RUN — <reason>" for anything skipped.
