@@ -80,3 +80,34 @@ If a check could not be run, say so explicitly ("NOT RUN — reason").
 - [ ] No IDE/user-specific files (`.vs/`, `*.user`, `.claude/settings.local.json`)
 - [ ] No verbatim proprietary content copied from reference products (strings dumps of
       proprietary binaries are summarised, not committed wholesale)
+
+## 6. .NET telemetry opt-out (owner decision Q8, 2026-10-27)
+
+The .NET SDK and Microsoft.Testing.Platform (the xUnit v3 runner) send usage telemetry by default.
+Microsoft documents only environment variables as the opt-out, so they are set **permanently for
+the Windows user** (not machine-wide, no other privacy setting changed):
+
+| Variable | Value | Location |
+|---|---|---|
+| `DOTNET_CLI_TELEMETRY_OPTOUT` | `1` | `HKCU\Environment` (user environment) |
+| `TESTINGPLATFORM_TELEMETRY_OPTOUT` | `1` | `HKCU\Environment` (user environment) |
+
+Set with `[Environment]::SetEnvironmentVariable(<name>, '1', 'User')`, which writes the user
+environment and broadcasts `WM_SETTINGCHANGE` so newly started programs pick it up. Neither
+variable existed before (user, machine or process scope).
+
+**Verification (without sending telemetry):**
+
+```powershell
+Get-ItemProperty HKCU:\Environment | Select-Object DOTNET_CLI_TELEMETRY_OPTOUT, TESTINGPLATFORM_TELEMETRY_OPTOUT
+```
+
+On 2026-10-27, a `.cmd` script started through Explorer, which behaves like a newly opened terminal,
+printed both variables as `1`.
+
+**Limitations:**
+- Terminals that were already open keep their old environment until restarted.
+- The opt-out cannot undo the single SDK usage event that may have been sent by the first .NET 10
+  command in Phase 4 (ENVIRONMENT_AUDIT §2).
+- Machine-wide or other-user settings are unchanged.
+- The untrusted ASP.NET development certificate and the installed SDKs were left as they are.
