@@ -91,7 +91,7 @@ internal sealed class S2Checklist : IDisposable
             ["run_id"] = _artifacts.RunId,
             ["kind"] = "s2",
             ["technique"] = _technique.ToString(),
-            ["protocol"] = "v1.2",
+            ["protocol"] = "v1.3",
             ["build_hash"] = hash,
             ["validity"] = new JsonObject { ["valid"] = validity.IsValid, ["violations"] = new JsonArray(validity.Violations.Select(v => (JsonNode)v).ToArray()) },
             ["items"] = _items,

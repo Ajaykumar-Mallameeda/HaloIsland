@@ -124,7 +124,7 @@ internal sealed class MeasuredRun : IDisposable
         ["technique"] = technique?.ToString(),
         ["refresh_hz"] = _hz,
         ["gated"] = gated && !Artifacts.RunId.StartsWith("DEV-", StringComparison.Ordinal),
-        ["protocol"] = "v1.2",
+        ["protocol"] = "v1.3",
         ["build_hash"] = BuildHash,
         ["qpc_frequency"] = QpcFrequency,
         ["canvas"] = $"{Geometry.Canvas.Left},{Geometry.Canvas.Top},{Geometry.Canvas.Width},{Geometry.Canvas.Height}",
@@ -238,7 +238,7 @@ internal static class S1Session
         var outcomes = new JsonObject
         {
             ["PB-01"] = Judge(Budgets.Pb01SettledIdleCpu.Evaluate(pb01)).Label(),
-            ["PB-02"] = Judge(cs.ThreadChurn ? Outcome.Invalid : Budgets.Pb02SettledWakeups.Evaluate(cs.PerSecond)).Label(),
+            ["PB-02"] = Judge(cs.NewThreadStarted ? Outcome.Invalid : Budgets.Pb02SettledWakeups.Evaluate(cs.PerSecond)).Label(),
             ["PB-03"] = Judge(Budgets.Pb03SettledFrames.Evaluate(pb03Frames / wall.TotalSeconds)).Label(),
             ["PB-05"] = Judge(transitions.Count < timing.Transitions ? Outcome.Invalid : pb05.Outcome).Label(),
             ["PB-10"] = Judge(Budgets.Pb10PrivateBytes.Evaluate(pb10)).Label(),
@@ -255,7 +255,8 @@ internal static class S1Session
             ["pb01_cycles_delta"] = (double)(samples[^1].Cycles - samples[0].Cycles),
             ["pb02_switches_per_s"] = cs.PerSecond,
             ["pb02_total_switches"] = cs.TotalSwitches,
-            ["pb02_thread_churn"] = cs.ThreadChurn,
+            ["pb02_new_thread_started"] = cs.NewThreadStarted,
+            ["pb02_threads_ended"] = cs.ThreadsEnded,
             ["pb02_threads"] = samples[^1].Pdh.ContextSwitchesByThread.Count,
             ["pb03_attributed_frames"] = pb03Frames,
             ["pb03_window_s"] = wall.TotalSeconds,

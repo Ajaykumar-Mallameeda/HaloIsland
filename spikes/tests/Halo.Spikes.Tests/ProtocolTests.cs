@@ -121,19 +121,41 @@ public class ContextSwitchTests
         Assert.Equal(25, r.TotalSwitches);
         Assert.Equal(20, r.WindowSeconds);
         Assert.Equal(1.25, r.PerSecond, 6);
-        Assert.False(r.ThreadChurn);
+        Assert.False(r.NewThreadStarted);
+        Assert.Equal(0, r.ThreadsEnded);
     }
 
     [Fact]
-    public void ThreadChangesAreFlaggedAsChurn()
+    public void NewThreadIsFlaggedButEndedThreadIsOnlyCounted()
     {
         var started = ContextSwitches.Aggregate([S(0, (1, 100)), S(10, (1, 100), (7, 4))]);
         var ended = ContextSwitches.Aggregate([S(0, (1, 100), (7, 4)), S(10, (1, 101))]);
 
-        Assert.True(started.ThreadChurn);
+        Assert.True(started.NewThreadStarted);
         Assert.Equal(4, started.TotalSwitches); // a new thread's switches all happened inside the window
-        Assert.True(ended.ThreadChurn);
+        Assert.Equal(0, started.ThreadsEnded);
+        Assert.False(ended.NewThreadStarted);
+        Assert.Equal(1, ended.ThreadsEnded);
         Assert.Equal(1, ended.TotalSwitches);
+    }
+
+    [Fact]
+    public void ThreadIdReuseCountsAsNewThread()
+    {
+        var reused = ContextSwitches.Aggregate([S(0, (1, 100), (7, 40)), S(10, (1, 100), (7, 3))]);
+
+        Assert.True(reused.NewThreadStarted);
+        Assert.Equal(0, reused.TotalSwitches);
+    }
+
+    [Fact]
+    public void EndedThreadDoesNotInvalidateLaterSamples()
+    {
+        var r = ContextSwitches.Aggregate([S(0, (1, 100), (7, 4)), S(10, (1, 100)), S(20, (1, 102))]);
+
+        Assert.False(r.NewThreadStarted);
+        Assert.Equal(1, r.ThreadsEnded);
+        Assert.Equal(2, r.TotalSwitches);
     }
 
     [Fact]

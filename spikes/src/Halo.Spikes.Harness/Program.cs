@@ -282,7 +282,7 @@ internal static class S2Dpi
             ["run_id"] = runId,
             ["kind"] = "s2-dpi",
             ["technique"] = technique.ToString(),
-            ["protocol"] = "v1.2",
+            ["protocol"] = "v1.3",
             ["validity"] = new JsonObject { ["valid"] = complete, ["violations"] = new JsonArray() },
             ["outcome"] = outcome.Label(),
             ["sequence_complete"] = complete,

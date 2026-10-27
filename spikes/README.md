@@ -12,7 +12,7 @@ Code in this folder answers the Phase 4 entry questions in ADR-001 §13. It is *
 | `src/Halo.Spikes.Harness` | `net10.0-windows`, WPF | Runs the S1/S2 protocol: backdrop and probe windows, overlay control, Desktop Duplication, counters, calibration, S2 checklist (FlaUI UIA3), artifacts in `perf-results/` |
 | `tests/Halo.Spikes.Tests` | `net10.0-windows` | xUnit v3 tests (Microsoft.Testing.Platform) |
 
-Status: S1/S2 prototypes and harness implemented for protocol v1.2 (`docs/PROTOTYPE_S1_S2_REPORT.md`).
+Status: S1/S2 prototypes and harness implemented for protocol v1.3 (`docs/PROTOTYPE_S1_S2_REPORT.md`).
 
 ## Build and test
 

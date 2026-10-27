@@ -6,8 +6,8 @@
 | Date | 2026-10-27 |
 | Related | ADR-001 §10, `PRODUCT_REQUIREMENTS.md`, `DEVELOPMENT_WORKFLOW.md` §4 |
 
-Phase 4 M0 (2026-10-27): the spike solution `Halo.slnx` has 37 tests in `spikes/tests/Halo.Spikes.Tests`
-(35 unit, 2 desktop integration), all passing. Results quoted anywhere in the project must come from
+Phase 4 (2026-10-27): the spike solution `Halo.slnx` has 82 tests in `spikes/tests/Halo.Spikes.Tests`
+(77 unit, 5 desktop integration), all passing at commit `ad291ee`. Results quoted anywhere in the project must come from
 actual runs; skipped checks are reported as "NOT RUN — reason" (DEVELOPMENT_WORKFLOW).
 
 ## 1. Test levels
@@ -28,11 +28,11 @@ actual runs; skipped checks are reported as "NOT RUN — reason" (DEVELOPMENT_WO
 |---|---|---|---|
 | Test framework | xUnit v3 (4.0.2 in M0) on Microsoft.Testing.Platform (`global.json` `test.runner`; required on the .NET 10 SDK). The platform sends usage telemetry unless `DOTNET_CLI_TELEMETRY_OPTOUT=1` or `TESTINGPLATFORM_TELEMETRY_OPTOUT=1` is set | Apache-2.0 | NuGet (project-local) |
 | Virtual time | `Microsoft.Extensions.TimeProvider.Testing` (`FakeTimeProvider`) | MIT | NuGet |
-| UI automation | FlaUI (UIA3) | MIT | NuGet |
+| UI automation | FlaUI (UIA3) 5.0.0, validated (report §8.13); spike harness only so far | MIT | NuGet |
 | Accessibility rules | Axe.Windows | MIT | NuGet |
 | Accessibility manual | Accessibility Insights for Windows; Narrator | MIT; built-in | Accessibility Insights: **approval** |
 | CPU/wake-ups | Windows Performance Recorder/Analyzer | Built into Windows (WPR); WPA via ADK | WPA: **approval** |
-| Frame pacing | PresentMon | MIT | **approval** |
+| Frame pacing | S1: DXGI Desktop Duplication frame metadata, region-attributed, calibrated (built in). PresentMon only under PROTOTYPE_S1_S2_REPORT §8.14 | Built in; PresentMon MIT | PresentMon: **approval** |
 | Memory | PerfView / `dotnet-counters` | MIT | approval |
 | Coverage | `coverlet` / Microsoft Code Coverage | MIT | NuGet |
 
@@ -95,13 +95,40 @@ recovery; simulated crash between temp write and replace; read-only folder.
 
 Running tests: unit tests with `dotnet test --solution Halo.slnx -- --filter-not-trait "Category=Integration"`;
 desktop integration tests with `--filter-trait "Category=Integration"` (see `spikes/README.md`).
-The S1/S2 measurement protocol (methods, calibration, run matrix, S2 checklist) is **PROPOSED** in
-`PROTOTYPE_S1_S2_REPORT.md` §5. Until it is approved, the methods in ADR §9 remain the reference.
 
-Each PB-xx has a PowerShell or C# harness that records machine state (power source, refresh rate,
-DPI, build), runs N iterations and writes a CSV to `perf-results/` (ignored by Git since
-M0; summaries are copied into a dated report under `docs/` by hand). Budgets are pass/fail; results are never
-estimated.
+**S1/S2 procedure (protocol v1.3, `PROTOTYPE_S1_S2_REPORT.md` §8):**
+
+1. **Conditions:** Release build; machine idle; Do Not Disturb on; AC power; "Best performance" mode;
+   non-elevated shell; declared refresh rate (the owner switches 120 ↔ 60 Hz manually); 125 %.
+2. **Start:** run `Halo.Spikes.Harness batch --hz <rate>`. Each run records the environment at start
+   and end, the overlay build hash, counter samples, Desktop Duplication frame metadata and the
+   overlay's event log under `perf-results/<date>/<run-id>/` (ignored by Git).
+3. **Calibration first, at each rate:**
+   - **BASE:** quiet region.
+   - **POS:** the refresh cadence is seen.
+   - **NEG/NEGCTL:** an injected 50 ms stall is detected in every transition, and in at most 2 of 20 without it.
+   - **TICK:** single stray frames are detected for A, B and C.
+
+   The rules are fixed in code (`CalibrationRules`) and in the report. If calibration fails, PB-03/PB-05 are
+   INVALID at that rate and the batch stops.
+4. **S1 sessions:** 120 s warm-up, 600 s settled window (PB-01/02/03/10/12), then 60 transitions
+   (PB-05, first 50 valid). Three sessions per technique at 120 Hz and one at 60 Hz, interleaved A → B → C.
+5. **S2:** a 12-item checklist with automated input and UI Automation. Manual items: S2-07M (Alt-Tab) and S2-11M
+   (scaling 100/150/175/125 %).
+6. **Validity:**
+   - **INVALID conditions:** environment drift, user input, a foreign window over the region, cursor in the region, Desktop Duplication loss, calibration features enabled in a gated run, build change, or the reference app running.
+   - **Reruns:** an INVALID run is repeated once as `-r1`, and both are kept. A valid FAIL is final.
+   - **Defects:** an implementation defect is fixed and the affected runs are repeated, with the originals labelled superseded.
+7. **Limitations:**
+   - One display, so multi-monitor and mixed-DPI tests are BLOCKED.
+   - PB-03/PB-05 observe the composed desktop, not app presents.
+   - PB-02 cannot see threads that live between samples (a new thread ⇒ INVALID; threads that end are counted to their last sample and reported, protocol v1.3).
+   - C's GPU work is attributed to DWM.
+   - Results apply to the Intel UHD adapter.
+
+Each later PB-xx harness also records machine state (power source, refresh rate, DPI, build), runs
+N iterations and writes to `perf-results/`. Summaries are copied into a dated report under `docs/` by
+hand. Budgets are pass/fail; results are never estimated.
 
 ### 4.9 Packaging (manual until a clean machine exists)
 
@@ -116,6 +143,6 @@ Windows App Certification Kit (WACK).
 | M0 Toolchain & skeleton | Solution builds with zero warnings-as-errors violations; one passing unit test per project; `dotnet test` green; analyzers enabled — **met 2026-10-27** for the spike solution (production projects deferred to M2, see PROTOTYPE_S1_S2_REPORT §3 C1) |
 | M1 Spikes S1–S8 | Each spike has a written result in ADR §13 with raw numbers; S1/S2 pass or the owner approves a fallback. S1/S2: protocol and results in `PROTOTYPE_S1_S2_REPORT.md` — **NOT RUN, protocol awaiting approval** |
 | M2 Island shell | FR-ISL-01…13, FR-APP-01…05/07/08 tests green; §4.1, §4.4 pass; PB-01–PB-03, PB-05, PB-06, PB-09, PB-10 measured |
-| M3 Media + system indicators | FR-MED-01…06, FR-SYS-01…04 tests green; §4.5 pass; PB-04, PB-07, PB-08 measured |
+| M3 Media + system indicators | FR-MED-01…06, FR-SYS-01…04 tests green; §4.5 pass; PB-04 (moved here from S1, target unchanged), PB-07, PB-08 measured |
 | M4 Timer + tasks | FR-TIM, FR-TSK-01/02 tests green; sleep/resume reminder test passes |
 | M5 Accessibility + packaging | §4.7 all pass; MSIX §4.9 on a clean machine; PB-11 soak; privacy checklist |

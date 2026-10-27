@@ -3,9 +3,12 @@ namespace Halo.Spikes.Measurement;
 /// <summary>Cumulative context-switch counts per thread ID of one process at one sample time.</summary>
 public sealed record ThreadSample(double TimeSeconds, IReadOnlyDictionary<int, long> CountsByThreadId);
 
-/// <param name="ThreadChurn">True when the set of thread IDs changed between samples. PB-02 cannot be bounded then
-/// (a thread that starts and ends between samples is invisible), so the run is INVALID for PB-02.</param>
-public sealed record ContextSwitchResult(long TotalSwitches, double WindowSeconds, double PerSecond, bool ThreadChurn);
+/// <param name="NewThreadStarted">True when a thread ID absent from the first sample appears later, or a known ID's
+/// count goes down (ID reuse). A new thread could also start and end between samples unseen, so PB-02 is INVALID
+/// (protocol v1.3, PROTOTYPE_S1_S2_REPORT §8.6).</param>
+/// <param name="ThreadsEnded">Thread IDs from the first sample that are gone by the last one. Their switches after
+/// their last sample are not counted; this is reported as a limitation and does not invalidate PB-02.</param>
+public sealed record ContextSwitchResult(long TotalSwitches, double WindowSeconds, double PerSecond, bool NewThreadStarted, int ThreadsEnded);
 
 /// <summary>PB-02 aggregation (PROTOTYPE_S1_S2_REPORT §8.6).</summary>
 public static class ContextSwitches
@@ -25,7 +28,7 @@ public static class ContextSwitches
         }
 
         var firstIds = samples[0].CountsByThreadId.Keys.ToHashSet();
-        var churn = false;
+        var newThread = false;
         long total = 0;
         for (var i = 1; i < samples.Count; i++)
         {
@@ -36,14 +39,15 @@ public static class ContextSwitches
 
             var previous = samples[i - 1].CountsByThreadId;
             var current = samples[i].CountsByThreadId;
-            churn |= !firstIds.SetEquals(current.Keys);
             foreach (var (threadId, count) in current)
             {
+                newThread |= !firstIds.Contains(threadId) || (previous.TryGetValue(threadId, out var earlier) && count < earlier);
                 // A thread first seen in this sample started inside the interval, so all its switches happened here.
                 total += previous.TryGetValue(threadId, out var before) ? Math.Max(0, count - before) : Math.Max(0, count);
             }
         }
 
-        return new ContextSwitchResult(total, window, total / window, churn);
+        var ended = firstIds.Count(id => !samples[^1].CountsByThreadId.ContainsKey(id));
+        return new ContextSwitchResult(total, window, total / window, newThread, ended);
     }
 }

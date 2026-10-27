@@ -2,10 +2,10 @@
 
 | Field | Value |
 |---|---|
-| Status | **Protocol v1.2 — fixed before any gated measurement. Results: see §9** |
+| Status | **Protocol v1.3 — v1.2 was fixed before any gated measurement; v1.3 changes one PB-02 rule after a partial gated batch (§11). Results: see §9** |
 | Date | 2026-10-27 |
 | Related | ADR-001 §4, §9, §13; `TESTING_STRATEGY.md` §4.2, §4.4, §4.8, §5; `PROJECT_STATUS.md` |
-| Protocol history | v0 (proposal, commit `b6228b7`) → v1.0 (commit `5853eba`) → v1.1 → **v1.2** (this document; changes in §11) |
+| Protocol history | v0 (proposal, commit `b6228b7`) → v1.0 (commit `5853eba`) → v1.1 → v1.2 → **v1.3** (this document; changes in §11) |
 | Outcome vocabulary | **PASS** measured and met · **FAIL** valid measurement, not met · **INVALID** method or run failed its validity rules · **BLOCKED** tooling, hardware, permission or condition unavailable · **NOT RUN** no valid attempt |
 
 ## 1. Summary
@@ -150,7 +150,7 @@ projection (`net10.0-windows10.0.19041.0`) stays out of the WPF overlay and the 
 | Power | AC; "Best performance" overlay `ded574b5-…` | `GetSystemPowerStatus`, `PowerGetEffectiveOverlayScheme` |
 | Elevation | Non-elevated | `WindowsPrincipal` |
 
-## 8. Protocol v1.2
+## 8. Protocol v1.3
 
 ### 8.1 Techniques
 
@@ -227,7 +227,7 @@ Common to the S1 session (§8.8):
 | Budget | Target (ADR §9, unchanged) | Meaning and type | Raw data | Aggregation and pass formula | Direct or approximate | Invalid when | Limitations |
 |---|---|---|---|---|---|---|---|
 | PB-01 | ≤ 0.5 s process CPU per 10 min | Absolute threshold on overlay CPU (user + kernel) while settled | `Process.TotalProcessorTime` and `QueryProcessCycleTime` at each sample | `ΔCPU(600 s window) × 600/window_s`; PASS iff ≤ 0.5 s | Direct | §8.4 violation | — |
-| PB-02 | ≤ 2 context switches/s into our threads, average | Absolute threshold, settled | PDH `\Thread(*)\Context Switches/sec` **raw** cumulative values with `ID Thread`/`ID Process`, overlay threads only | Σ over consecutive sample pairs of `max(0, c₂−c₁)` per thread ID present in both, plus `c₂` for threads first seen in the later sample, ÷ window seconds; PASS iff ≤ 2.0 | Direct for threads alive at sample times | the overlay's thread-ID set changes during the window (thread churn: a thread that starts and ends between samples cannot be observed, so the bound is not proven) | Switches on threads that live entirely between samples are not seen; churn makes the run INVALID instead of passing |
+| PB-02 | ≤ 2 context switches/s into our threads, average | Absolute threshold, settled | PDH `\Thread(*)\Context Switches/sec` **raw** cumulative values with `ID Thread`/`ID Process`, overlay threads only | Σ over consecutive sample pairs of `max(0, c₂−c₁)` per thread ID present in both, plus `c₂` for threads first seen in the later sample, ÷ window seconds; PASS iff ≤ 2.0 | Direct for threads alive at sample times | a thread ID not present in the first sample appears later, or a known ID's count decreases (ID reuse) — a new thread could also start and end between samples unseen, so the bound is not proven (v1.3) | Threads that **end** during the window are counted up to their last sample; switches between that sample and their exit are not seen. Reported as `pb02_threads_ended` and as a limitation, not INVALID (v1.3). Switches on threads that live entirely between samples are not seen; a new thread makes the run INVALID instead of passing |
 | PB-03 | 0 frames per second | Absolute zero, settled | Desktop Duplication frames (§8.5) | attributed frames in the 600 s window; PASS iff 0 | Direct observation of presented desktop updates in the overlay region | §8.4 violation | Updates that DWM does not present (no visual change) are not frames by definition. App-side rendering that changes no pixels is visible only in PB-01/PB-12 |
 | PB-05 | ≤ 1 frame over 1.5× refresh per transition **and** p95 interval ≤ 1.5× refresh, over 50 transitions, at 60 and 120 Hz | Count per transition + nearest-rank p95 over all intervals | Attributed frames; overlay `transition.start`/`.end` QPC | Frames in `(start, end + 3 × refresh]`; intervals between consecutive frames (the gap from `start` to the first frame is latency, excluded). Long frame: interval > 1.5 × (1000/Hz) ms. A transition is **valid** if it has ≥ 2 attributed frames and no coalesced attributed frame. The first 50 valid transitions are evaluated with `FramePacing.Evaluate`. PASS iff worst long-frame count ≤ 1 and p95 ≤ 1.5 × refresh | Direct (presented desktop timeline) | fewer than 50 valid of 60; §8.4 violation | Same as §8.5 |
 | PB-10 | ≤ 120 MB private bytes after 10 min idle | Absolute threshold | `Process.PrivateMemorySize64`, `WorkingSet64` | private bytes at window end in **decimal MB** (10⁶ bytes, the stricter reading); PASS iff ≤ 120. Working set and MiB reported, not judged | Direct | §8.4 violation | — |
@@ -397,7 +397,7 @@ NOT RUN yet.
 
 - **One display:** no multi-monitor or mixed-DPI results are possible (R-09). They are BLOCKED, not gating, and never claimed.
 - **Composed-desktop observation:** PB-03/PB-05 observe the composed desktop, not the application's own presents (§8.5). They are system-level evidence attributed by screen region. They are application-specific only to the degree that the backdrop and contamination checks hold.
-- **PB-02 thread visibility:** PB-02 sees threads alive at sample times; thread churn invalidates the run instead of passing it.
+- **PB-02 thread visibility:** PB-02 sees threads alive at sample times. A new thread invalidates the run instead of passing it. Threads that end during the window lose at most the switches between their last sample (≤ 10 s) and their exit, so PB-02 is a slight under-count when `pb02_threads_ended` > 0 (v1.3).
 - **C's GPU attribution:** C's GPU work is attributed to DWM (PB-12 limitation).
 - **C is a baseline:** C has no text and no UIA, so it is a lower bound for a full implementation.
 - **Hybrid GPU:** the Intel UHD drives the panel. Results apply to that adapter.
@@ -412,3 +412,4 @@ NOT RUN yet.
 | v1.0 | 2026-10-27 | G8 found. The DWM timing method was replaced by Desktop Duplication with region attribution and a backdrop. Calibration rules are now numeric. S2 checklist rewritten to 12 items traced to requirements, adding lifecycle (S2-01) and UIA (S2-12). The work-area simulation merged into S2-11. S1 sessions combine idle + transitions per process. PB-02 churn rule, contamination checks, decimal MB for PB-10, run IDs and the C definition table added. PB-04 DEFERRED (Q2) | Yes |
 | v1.1 | 2026-10-27 | TICK match window 50 → 250 ms. The overlay logs `tick` when it changes a property; the frame appears after the render tick, the render-thread present and the next DWM composition, about 3 refresh periods (≈ 50 ms at 60 Hz). 50 ms would fail a working method at 60 Hz. Ticks are 5000 ms apart, so a 250 ms window cannot pair a frame with the wrong tick. Changed while writing the code, before any calibration run | Yes |
 | v1.2 | 2026-10-27 | Harness defects and implementation details found in DEV shake-down runs (IDs `DEV-…`, never results), before any gated run: (1) clicks are injected as one atomic `SendInput` batch each, because moving with `SetCursorPos` and clicking with a separate `SendInput` raced (S2-05 clicks landed at the next point); (2) S2-11a sends rather than posts `WM_SETTINGCHANGE` (Windows refuses to post it); (3) S2-06 gives the probe's text box focus with a click first; (4) the Alt-Tab list cannot be read through UI Automation on this build, so it becomes manual S2-07M; (5) C's cross-fade uses a placeholder bar; (6) a read-only reference-app check was added to §8.4; (7) §8.13 records the packages that actually resolve. No rule, threshold or budget changed | Yes |
+| v1.3 | 2026-10-28 | **Changed after seeing gated data — owner-approved (option b).** The first gated 120 Hz batch (`perf-results/2026-10-27`) was stopped by the host for low system memory after calibration (VALID), startup and 5 of 9 S1 sessions. In all 5 sessions PB-02 was INVALID under the v1.0 churn rule only because 1–2 startup threads present in the first sample **ended** within the first 20 s of the settled window; no new thread appeared (A: 0.15 switches/s, C: 0.013/s, budget ≤ 2). The rule now invalidates PB-02 only for a **new** thread (or ID reuse); ended threads are counted to their last sample and reported (`pb02_threads_ended`) as a limitation. The PB-02 threshold, aggregation and all other rules are unchanged. The aborted batch is kept as an audit trail (§9) and the whole 120 Hz batch, including calibration, is rerun under v1.3 | **No** — after 5 gated S1 sessions |

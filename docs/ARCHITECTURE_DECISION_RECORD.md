@@ -274,10 +274,10 @@ Measured on a Release build, after 2 min warm-up, AC power, default settings.
 | ID | Metric | Target | Method |
 |---|---|---|---|
 | PB-01 | CPU, settled idle (no activity) | ≤ 0.5 s process CPU per 10 min | `Get-Process` CPU delta + WPR CPU sampling |
-| PB-02 | Wake-ups, settled idle | ≤ 2 context switches/s into our threads, average | WPR (CSwitch) / WPA |
-| PB-03 | Frames presented, settled | 0 per second | PresentMon (or DWM frame statistics) |
-| PB-04 | CPU, music playing, island compact with static indicator | ≤ 1.0 s per 10 min | as PB-01 |
-| PB-05 | Expand/collapse frame pacing | ≤ 1 frame over 1.5× refresh interval per transition; p95 frame interval ≤ 1.5× at 60 Hz and 120 Hz over 50 transitions | PresentMon |
+| PB-02 | Wake-ups, settled idle | ≤ 2 context switches/s into our threads, average | PDH `Thread` raw context-switch counts per overlay thread, 10 s samples; a new overlay thread during the window ⇒ INVALID; ended threads reported (PROTOTYPE_S1_S2_REPORT §8.6, v1.3). WPR CSwitch as optional cross-check |
+| PB-03 | Frames presented, settled | 0 per second | DXGI Desktop Duplication updates attributed to the island region over a static backdrop, after calibration (report §8.5, §8.7). PresentMon only under report §8.14 |
+| PB-04 | CPU, music playing, island compact with static indicator | ≤ 1.0 s per 10 min | as PB-01. **Measured in M3**, not S1 (owner decision 2026-10-27; needs media) |
+| PB-05 | Expand/collapse frame pacing | ≤ 1 frame over 1.5× refresh interval per transition; p95 frame interval ≤ 1.5× at 60 Hz and 120 Hz over 50 transitions | Intervals between attributed Desktop Duplication updates inside each transition, first 50 valid of 60, after calibration with stall injection (report §8.6–§8.7) |
 | PB-06 | Hover-intent to first animation frame | ≤ 50 ms after the dwell delay fires | Instrumented timestamps (ETW EventSource) |
 | PB-07 | Volume change to HUD visible | ≤ 100 ms p95 | Test harness changes volume via Core Audio and timestamps first frame |
 | PB-08 | Media metadata change to update | ≤ 300 ms p95 | Instrumented timestamps |
