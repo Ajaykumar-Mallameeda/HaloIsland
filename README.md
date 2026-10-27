@@ -13,8 +13,8 @@ reminders, file staging and system indicators.
 
 ## Goals
 
-- Native-feeling Windows desktop app (planned stack: C# / .NET + WPF with isolated Win32 interop,
-  pending the architecture decision record in Phase 3).
+- Native-feeling Windows desktop app (proposed stack: C# on .NET 10 LTS + WPF with isolated
+  Win32/WinRT adapters — see [ADR-001](docs/ARCHITECTURE_DECISION_RECORD.md), awaiting approval).
 - Event-driven and lightweight while idle; performance claims backed by measurements.
 - Local-first and privacy-first: no accounts, telemetry or cloud backend by default.
 - Modular activity engine with independently testable feature modules.
@@ -57,6 +57,10 @@ Source, tests and build tooling will be added from Phase 4 onward.
 | [NUSA_EVIDENCE_REGISTER](docs/NUSA_EVIDENCE_REGISTER.md) | Per-statement evidence register (IDs `E-xxx`) |
 | [REFERENCE_ARCHITECTURE_HYPOTHESES](docs/REFERENCE_ARCHITECTURE_HYPOTHESES.md) | Inferred architecture, clearly labelled |
 | [EXTERNAL_REFERENCES](docs/EXTERNAL_REFERENCES.md) | Public documentation and sources consulted |
+| [ARCHITECTURE_DECISION_RECORD](docs/ARCHITECTURE_DECISION_RECORD.md) | ADR-001: stack, components, state model, budgets (proposed) |
+| [PRODUCT_REQUIREMENTS](docs/PRODUCT_REQUIREMENTS.md) | Functional and non-functional requirements (proposed) |
+| [SECURITY_AND_PRIVACY_DESIGN](docs/SECURITY_AND_PRIVACY_DESIGN.md) | Threat model, data inventory, licensing, distribution security |
+| [TESTING_STRATEGY](docs/TESTING_STRATEGY.md) | Test levels, tooling, catalogues, milestone acceptance |
 
 ## License
 
