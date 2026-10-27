@@ -19,8 +19,8 @@ this session unless marked otherwise.
 
 | Tool | Version / status | Notes |
 |---|---|---|
-| Node.js | **v24.11.1** | Below REA minimum for the 24.x line (24.22.1+) — see §4 |
-| npm | 11.6.1 | |
+| Node.js | **v24.22.1** (upgraded 2026-10-27 from v24.11.1 via `winget upgrade --id OpenJS.NodeJS.LTS --exact --version 24.22.1`; installer `node-v24.22.1-x64.msi` from nodejs.org, winget hash verified) | Meets REA minimum — see §4 |
+| npm | 11.6.1 | same version before and after the Node upgrade (`C:\Program Files\nodejs\npm.cmd -v` → 11.6.1); a user-global npm also exists in `%APPDATA%\npm` |
 | Git | 2.55.0.windows.2 | global `user.name`/`user.email` configured |
 | Claude Code | 2.1.311 | |
 | .NET SDK | **9.0.317 only** | **No .NET 10 SDK.** Runtimes present: .NET 6/7/8/9/10.0.11 incl. WindowsDesktop 10.0.11 |
@@ -49,7 +49,7 @@ this session unless marked otherwise.
 
 | Requirement (rea.tools/get-started) | Host | Status |
 |---|---|---|
-| Node 22.23.4+, 24.22.1+ or 26.12.1+ | 24.11.1 | **Not met** |
+| Node 22.23.4+, 24.22.1+ or 26.12.1+ | 24.22.1 | Met (after upgrade; was 24.11.1) |
 | npm | 11.6.1 | Met |
 | Claude Code installed | 2.1.311 | Met |
 | Optional Ghidra provider: Ghidra 12.1.4 + JDK 21+ | JDK 24 present, Ghidra absent | Optional — not installed |
@@ -58,11 +58,14 @@ this session unless marked otherwise.
 
 | Path | Purpose |
 |---|---|
-| `Notch/NusaSetup.exe` | Supplied reference installer (unmodified) |
-| `Notch/advanced-windows-island/` | This Git repository |
-| `Notch/re-workspace/` | Extraction and raw tool output (not version controlled) |
+| `C:\dev\Notch\NusaSetup.exe` | Supplied reference installer (unmodified) |
+| `C:\dev\Notch\advanced-windows-island\` | This Git repository |
+| `C:\dev\Notch\re-workspace\` | Extraction and raw tool output (not version controlled) |
 
-Note: the project lives under OneDrive (`Desktop` is OneDrive-synced). The reference installer and
-`re-workspace/` will therefore sync to the owner's OneDrive account. Consider moving the project to a
-non-synced path (e.g. `C:\dev\`) before builds start, to avoid sync churn on `bin/`/`obj/` and
-uploading reverse-engineering artifacts to cloud storage.
+Relocation (2026-10-27): the workspace was originally created under the OneDrive-synced Desktop
+(`%USERPROFILE%\OneDrive\Desktop\Notch`). It was copied to the non-synced `C:\dev\Notch` with
+`robocopy /E /COPY:DAT /DCOPY:DAT` (87 files, 0 failures). Validation: all 87 files matched a
+pre-move SHA-256 manifest; `git fsck --full` clean; branch `main` and both commits
+(`bd31bc3`, `9f7d5fb`) preserved; reference-artifact hashes unchanged; all six analysis scripts
+re-run from the new location reproduced their original outputs (two differed only by BOM/line
+endings introduced when the originals were captured). C: had 92 GB free.

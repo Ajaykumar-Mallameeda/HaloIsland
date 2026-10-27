@@ -1,5 +1,8 @@
 # Advanced Windows Island
 
+Internal codename: **Project Halo**. The public product name is not chosen yet; it will be selected
+after a name and trademark availability check.
+
 An original Windows desktop application that turns the top edge of the screen into an adaptive
 "island": a compact, non-intrusive surface for live activities such as media playback, timers,
 reminders, file staging and system indicators.
@@ -49,7 +52,7 @@ Source, tests and build tooling will be added from Phase 4 onward.
 | [TOOLING_MATRIX](docs/TOOLING_MATRIX.md) | Analysis/build tooling status |
 | [NUSA_WEBSITE_AUDIT](docs/NUSA_WEBSITE_AUDIT.md) | Advertised behaviour of the reference product |
 | [NUSA_INSTALLER_STATIC_ANALYSIS](docs/NUSA_INSTALLER_STATIC_ANALYSIS.md) | Static findings from the supplied installer |
-| [NUSA_RUNTIME_ANALYSIS](docs/NUSA_RUNTIME_ANALYSIS.md) | Runtime analysis status (requires isolated VM) |
+| [NUSA_RUNTIME_ANALYSIS](docs/NUSA_RUNTIME_ANALYSIS.md) | Runtime analysis status (skipped by owner decision) |
 | [NUSA_FEATURE_MATRIX](docs/NUSA_FEATURE_MATRIX.md) | Feature inventory with evidence levels |
 | [REFERENCE_ARCHITECTURE_HYPOTHESES](docs/REFERENCE_ARCHITECTURE_HYPOTHESES.md) | Inferred architecture, clearly labelled |
 

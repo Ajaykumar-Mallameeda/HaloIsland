@@ -6,6 +6,10 @@ An original Windows "island" application. Apple Live Activities / Dynamic Island
 are **behavioural references**. The product will have its own name, code, visual identity, icons
 and documentation.
 
+Internal working codename: **Project Halo** (owner decision, 2026-10-27). It is used in internal
+documents only. Executable names, package identifiers and public branding are unchanged until a
+name and trademark availability check selects the public product name.
+
 ## Reference-artifact safety
 
 | Rule | Status (2026-10-27) |
@@ -15,7 +19,8 @@ and documentation.
 | Original artifact unmodified | Complied — SHA-256 recorded before and after analysis |
 | Extraction output outside repository | Complied — `../re-workspace/` |
 | No DRM / licensing / encryption bypass | Not applicable — installer encryption flag is 0 (unencrypted) |
-| Runtime analysis only in isolated VM | Pending — no VM environment provisioned (see ENVIRONMENT_AUDIT) |
+| Runtime analysis only in isolated VM | **Skipped by owner decision (2026-10-27).** Reconsider only with a verified reference release and a suitable isolated environment |
+| Provenance of supplied installer | **Not verified** — unsigned, and its SHA-256 differs from the hash published on the website (which describes v1.0.0) |
 
 ## Third-party references
 
@@ -36,4 +41,7 @@ and documentation.
 
 - No paid/commercial tools are installed or activated without approval.
 - No optional native-analysis engines (Ghidra, IDA, Hopper) are installed without approval.
-- System-wide software changes (e.g. Node.js upgrade) are proposed, not performed silently.
+- System-wide software changes are proposed, not performed silently. Approved so far: Node.js
+  24.11.1 → 24.22.1 (2026-10-27). Deferred: .NET 10 SDK (until the Phase 3 ADR selects it).
+- Agent configuration changes (e.g. REA's MCP registration in `~/.claude.json`) are shown as a
+  dry-run plan and applied only after explicit owner approval.

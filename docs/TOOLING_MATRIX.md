@@ -12,7 +12,7 @@
 | GUID/COM scan | Own Python script | Available | Yes | |
 | Disassembly | `objdump` (MSYS2) | Available | No | not required for this phase |
 | Decompiler | Ghidra / IDA / Hopper | Not installed | No | optional; requires owner approval |
-| REA (MCP investigation workflow) | `rea-agents` | **Blocked** | No | Node.js 24.11.1 < required 24.22.1 |
+| REA (MCP investigation workflow) | `rea-agents` 6.8.0 (MIT, `github.com/morluto/rea`) | **Planned, awaiting owner approval** | No | Node prerequisite met (24.22.1). `setup --client claude_code --dry-run` plans 2 actions: MCP registration in `~/.claude.json` (backup `~/.claude.json.rea.backup`) and skill `~/.claude/skills/reverse-engineer-anything`. No providers configured (Ghidra/IDA/JADX/Kuna absent by decision). |
 | Runtime sandbox | VM / Windows Sandbox | Not available | No | Home edition; no hypervisor software |
 | Process / registry monitoring | Procmon, Process Explorer | Not installed | No | for future VM runtime analysis |
 | Network capture | Wireshark / Fiddler | Not installed | No | for future VM runtime analysis |
