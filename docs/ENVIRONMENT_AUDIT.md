@@ -30,7 +30,7 @@ this session unless marked otherwise.
 | Claude Code | 2.1.311 | |
 | .NET SDK | **10.0.403** (installed 2026-10-27, Phase 4) and 9.0.317 | Installed from the official Microsoft installer `dotnet-sdk-10.0.403-win-x64.exe` (builds.dotnet.microsoft.com; SHA-512 matched the 10.0 `releases.json`, SHA-256 matched the winget manifest, Authenticode valid, signer CN=.NET, O=Microsoft Corporation). Release 10.0.14 (2026-10-25, security release) was the latest stable at install time. Added runtimes NETCore/AspNetCore/WindowsDesktop **10.0.14**; host now 10.0.14. Existing SDKs/runtimes kept (6/7/8/9, 10.0.11). No workloads installed. The repository pins the SDK in `global.json` (`latestPatch`). .NET 8 and .NET 9 reach end of support on **2026-11-10**; .NET 10 (LTS) is supported to 2028-11-14 |
 | .NET first-run side effects | The first .NET 10 CLI command created an **untrusted** ASP.NET Core HTTPS development certificate in the user certificate store (not trusted, not used). The first command (`dotnet new sln`) ran before telemetry opt-out, so one SDK usage event may have been sent | Phase 4 session output |
-| Telemetry opt-out | Not set machine- or user-wide. Phase 4 commands set `DOTNET_CLI_TELEMETRY_OPTOUT=1` per process (also honoured by Microsoft.Testing.Platform). Setting it permanently is an owner decision (see `spikes/README.md`) | |
+| Telemetry opt-out | **Set permanently for the user** on 2026-10-27 (owner decision Q8): `DOTNET_CLI_TELEMETRY_OPTOUT=1` and `TESTINGPLATFORM_TELEMETRY_OPTOUT=1` in `HKCU\Environment`. Neither existed before. Verified in a process started by Explorer. Machine scope unchanged | DEVELOPMENT_WORKFLOW §6 |
 | Visual Studio | Community 2022 and Build Tools 2022, both 17.14.37531.7 | Not needed for spike builds (the .NET SDK builds WPF). `vswhere` registers only the Core Editor workload (no ".NET desktop" or "Desktop C++" workload); MSVC toolsets 14.43/14.44 folders exist and `cl.exe` 14.43 is present |
 | Windows SDK | 10.0.22621.0 and 10.0.26100.0 | `Program Files (x86)\Windows Kits\10\Include` |
 | Rust | rustc/cargo 1.97.0, default toolchain `stable-x86_64-pc-windows-msvc` | `%USERPROFILE%\.cargo\bin` (found 2026-10-27) |
@@ -52,8 +52,9 @@ this session unless marked otherwise.
 | Multi-monitor testing | **Not possible on this machine as captured (single display).** Needs an external monitor; multi-monitor *logic* can be unit tested with simulated geometry |
 | Mixed-DPI testing | Not possible with one display; single-display DPI changes (100–175 %) can be tested by changing scaling |
 | High-refresh testing | Yes — 120 Hz panel; 60 Hz mode available (switching it changes a user display setting → owner decision, see `PROTOTYPE_S1_S2_REPORT.md`) |
-| Elevation | Claude Code shell runs **non-elevated**; elevated steps (installer) needed a UAC prompt approved by the owner |
-| Frame-timing tools | **None installed**: no PresentMon, no WPA/ADK. Built in: WPR, `tracerpt`, performance counters, DWM timing API |
+| Elevation | Claude Code shell runs **non-elevated**; elevated steps (installer) needed a UAC prompt approved by the owner. The account is in the **Performance Log Users** group (enabled), so user-mode ETW sessions (`logman`) work without elevation |
+| Frame-timing tools | **None installed**: no PresentMon, no WPA/ADK. Built in: WPR, `tracerpt`, `logman`, performance counters, DXGI Desktop Duplication. **`DwmGetCompositionTimingInfo` returns synthetic per-call counters on this build** (probe 2026-10-27), so it cannot count compositions. Desktop Duplication works non-elevated on DXGI adapter 0 (Intel UHD, which drives the panel); the S1 harness uses its frame metadata, region-attributed (PROTOTYPE_S1_S2_REPORT §8.5) |
+| Reference app on this machine | Nusa is registered in HKCU `Run` (since 2026-10-26, outside this project) but was **not running** during Phase 4 (read-only process check at every measurement run). It was not started, stopped or otherwise touched |
 | Isolated runtime analysis of reference binaries | **No** — no VM |
 | Network capture | Not set up |
 
