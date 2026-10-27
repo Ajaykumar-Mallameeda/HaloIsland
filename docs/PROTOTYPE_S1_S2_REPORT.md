@@ -2,10 +2,10 @@
 
 | Field | Value |
 |---|---|
-| Status | **Protocol v1.0 — fixed before any prototype measurement. Results: see §9** |
+| Status | **Protocol v1.2 — fixed before any gated measurement. Results: see §9** |
 | Date | 2026-10-27 |
 | Related | ADR-001 §4, §9, §13; `TESTING_STRATEGY.md` §4.2, §4.4, §4.8, §5; `PROJECT_STATUS.md` |
-| Protocol history | v0 (proposal, commit `b6228b7`) → **v1.0** (this document; changes in §11) |
+| Protocol history | v0 (proposal, commit `b6228b7`) → v1.0 (commit `5853eba`) → v1.1 → **v1.2** (this document; changes in §11) |
 | Outcome vocabulary | **PASS** measured and met · **FAIL** valid measurement, not met · **INVALID** method or run failed its validity rules · **BLOCKED** tooling, hardware, permission or condition unavailable · **NOT RUN** no valid attempt |
 
 ## 1. Summary
@@ -134,7 +134,7 @@ projection (`net10.0-windows10.0.19041.0`) stays out of the WPF overlay and the 
 | Glyph | 24 DIP white circle | Same (`CompositionEllipseGeometry`) | — |
 | Text ("12:34", second line in Expanded) | Yes | **No** | ADR §4.5: text needs Direct2D/DirectWrite surfaces; out of a minimal baseline. C does less raster work, so its numbers are a **lower bound** for a full C implementation |
 | Animation | WPF `DoubleAnimation` (Width, Height, RadiusX/Y), `CubicEase` EaseOut, 350 ms, `DesiredFrameRate` = refresh rate (ADR §4.7) | Composition key-frame animations (Size, CornerRadius, Offset), cubic Bézier (0.33, 1, 0.68, 1) ≈ ease-out cubic, 350 ms, run by DWM | Each technique's native animation path is what S1 compares |
-| Cross-fade | Content `Opacity` | Glyph brush alpha | No text in C |
+| Cross-fade | Second text line `Opacity` | A white placeholder bar (160 × 6 DIP) fades in with the same timing | No text in C; the bar keeps one element fading in, as in A/B |
 | Input region | A: per-pixel alpha; B: `SetWindowRgn` union (ADR §4.4) | `SetWindowRgn` union | ADR §4.4 |
 | UI Automation | WPF peers | **None** | ADR §4.5: custom provider is out of scope; S2-12 is expected to FAIL for C and is recorded as a cost |
 | Calibration modes | stall injection, stray-frame tick | continuous animation, stray-frame tick | C's animations run in DWM, so a UI-thread stall cannot stutter them |
@@ -150,7 +150,7 @@ projection (`net10.0-windows10.0.19041.0`) stays out of the WPF overlay and the 
 | Power | AC; "Best performance" overlay `ded574b5-…` | `GetSystemPowerStatus`, `PowerGetEffectiveOverlayScheme` |
 | Elevation | Non-elevated | `WindowsPrincipal` |
 
-## 8. Protocol v1.0
+## 8. Protocol v1.2
 
 ### 8.1 Techniques
 
@@ -200,6 +200,7 @@ same command-line options and standard-input commands and write the same log eve
 | Overlay on top of the backdrop | `WindowFromPoint` at the shape centre resolves to the overlay at run start | INVALID |
 | Sampling regularity | no gap > 15 s between counter samples in the measured window | INVALID |
 | Display kept on | `SetThreadExecutionState(ES_CONTINUOUS \| ES_DISPLAY_REQUIRED \| ES_SYSTEM_REQUIRED)` by the harness during runs, cleared at exit | — |
+| Reference app not running | Read-only process-list check for `nusa` at run start and end (the app is never started, stopped or touched) | INVALID |
 | Do Not Disturb | Owner action; not machine-verifiable. Toasts appear bottom-right, outside the attribution region, and foreign windows over the region are caught by the Z-order check | recorded only |
 
 ### 8.5 Frame attribution method (PB-03, PB-05, calibration)
@@ -249,7 +250,7 @@ Outputs per run in `perf-results/<date>/<run-id>/`:
 | CAL-<hz>-NEG-A | A with `--calibration --stall-ms 50` (one 50 ms UI-thread sleep 175 ms after each `transition.start`), 30 s warm-up, 20 transitions | **Every** stalled transition contains an interval ≥ 40 ms |
 | CAL-<hz>-NEGCTL-A | A with `--calibration` and no stall, same procedure | ≤ 2 of 20 transitions contain an interval ≥ 40 ms |
 | (fallback) CAL-<hz>-NEG-B / NEGCTL-B | Same with B | Run only if NEGCTL-A fails; the method is valid if either pair passes. Both pairs are reported |
-| CAL-<hz>-TICK-A/B/C | `--calibration --tick-ms 5000` (one minimal repaint every 5 s while settled), 30 s warm-up, 60 s measured | Every logged `tick` has an attributed frame within 50 ms after it, **and** no attributed frame lies more than 50 ms after the preceding tick. Shows PB-03 detects a single stray frame for each technique |
+| CAL-<hz>-TICK-A/B/C | `--calibration --tick-ms 5000` (one minimal repaint every 5 s while settled), 30 s warm-up, 60 s measured | Every logged `tick` has an attributed frame within 250 ms after it, **and** every attributed frame lies within 250 ms after a tick (no unexplained frame). Shows PB-03 detects a single stray frame for each technique (v1.1: window widened from 50 ms, see §11) |
 
 The method is **VALID at a refresh rate** only if BASE, POS, one NEG/NEGCTL pair and all three
 TICK runs pass. Otherwise PB-03 and PB-05 are **INVALID** at that rate for every technique, and the gate
@@ -312,7 +313,7 @@ Batch 3 is manual and needs the owner (~15–30 min, back at 120 Hz):
 **Common setup:**
 - Probe window: a maximised, normal (non-topmost) WPF window in the harness process, colour `#FF00FF`. It records every click position and holds a text box for keystrokes.
 - The probe is activated by a real click on its text box, then the overlay is started with hover disabled.
-- Input is generated with FlaUI (`SendInput`), which moves the real cursor, so the owner must not use the machine.
+- Clicks are injected with `SendInput`, one atomic batch per click (absolute move, button down, button up), which Windows processes in order. Keys go through FlaUI's keyboard API, and hover moves use `SetCursorPos`. The real cursor moves, so the owner must not use the machine. FlaUI UIA3 reads UI Automation (S2-07, S2-12).
 - Screen captures are GDI `BitBlt` + `CAPTUREBLT` of the canvas rectangle only. Over the probe, that region contains only the probe colour and the overlay's own test content. They are saved as PNG evidence.
 
 | ID | Objective (requirement) | Exact setup → action | Expected behaviour and observable evidence | Pass rule | Automation | Severity | Blocks gate |
@@ -323,11 +324,11 @@ Batch 3 is manual and needs the owner (~15–30 min, back at 120 Hz):
 | S2-04 | Clicks inside the shape reach the overlay (FR-ISL-05) | 50 points ≥ 4 px inside the Compact shape (and 50 in Expanded) → click | Overlay logs `click.inside`; probe records nothing | 100/100 to the overlay, 0 to the probe | Automated | Critical | Yes |
 | S2-05 | Input routing during transitions (FR-ISL-05 failure mode, ADR §4.4) | 20 expand transitions; during each, click 2 points outside the union region and 2 inside the Compact shape | Outside-union clicks reach the probe; inside-Compact clicks reach the overlay. Clicks between current and target shape are "documented union" and not judged | 40/40 outside-union to the probe and 40/40 inside-Compact to the overlay | Automated | Major | Yes |
 | S2-06 | No activation; focus and keystrokes stay with the probe (FR-ISL-06, TESTING_STRATEGY §4.4) | Probe text box focused; `hover-on`; 100 cycles of moving the cursor into the shape (expand) and out (collapse), waiting for each `transition.end`; then 20 clicks on the shape; then type a fixed test string | `GetForegroundWindow` = probe after every step; the probe's text box contains the test string (compared in memory, never logged) | 0 foreground changes in all checks; string received | Automated | Critical | Yes |
-| S2-07 | Not in taskbar or Alt-Tab (FR-ISL-06, ADR §4.2) | Read `GWL_EXSTYLE`; enumerate taskbar buttons via UIA; open Alt-Tab (Alt down, Tab), enumerate its items via UIA, cancel with Esc | `WS_EX_TOOLWINDOW`, `WS_EX_NOACTIVATE`, `WS_EX_TOPMOST` set and no `WS_EX_APPWINDOW`; the overlay is absent from both lists while the probe (positive control) is present. Names are compared in memory; only booleans are logged | All true; foreground unchanged afterwards | Automated; manual S2-07M only if the switcher cannot be read | Major | Yes |
+| S2-07 | Not in taskbar or Alt-Tab (FR-ISL-06, ADR §4.2) | Read `GWL_EXSTYLE`; enumerate taskbar buttons via UIA; open Alt-Tab (Alt down, Tab), enumerate its items via UIA, cancel with Esc | `WS_EX_TOOLWINDOW`, `WS_EX_NOACTIVATE`, `WS_EX_TOPMOST` set and no `WS_EX_APPWINDOW`; the overlay is absent from both lists while the probe (positive control) is present. Names are compared in memory; only booleans are logged | All true; foreground unchanged afterwards | Styles and taskbar automated. The Alt-Tab list is **manual S2-07M**: in DEV runs on this build the switcher window exposed no list items to UI Automation, so the positive control cannot be met | Major | Yes |
 | S2-08 | Topmost over normal windows (ADR §13 S2) | Probe maximised and active | `WindowFromPoint(shape centre)` = overlay; overlay above probe in a Z-order walk | Both true | Automated | Critical | Yes |
 | S2-09 | Placement at the top edge and fixed canvas (FR-ISL-01, ADR §4.3) | Read window rectangle and `MONITORINFO.rcWork`; sample `GetWindowRect` every 10 ms during 20 transitions | Centred; top at the work-area top; never moves or resizes | Centre within 1 px, top within 1 px, rectangle constant | Automated | Major | Yes |
 | S2-10 | Suppression mechanism: below full-screen apps when suppressed (ADR §13 S2; detection is S7) | Monitor-sized borderless probe (`#00FF00`), (i) non-topmost: overlay visible over it → `suppress` → capture → `restore` → capture; (ii) topmost probe shown → `suppress` → capture → probe closed → `restore` → capture | No overlay pixel in the canvas while suppressed; overlay visible again after `restore`. Hide latency (command → first attributed frame) reported, **not judged** (no budget exists) | All captures as expected | Automated | Critical | Yes |
-| S2-11 | DPI and display configuration (FR-ISL-10/11) | (a) Automated: send `WM_SETTINGCHANGE`(`SPI_SETWORKAREA`) and `WM_DISPLAYCHANGE` to the overlay → placement re-checked. (b) **Manual S2-11M:** owner changes scaling 125 → 100 → 150 → 175 → 125 % while the overlay runs; the harness re-checks after each `WM_DPICHANGED` | Placement rule of S2-09 holds after each change; canvas size = 468×208 DIP at the new DPI; no crash | All checks PASS | (a) automated, (b) human-triggered, automatically checked | Major | Yes (single display). **Multi-monitor and mixed-DPI: BLOCKED** (one display, R-09) — not gating, never claimed |
+| S2-11 | DPI and display configuration (FR-ISL-10/11) | (a) Automated: send (`SendMessageTimeout`, as the system broadcasts them) `WM_SETTINGCHANGE`(`SPI_SETWORKAREA`) and `WM_DISPLAYCHANGE` to the overlay → placement re-checked. (b) **Manual S2-11M:** owner changes scaling 125 → 100 → 150 → 175 → 125 % while the overlay runs; the harness re-checks after each `WM_DPICHANGED` | Placement rule of S2-09 holds after each change; canvas size = 468×208 DIP at the new DPI; no crash | All checks PASS | (a) automated, (b) human-triggered, automatically checked | Major | Yes (single display). **Multi-monitor and mixed-DPI: BLOCKED** (one display, R-09) — not gating, never claimed |
 | S2-12 | UI Automation exposure (FR-A11Y-01) | FlaUI UIA3 `FromHandle(overlay)`; find descendants | Root element has a non-empty name; the compact text element is exposed; inspection does not change the foreground | All true | Automated | Major | Yes, for the technique selected. Expected FAIL for C (ADR §4.5), recorded as C's cost |
 
 ### 8.12 Informational measurements (G7; never gating)
@@ -345,10 +346,10 @@ Batch 3 is manual and needs the owner (~15–30 min, back at 120 Hz):
 
 | Package | Version | Licence (read from the package's `LICENSE.txt`) | Provenance | Target fit | Transitive | SHA-256 (nupkg) |
 |---|---|---|---|---|---|---|
-| FlaUI.Core | 5.0.0 | MIT | nuget.org, repository `github.com/FlaUI/FlaUI` commit `c5e7eb7a`, published 2025-02-25 | `lib/net8.0-windows7.0` → runs on net10.0-windows | Microsoft.Win32.Registry 5.0.0, System.Diagnostics.PerformanceCounter 8.0.1, System.Drawing.Common 8.0.10, System.Management 8.0.0, System.Security.Permissions 8.0.0 (Microsoft, MIT) | `191cc65e…f568a7` |
+| FlaUI.Core | 5.0.0 | MIT | nuget.org, repository `github.com/FlaUI/FlaUI` commit `c5e7eb7a`, published 2025-02-25 | `lib/net8.0-windows7.0` → runs on net10.0-windows | Declares Microsoft.Win32.Registry, System.Diagnostics.PerformanceCounter, System.Drawing.Common, System.Management, System.Security.Permissions. **Resolved on .NET 10: only System.Management 8.0.0** (Microsoft, MIT); the others are provided by the Windows Desktop runtime and pruned by the SDK (lock file) | `191cc65e…f568a7` |
 | FlaUI.UIA3 | 5.0.0 | MIT | same repository and commit | `lib/net8.0-windows7.0` | FlaUI.Core, Interop.UIAutomationClient | `d5d2e083…f711f2` |
 | Interop.UIAutomationClient | 10.19041.0 | MIT | nuget.org, `github.com/Roemer/UIAutomation-Interop` | `lib/netcoreapp3.0` | none | `0d2ed17d…ff3b1` |
-| Microsoft.Windows.SDK.NET.Ref | selected by the .NET SDK for `net10.0-windows10.0.19041.0` | MIT (Microsoft) | targeting pack restored from nuget.org | C baseline only | — | recorded at restore |
+| Microsoft.Windows.SDK.NET.Ref | selected by the .NET SDK for `net10.0-windows10.0.19041.0` | MIT (Microsoft) | targeting pack restored from nuget.org | C baseline only | — | — |
 
 - FlaUI is referenced only by the harness, a test tool that is never shipped.
 - Versions are pinned in `Directory.Packages.props`, with lock files.
@@ -409,3 +410,5 @@ NOT RUN yet.
 |---|---|---|---|
 | v0 | 2026-10-27 | Proposal (commit `b6228b7`) | Yes |
 | v1.0 | 2026-10-27 | G8 found. The DWM timing method was replaced by Desktop Duplication with region attribution and a backdrop. Calibration rules are now numeric. S2 checklist rewritten to 12 items traced to requirements, adding lifecycle (S2-01) and UIA (S2-12). The work-area simulation merged into S2-11. S1 sessions combine idle + transitions per process. PB-02 churn rule, contamination checks, decimal MB for PB-10, run IDs and the C definition table added. PB-04 DEFERRED (Q2) | Yes |
+| v1.1 | 2026-10-27 | TICK match window 50 → 250 ms. The overlay logs `tick` when it changes a property; the frame appears after the render tick, the render-thread present and the next DWM composition, about 3 refresh periods (≈ 50 ms at 60 Hz). 50 ms would fail a working method at 60 Hz. Ticks are 5000 ms apart, so a 250 ms window cannot pair a frame with the wrong tick. Changed while writing the code, before any calibration run | Yes |
+| v1.2 | 2026-10-27 | Harness defects and implementation details found in DEV shake-down runs (IDs `DEV-…`, never results), before any gated run: (1) clicks are injected as one atomic `SendInput` batch each, because moving with `SetCursorPos` and clicking with a separate `SendInput` raced (S2-05 clicks landed at the next point); (2) S2-11a sends rather than posts `WM_SETTINGCHANGE` (Windows refuses to post it); (3) S2-06 gives the probe's text box focus with a click first; (4) the Alt-Tab list cannot be read through UI Automation on this build, so it becomes manual S2-07M; (5) C's cross-fade uses a placeholder bar; (6) a read-only reference-app check was added to §8.4; (7) §8.13 records the packages that actually resolve. No rule, threshold or budget changed | Yes |
