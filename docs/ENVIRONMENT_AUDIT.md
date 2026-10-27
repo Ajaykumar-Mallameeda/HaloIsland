@@ -11,7 +11,10 @@ this session unless marked otherwise.
 | Architecture | x64 | `dotnet`/PE tooling, session |
 | PowerShell | Windows PowerShell 5.1 (also Git Bash / MSYS2) | session |
 | Desktop session | Interactive Windows desktop available (GUI apps can run) | session |
-| Displays / DPI | NOT CAPTURED — command check unavailable during this session; re-run `[System.Windows.Forms.Screen]::AllScreens` | — |
+| Displays / DPI | **One display** (internal laptop panel `LGD0738`), 1920×1080 @ 120 Hz, scaling 125 % (AppliedDPI 120; a DPI-unaware query reports 1536×864), taskbar at the bottom (work area 816 of 864 logical px) | `Screen.AllScreens`, `Win32_VideoController`, registry (captured 2026-10-27, Phase 3) |
+| GPU | Hybrid: Intel UHD Graphics (driver 32.0.101.7088, drives the panel) + NVIDIA GeForce RTX 3050 6 GB Laptop GPU (driver 32.0.16.1088) | `Win32_VideoController` |
+| Brightness | WMI `WmiMonitorBrightness` available on the internal panel (current 50) | `root\wmi` query |
+| Battery | Present (Dell `P8P1P41`) — laptop power events testable | `Win32_Battery` |
 | Virtualization software | None found: no VirtualBox, VMware Workstation, Hyper-V Manager (`vmms.exe`) or Windows Sandbox. `vmcompute.exe` present (host compute service, typically WSL2). | file checks |
 | Windows Sandbox / Hyper-V | Not available on the Home edition | OS edition |
 
@@ -23,9 +26,10 @@ this session unless marked otherwise.
 | npm | 11.6.1 | same version before and after the Node upgrade (`C:\Program Files\nodejs\npm.cmd -v` → 11.6.1); a user-global npm also exists in `%APPDATA%\npm` |
 | Git | 2.55.0.windows.2 | global `user.name`/`user.email` configured |
 | Claude Code | 2.1.311 | |
-| .NET SDK | **9.0.317 only** | **No .NET 10 SDK.** Runtimes present: .NET 6/7/8/9/10.0.11 incl. WindowsDesktop 10.0.11 |
-| Visual Studio | Community 2022 | workloads not enumerated |
-| Windows SDK | 10.0.22621.0 | `Program Files (x86)\Windows Kits\10` |
+| .NET SDK | **9.0.317 only** (re-verified 2026-10-27, Phase 3) | **No .NET 10 SDK.** Runtimes present: .NET 6/7/8/9/10.0.11 incl. WindowsDesktop 10.0.11. Note: .NET 8 and .NET 9 reach end of support on **2026-11-10**; .NET 10 (LTS) is supported to 2028-11-14 |
+| Visual Studio | Community 2022 | `vswhere` registers only the Core Editor workload (no ".NET desktop" or "Desktop C++" workload); MSVC toolsets 14.43/14.44 folders exist and `cl.exe` 14.43 is present |
+| Windows SDK | 10.0.22621.0 and 10.0.26100.0 | `Program Files (x86)\Windows Kits\10\Include` |
+| Rust | rustc/cargo 1.97.0, default toolchain `stable-x86_64-pc-windows-msvc` | `%USERPROFILE%\.cargo\bin` (found 2026-10-27) |
 | Python | 3.11.9 (+ per-session venv with `pefile` 2024.8.26 for analysis) | |
 | Java | JDK 24 (`JAVA_HOME=C:\Program Files\Java\jdk-24`) | satisfies Ghidra's "JDK 21+" requirement if Ghidra is ever approved |
 | winget / Chocolatey | available | not used |
@@ -41,7 +45,9 @@ this session unless marked otherwise.
 | Build/run .NET desktop apps | Yes for .NET 9; .NET 10 requires SDK install (decision in Phase 3 ADR) |
 | Automated unit tests (xUnit/MSTest via `dotnet test`) | Yes (packages restored from NuGet when first used) |
 | GUI/manual UI testing | Yes — interactive desktop |
-| Multi-monitor testing | Unknown until displays are captured; multi-monitor *logic* can be unit tested with simulated geometry |
+| Multi-monitor testing | **Not possible on this machine as captured (single display).** Needs an external monitor; multi-monitor *logic* can be unit tested with simulated geometry |
+| Mixed-DPI testing | Not possible with one display; single-display DPI changes (100–175 %) can be tested by changing scaling |
+| High-refresh testing | Yes — 120 Hz panel; 60 Hz by changing refresh rate |
 | Isolated runtime analysis of reference binaries | **No** — no VM |
 | Network capture | Not set up |
 

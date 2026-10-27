@@ -21,7 +21,8 @@ name and trademark availability check selects the public product name.
 | No DRM / licensing / encryption bypass | Not applicable — installer encryption flag is 0 (unencrypted) |
 | Runtime analysis only in isolated VM | **Skipped by owner decision (2026-10-27).** Reconsider only with a verified reference release and a suitable isolated environment |
 | Pre-existing Nusa install on workstation | Found 2026-10-27: v1.1.0.0 installed 2026-10-26 and running from HKCU Run, outside this project's actions. Same binary hash as the extracted payload. Left untouched; owner to decide whether to keep or uninstall |
-| Provenance of supplied installer | **Not verified** — unsigned, and its SHA-256 differs from the hash published on the website (which describes v1.0.0) |
+| Provenance of supplied installer | **Hash-verified against the vendor's GitHub v1.1.0 pre-release notes (Phase 2, 2026-10-27).** Still unsigned; the website still shows the v1.0.0 hash. Trust extends only as far as the vendor's GitHub account |
+| Phase 2 REA use | Only target-free static parsers and a website browser session; no target-bound analysis engine, no execution of reference binaries, nothing uploaded |
 
 ## Third-party references
 
