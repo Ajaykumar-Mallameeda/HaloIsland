@@ -54,7 +54,9 @@ Source, tests and build tooling will be added from Phase 4 onward.
 | [NUSA_INSTALLER_STATIC_ANALYSIS](docs/NUSA_INSTALLER_STATIC_ANALYSIS.md) | Static findings from the supplied installer |
 | [NUSA_RUNTIME_ANALYSIS](docs/NUSA_RUNTIME_ANALYSIS.md) | Runtime analysis status (skipped by owner decision) |
 | [NUSA_FEATURE_MATRIX](docs/NUSA_FEATURE_MATRIX.md) | Feature inventory with evidence levels |
+| [NUSA_EVIDENCE_REGISTER](docs/NUSA_EVIDENCE_REGISTER.md) | Per-statement evidence register (IDs `E-xxx`) |
 | [REFERENCE_ARCHITECTURE_HYPOTHESES](docs/REFERENCE_ARCHITECTURE_HYPOTHESES.md) | Inferred architecture, clearly labelled |
+| [EXTERNAL_REFERENCES](docs/EXTERNAL_REFERENCES.md) | Public documentation and sources consulted |
 
 ## License
 
