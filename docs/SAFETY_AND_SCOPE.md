@@ -20,6 +20,7 @@ name and trademark availability check selects the public product name.
 | Extraction output outside repository | Complied — `../re-workspace/` |
 | No DRM / licensing / encryption bypass | Not applicable — installer encryption flag is 0 (unencrypted) |
 | Runtime analysis only in isolated VM | **Skipped by owner decision (2026-10-27).** Reconsider only with a verified reference release and a suitable isolated environment |
+| Pre-existing Nusa install on workstation | Found 2026-10-27: v1.1.0.0 installed 2026-10-26 and running from HKCU Run, outside this project's actions. Same binary hash as the extracted payload. Left untouched; owner to decide whether to keep or uninstall |
 | Provenance of supplied installer | **Not verified** — unsigned, and its SHA-256 differs from the hash published on the website (which describes v1.0.0) |
 
 ## Third-party references
