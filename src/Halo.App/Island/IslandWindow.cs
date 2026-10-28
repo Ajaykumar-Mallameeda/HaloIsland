@@ -414,6 +414,9 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
                 SetClockPaused(_sessionLocked, displayOff: !on, "display");
                 return 1;
             case WmPowerBroadcast when wParam == PbtApmResumeAutomatic:
+                // Displays may have changed while asleep (FR-ISL-11): re-place, re-check full screen, refresh the clock.
+                Place("resume");
+                _fullscreen?.Schedule();
                 RefreshClock("resume");
                 return null;
             case WmTransitionDone when (int)wParam == _transitionId:
@@ -604,10 +607,21 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
         _ = SetTimer(_hwnd, ClockTimerId, (uint)Math.Ceiling(delay.TotalMilliseconds), 0);
     }
 
+    /// <summary>
+    /// Places the island from the live work area and DPI (nothing cached). When the result equals the current layout
+    /// (frequent: every work-area or display notification), nothing is moved, rebuilt or redrawn.
+    /// </summary>
     private void Place(string reason)
     {
         var (work, dpi) = PrimaryWorkArea();
-        _layout = IslandLayout.Compute(new PixelRect(work.Left, work.Top, work.Right - work.Left, work.Bottom - work.Top), (int)dpi);
+        var layout = IslandLayout.Compute(new PixelRect(work.Left, work.Top, work.Right - work.Left, work.Bottom - work.Top), (int)dpi);
+        if (layout == _layout)
+        {
+            _log?.Write("placement.unchanged", ("reason", reason));
+            return;
+        }
+
+        _layout = layout;
         var c = _layout.Canvas;
         _ = SetWindowPos(_hwnd, HwndTopmost, c.Left, c.Top, c.Width, c.Height, SwpNoActivate);
         ApplyRegion(union: false);

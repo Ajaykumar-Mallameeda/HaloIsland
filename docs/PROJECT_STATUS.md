@@ -412,11 +412,34 @@ here as the audit trail.
 - **Settings:** an **Open log folder** button (Explorer, nothing uploaded).
 - **Unit tests:** 9 new (`LogFileTests.cs`: JSON shape and types; 5 free-text and injection cases redacted;
   token rules; rolling at 1 MB with 5 files at most; per-minute limit with the drop count reported; write
-  failures counted, not thrown). Unit 214/214.
+  failures counted, not thrown). Unit 215/215.
 - **Desktop test:** 1 new. A real run with an injected tray failure and a corrupt settings file writes
   `app.start` (warning, recovered_defaults), `tray.failed` and `app.exit`. Every string value is a token, the data
   path never appears, and a short run writes fewer than 20 lines. Island desktop 29/29.
 - **Not tested:** the "Open log folder" button itself (it would open an Explorer window on the owner's desktop).
+- **Commit:** `753ff50`.
+
+### M2-F04 Display and DPI behaviour — PASS for this machine (multi-monitor and mixed DPI: BLOCKED, D7)
+
+- **Requirements:** FR-ISL-01, FR-ISL-10 (DPI auto-scale), FR-ISL-11.
+- **Policy (unchanged):** the island sits at the top centre of the **primary** monitor's work area.
+- **Behaviour:**
+  - placement is recomputed from the live work area and DPI on DPI, display, work-area, Explorer-restart and
+    resume events, with no cached geometry;
+  - new: when the result equals the current layout, nothing is moved, rebuilt or redrawn (`placement.unchanged`).
+    Before, every work-area notification rebuilt the text surfaces;
+  - new: resume from sleep re-places the island and re-checks full screen, besides refreshing the clock.
+  - Transparent rendering and hit testing follow the new layout (region checked in the test).
+- **Unit tests:** 10 new (`DisplayGeometryTests.cs`: 100/125/150/175/200 % shapes inside the canvas and centred;
+  left taskbar; top taskbar; negative-coordinate monitor; equal inputs give equal layouts, which the no-op relies
+  on; tiny work area rejected). Unit 225/225.
+- **Desktop tests:** 2 new.
+  - **Real change:** a test window registers a 60 px top app bar, so the shell really shrinks the work area. The
+    island moves below it, its region follows, and it returns when the app bar is removed.
+  - **Synthetic messages:** `WM_DISPLAYCHANGE` and resume messages give `placement.unchanged` with no rebuild.
+  - Island desktop 31/31.
+- **Not verified (stated, not claimed):** a real resolution or DPI change (display settings are reserved for the
+  owner), a real sleep/resume, multi-monitor, mixed DPI and monitor hot-plug (one display, D7).
 
 ## Next recommended action
 
