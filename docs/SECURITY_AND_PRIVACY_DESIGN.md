@@ -80,6 +80,18 @@ is revisited if notification content is ever persisted (it is not, by design).
   are passed through the same redaction filter. Full memory dumps only on explicit user action.
 - Nothing is uploaded; the user may attach logs to a bug report manually.
 
+**As built (M2-F03, 2026-10-28):**
+
+- The log is **stricter than the design above**. `Halo.Core/Diagnostics/LogFile` accepts only numbers, booleans
+  and tokens (1–64 characters of `A–Z a–z 0–9 _ . -`). Any other string, including exception messages and paths,
+  is written as `redacted`, so free text cannot reach the file by construction.
+- Crash records hold the exception type name and HRESULT only, with no message and no stack trace.
+- There is no debug level yet.
+- Location: `<data folder>\logs\halo.log`, rolled at 1 MB into 5 files at most.
+- Each event name is limited to 20 lines a minute, and the overflow is counted in one `log.suppressed` line.
+- Write failures are dropped and counted, and never stop the island.
+- Settings › **Open log folder** shows the folder in File Explorer.
+
 ## 7. Licensing, intellectual property and reverse-engineering boundary
 
 | Topic | Position |

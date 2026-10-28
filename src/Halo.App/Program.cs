@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using Halo.App.Island;
+using Halo.Core.Diagnostics;
 using Halo.Core.Settings;
 using static Halo.App.Interop.Native;
 
@@ -36,16 +37,23 @@ internal static class Program
             return 0;
         }
 
+        var log = args.Contains("--diagnostics", StringComparer.Ordinal) ? new DiagnosticsLog(Console.Out) : null;
+        var dataDir = DataDirectory(args, log is not null);
+        var fileLog = new LogFile(Path.Combine(dataDir, "logs"));
+
+        // A last-resort crash record (type and HRESULT only); the app does not restart itself (ADR-001 §9.1).
+        AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+            fileLog.Write(LogLevel.Error, "app.crash", ("type", e.ExceptionObject.GetType().Name), ("hresult", (e.ExceptionObject as Exception)?.HResult ?? 0));
         try
         {
-            var log = args.Contains("--diagnostics", StringComparer.Ordinal) ? new DiagnosticsLog(Console.Out) : null;
-            using var window = new IslandWindow(log, new SettingsStore(DataDirectory(args, log is not null)), log is null ? IslandFault.None : FaultFromEnvironment());
+            using var window = new IslandWindow(log, new SettingsStore(dataDir), fileLog, log is null ? IslandFault.None : FaultFromEnvironment());
             return window.Run();
         }
         catch (Exception ex) when (ex is InvalidOperationException or COMException)
         {
             // Type and HRESULT only: messages can contain paths.
             Console.Error.WriteLine($"Halo failed to start: {ex.GetType().Name} 0x{ex.HResult:X8}");
+            fileLog.Write(LogLevel.Error, "app.start_failed", ("type", ex.GetType().Name), ("hresult", ex.HResult));
             return 1;
         }
         finally

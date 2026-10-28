@@ -22,6 +22,7 @@ internal sealed unsafe class SettingsWindow : IDisposable
     private const int IdMotion = 105;
     private const int IdStartExpanded = 106;
     private const int IdDefaults = 107;
+    private const int IdLogFolder = 108;
     private const int IdClose = 2; // IDCANCEL: Esc and the Close button
     private const int IdDwellValue = 202;
     private const int IdGraceValue = 203;
@@ -165,6 +166,7 @@ internal sealed unsafe class SettingsWindow : IDisposable
         Add(IdStartExpanded, "BUTTON", "&Open the island when Halo starts", BsAutoCheckBox | WsTabStop, 16, y, 400, 22);
         y += 42;
         Add(IdDefaults, "BUTTON", "Restore &defaults", BsPushButton | WsTabStop, 16, y, 130, 28);
+        Add(IdLogFolder, "BUTTON", "Open &log folder", BsPushButton | WsTabStop, 158, y, 130, 28);
         // Not a default button: the Enter that picked "Settings…" in the tray menu reaches this window as WM_CHAR,
         // and a default Close button would shut the window the moment it opened. Esc (IDCANCEL) still closes it.
         Add(IdClose, "BUTTON", "Close", BsPushButton | WsTabStop, 300, y, 110, 28);
@@ -245,6 +247,18 @@ internal sealed unsafe class SettingsWindow : IDisposable
         Show(s);
     }
 
+    /// <summary>FR-APP-07: shows the local log folder in File Explorer (nothing is uploaded).</summary>
+    private void OpenLogFolder()
+    {
+        if (_owner.LogDirectory is not { } folder)
+        {
+            return;
+        }
+
+        _ = System.IO.Directory.CreateDirectory(folder);
+        using var explorer = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(folder) { UseShellExecute = true });
+    }
+
     private nint? Handle(nint hwnd, uint msg, nint wParam, nint lParam)
     {
         if (hwnd != Hwnd)
@@ -264,6 +278,9 @@ internal sealed unsafe class SettingsWindow : IDisposable
                     case IdDefaults:
                         _owner.UpdateSettings(HaloSettings.Defaults);
                         Show(HaloSettings.Defaults);
+                        return 0;
+                    case IdLogFolder:
+                        OpenLogFolder();
                         return 0;
                     case IdClose:
                         _ = DestroyWindow(hwnd);

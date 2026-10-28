@@ -3,6 +3,7 @@ using System.Numerics;
 using System.Runtime.InteropServices;
 using Halo.App.Interop;
 using Halo.Core.Clock;
+using Halo.Core.Diagnostics;
 using Halo.Core.Island;
 using Halo.Core.Settings;
 using Halo.Core.Shell;
@@ -60,6 +61,7 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
     private readonly DiagnosticsLog? _log;
     private readonly IslandFault _fault;
     private readonly SettingsStore _store;
+    private readonly LogFile? _fileLog;
     private HaloSettings _settings = HaloSettings.Defaults;
     private bool _savePending;
     private readonly IslandController _controller;
@@ -84,13 +86,17 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
     private bool _reducedMotion;
     private int _transitionId;
 
-    public IslandWindow(DiagnosticsLog? log, SettingsStore store, IslandFault fault = IslandFault.None)
+    public IslandWindow(DiagnosticsLog? log, SettingsStore store, LogFile? fileLog = null, IslandFault fault = IslandFault.None)
     {
         _log = log;
+        _fileLog = fileLog;
         _store = store;
         _fault = fault;
         _controller = new IslandController(new WindowTimer(this), IslandTiming.Default);
     }
+
+    /// <summary>Folder of the local diagnostic log (Settings › Open log folder), or null without a file log.</summary>
+    public string? LogDirectory => _fileLog?.Directory;
 
     /// <summary>The settings in effect.</summary>
     public HaloSettings Settings => _settings;
@@ -127,6 +133,12 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
         Check(CreateDispatcherQueueController(options, out _), "CreateDispatcherQueueController");
         _settings = _store.Load(out var settingsStatus);
         _log?.Write("settings", ("status", SettingsToken(settingsStatus)), ("invalid_fields", _store.LastIssues.Count));
+        _fileLog?.Write(
+            settingsStatus is SettingsLoadStatus.RecoveredDefaults or SettingsLoadStatus.RecoveredFromBackup || _store.LastIssues.Count > 0 ? LogLevel.Warning : LogLevel.Information,
+            "app.start",
+            ("settings", SettingsToken(settingsStatus)),
+            ("invalid_fields", _store.LastIssues.Count),
+            ("dpi", (int)PrimaryWorkArea().Dpi));
         _reducedMotion = !AnimationsEnabled() || _settings.ReduceMotion;
         _taskbarCreated = RegisterWindowMessageW("TaskbarCreated");
         _clock = ClockFace.Read(DateTimeOffset.Now, CultureInfo.CurrentCulture);
@@ -177,6 +189,7 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
         }
 
         _log?.Write("exit", ("code", 0));
+        _fileLog?.Write(LogLevel.Information, "app.exit", ("code", 0));
         return 0;
     }
 
@@ -252,6 +265,7 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
         {
             // A failed redraw or placement must not take the island down (NFR-05); the next event retries.
             s_current?._log?.Write("error", ("hresult", ex.HResult));
+            s_current?._fileLog?.Write(LogLevel.Error, "window.error", ("type", ex.GetType().Name), ("hresult", ex.HResult), ("message_id", (long)msg));
         }
 
         return DefWindowProcW(hwnd, msg, wParam, lParam);
@@ -625,7 +639,12 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
         {
             if (s.HideInFullscreen && !_fullscreen.IsRunning)
             {
-                _log?.Write("fullscreen.watch", ("status", _fullscreen.Start() ? "running" : "failed"));
+                var started = _fullscreen.Start();
+                _log?.Write("fullscreen.watch", ("status", started ? "running" : "failed"));
+                if (!started)
+                {
+                    _fileLog?.Write(LogLevel.Warning, "fullscreen.unavailable");
+                }
             }
             else if (!s.HideInFullscreen && _fullscreen.IsRunning)
             {
@@ -657,6 +676,7 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
         {
             // NFR-05: a failed save never takes the island down; the settings stay in effect for this session.
             _log?.Write("settings.save_failed", ("hresult", ex.HResult));
+            _fileLog?.Write(LogLevel.Warning, "settings.save_failed", ("type", ex.GetType().Name), ("hresult", ex.HResult));
         }
     }
 
@@ -807,6 +827,10 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
 
         // The island stays fully usable without the icon (right-click menu, --exit), and TaskbarCreated retries.
         _log?.Write("tray", ("status", ok ? "added" : "failed"), ("reason", reason), ("hwnd", (long)_hwnd));
+        if (!ok)
+        {
+            _fileLog?.Write(LogLevel.Warning, "tray.failed", ("reason", reason));
+        }
     }
 
     /// <summary>Tray icon events (NOTIFYICON_VERSION_4): left click or Space/Enter toggles, the context menu offers the rest.</summary>

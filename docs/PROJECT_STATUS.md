@@ -391,6 +391,32 @@ here as the audit trail.
   Island desktop 28/28 in 2 consecutive runs; unit 205/205.
 - **Not done:** high-contrast and text-scaling review (FR-A11Y-04/06), and a Narrator pass, which needs a person
   listening; Axe.Windows is not installed.
+- **Commit:** `7ce9c9d`.
+
+### M2-F03 Error handling and local diagnostic logging — PASS
+
+- **Requirements:** FR-APP-07, ADR §9.1/§9.2, SECURITY_AND_PRIVACY_DESIGN §6 (as-built note there), NFR-05.
+- **Log:** `<data folder>\logs\halo.log`, JSON lines, rolled at 1 MB, 5 files at most. Values can only be
+  numbers, booleans or tokens; anything else becomes `redacted`. Each event name is limited to 20 lines a minute,
+  with the overflow counted. Write failures are dropped and counted.
+- **Recorded:**
+  - `app.start` (settings status, invalid-field count, DPI; warning level when settings had to be recovered);
+  - `app.exit`;
+  - `tray.failed`, `fullscreen.unavailable`, `settings.save_failed` (warnings);
+  - `window.error` (exception type, HRESULT and message ID from the window procedure);
+  - `app.start_failed` and `app.crash` (an `AppDomain.UnhandledException` handler; no auto-restart).
+  - Nothing per tick or per pointer move.
+- **Failure handling, confirmed or added:** a failing tray, full-screen hooks or settings save keeps the island
+  running; start-up failure cleans up (existing test); window-procedure exceptions are logged and the next event
+  retries.
+- **Settings:** an **Open log folder** button (Explorer, nothing uploaded).
+- **Unit tests:** 9 new (`LogFileTests.cs`: JSON shape and types; 5 free-text and injection cases redacted;
+  token rules; rolling at 1 MB with 5 files at most; per-minute limit with the drop count reported; write
+  failures counted, not thrown). Unit 214/214.
+- **Desktop test:** 1 new. A real run with an injected tray failure and a corrupt settings file writes
+  `app.start` (warning, recovered_defaults), `tray.failed` and `app.exit`. Every string value is a token, the data
+  path never appears, and a short run writes fewer than 20 lines. Island desktop 29/29.
+- **Not tested:** the "Open log folder" button itself (it would open an Explorer window on the owner's desktop).
 
 ## Next recommended action
 
