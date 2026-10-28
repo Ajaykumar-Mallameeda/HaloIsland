@@ -31,6 +31,9 @@
         "resolved": "8.0.0",
         "contentHash": "jrK22i5LRzxZCfGb+tGmke2VH7oE0DvcDlJ1HAKYU8cPmD8XnpUT0bYn2Gy98GEhGjtfbR/sxKTVb+dE770pfA=="
       },
+      "halo.core": {
+        "type": "Project"
+      },
       "halo.spikes.measurement": {
         "type": "Project"
       },

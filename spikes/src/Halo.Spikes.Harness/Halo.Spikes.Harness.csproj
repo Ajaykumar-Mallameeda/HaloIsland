@@ -19,5 +19,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Halo.Spikes.Measurement\Halo.Spikes.Measurement.csproj" />
     <ProjectReference Include="..\Halo.Spikes.Windows\Halo.Spikes.Windows.csproj" />
+    <!-- app-check: the real island's layout, to locate it on screen. -->
+    <ProjectReference Include="..\..\..\src\Halo.Core\Halo.Core.csproj" />
   </ItemGroup>
 </Project>

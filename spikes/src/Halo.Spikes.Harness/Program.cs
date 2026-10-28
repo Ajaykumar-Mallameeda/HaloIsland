@@ -26,7 +26,7 @@ public static class Program
     {
         if (args.Length == 0)
         {
-            Console.Error.WriteLine("Usage: env | batch --hz 120|60 | s2-dpi --technique A|B | report [--date d] | dev-s1|dev-s2|dev-cal");
+            Console.Error.WriteLine("Usage: env | batch --hz 120|60 [--techniques C,A,B] | s2 [--techniques C,A,B] | app-check | s2-dpi --technique A|B | report [--date d] | dev-s1|dev-s2|dev-cal");
             return 2;
         }
 
@@ -42,7 +42,11 @@ public static class Program
                 case "env":
                     return Env(hz);
                 case "batch":
-                    return Batch(hz, date);
+                    return Batch(hz, date, Techniques(args));
+                case "s2":
+                    return S2Only(hz, date, Techniques(args));
+                case "app-check":
+                    return Print(AppCheck.Run($"APP-SMOKE-{hz}-{stamp}", date));
                 case "s2-dpi":
                     return Print(S2Dpi.Run(technique, $"S2-11M-{technique}", date));
                 case "report":
@@ -108,7 +112,7 @@ public static class Program
     }
 
     /// <summary>Gated matrix (§8.8) with the rerun rule of §8.9.</summary>
-    private static int Batch(int hz, string date)
+    private static int Batch(int hz, string date, Technique[] techniques)
     {
         Directory.CreateDirectory(Path.Combine(Paths.ResultsRoot, date));
         s_batchLog = new StreamWriter(Path.Combine(Paths.ResultsRoot, date, $"batch-{hz}.log"), append: true);
@@ -123,7 +127,7 @@ public static class Program
         var hashAb = Paths.BuildHash(Technique.A);
         var hashC = Paths.BuildHash(Technique.C);
         string HashOf(Technique x) => x == Technique.C ? hashC : hashAb;
-        Log($"batch {hz} Hz start; build A/B={hashAb} C={hashC}");
+        Log($"batch {hz} Hz start; techniques {string.Join(",", techniques)}; build A/B={hashAb} C={hashC}");
 
         // Calibration (§8.7).
         var baseOk = Pass(Gated($"CAL-{hz}-BASE", id => Calibration.Baseline(hz, id, date)));
@@ -149,7 +153,7 @@ public static class Program
 
         if (hz == 120)
         {
-            foreach (var x in All)
+            foreach (var x in techniques)
             {
                 Gated($"STU-{x}-{hz}", id => Startup.Run(x, hz, id, date, HashOf(x)));
             }
@@ -158,7 +162,7 @@ public static class Program
         var sessions = hz == 120 ? 3 : 1;
         for (var s = 1; s <= sessions; s++)
         {
-            foreach (var x in All)
+            foreach (var x in techniques)
             {
                 var session = s;
                 Gated($"S1-{x}-{hz}-{session}", id => S1Session.Run(x, hz, id, date, SessionTiming.Gated, HashOf(x)));
@@ -167,7 +171,7 @@ public static class Program
 
         if (hz == 120)
         {
-            foreach (var x in All)
+            foreach (var x in techniques)
             {
                 Gated($"S2-{x}", id => S2Checklist.Run(x, id, date, HashOf(x)));
             }
@@ -177,6 +181,36 @@ public static class Program
         Report.Write(date);
         return 0;
     }
+
+    /// <summary>Gated S2 checklist only (no S1, no calibration: S2 judges behaviour, not frame timing).</summary>
+    private static int S2Only(int hz, string date, Technique[] techniques)
+    {
+        Directory.CreateDirectory(Path.Combine(Paths.ResultsRoot, date));
+        s_batchLog = new StreamWriter(Path.Combine(Paths.ResultsRoot, date, $"s2-{hz}.log"), append: true);
+        var pre = new Validity();
+        RunEnvironment.Capture().Check(pre, hz, "precheck");
+        if (!pre.IsValid)
+        {
+            Log($"precheck failed: {string.Join(",", pre.Violations)}");
+            return 3;
+        }
+
+        var hashAb = Paths.BuildHash(Technique.A);
+        var hashC = Paths.BuildHash(Technique.C);
+        Log($"s2 {hz} Hz start; techniques {string.Join(",", techniques)}; build A/B={hashAb} C={hashC}");
+        foreach (var x in techniques)
+        {
+            Gated($"S2-{x}", id => S2Checklist.Run(x, id, date, x == Technique.C ? hashC : hashAb));
+        }
+
+        Log($"s2 {hz} Hz complete");
+        return 0;
+    }
+
+    private static Technique[] Techniques(string[] args) =>
+        StringArg(args, "--techniques") is { } list
+            ? list.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Select(Enum.Parse<Technique>).Distinct().ToArray()
+            : All;
 
     private static bool Pass(JsonObject summary) => OutcomeOf(summary) == Outcome.Pass.Label();
 
