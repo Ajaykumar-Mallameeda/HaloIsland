@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Desktop tests for the running island ([Trait("Category", "Integration")]): they start Halo.exe, show the island
+    at the top of the screen, click it and read it through UI Automation (FlaUI). They need an interactive desktop.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- Per-Monitor V2 like Halo.exe, so window and monitor coordinates are physical pixels. -->
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="FlaUI.Core" />
+    <PackageReference Include="FlaUI.UIA3" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Halo.Core\Halo.Core.csproj" />
+    <!-- Unit tests use internal types; the desktop tests start Halo.exe as a separate process. -->
+    <ProjectReference Include="..\..\src\Halo.App\Halo.App.csproj" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Project Halo island (ADR-001 §4.5, option C, provisionally selected in §13): Win32 host window with
+    WS_EX_NOREDIRECTIONBITMAP, a Windows.UI.Composition visual tree via ICompositorDesktopInterop, text through
+    Direct2D/DirectWrite into composition surfaces, and a custom UI Automation provider. No extra packages.
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AssemblyName>Halo</AssemblyName>
+    <RootNamespace>Halo.App</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Halo.Core\Halo.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Halo.App.Tests" />
+  </ItemGroup>
+</Project>

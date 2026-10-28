@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- ADR-001 §5: domain logic only. BCL only: no UI, no P/Invoke, nothing Windows-specific. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Halo.Core.Tests" />
+  </ItemGroup>
+</Project>

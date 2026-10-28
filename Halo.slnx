@@ -1,4 +1,12 @@
 <Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Halo.App/Halo.App.csproj" />
+    <Project Path="src/Halo.Core/Halo.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Halo.App.Tests/Halo.App.Tests.csproj" />
+    <Project Path="tests/Halo.Core.Tests/Halo.Core.Tests.csproj" />
+  </Folder>
   <Folder Name="/spikes/">
     <Project Path="spikes/src/Halo.Spikes.CompositionBaseline/Halo.Spikes.CompositionBaseline.csproj" />
     <Project Path="spikes/src/Halo.Spikes.Harness/Halo.Spikes.Harness.csproj" />
