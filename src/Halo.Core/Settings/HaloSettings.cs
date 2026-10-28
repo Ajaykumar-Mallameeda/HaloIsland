@@ -38,6 +38,9 @@ public sealed record HaloSettings
     /// <summary>Announce transient alerts to screen readers (FR-A11Y-02 "announcements can be turned off").</summary>
     public bool AnnounceAlerts { get; init; } = true;
 
+    /// <summary>Show what is playing (media sessions, FR-MED-01). Off: Halo does not open the media session manager.</summary>
+    public bool ShowMedia { get; init; } = true;
+
     /// <summary>Serialises to the versioned JSON file format (indented, stable key order).</summary>
     public string ToJson()
     {
@@ -53,6 +56,7 @@ public sealed record HaloSettings
             w.WriteBoolean("reduceMotion", ReduceMotion);
             w.WriteBoolean("hideInFullscreen", HideInFullscreen);
             w.WriteBoolean("announceAlerts", AnnounceAlerts);
+            w.WriteBoolean("showMedia", ShowMedia);
             w.WriteEndObject();
         }
 
@@ -130,6 +134,7 @@ public sealed record HaloSettings
                 ReduceMotion = Bool("reduceMotion", d.ReduceMotion),
                 HideInFullscreen = Bool("hideInFullscreen", d.HideInFullscreen),
                 AnnounceAlerts = Bool("announceAlerts", d.AnnounceAlerts),
+                ShowMedia = Bool("showMedia", d.ShowMedia),
             };
             return true;
         }

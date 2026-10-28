@@ -492,6 +492,80 @@ Smoke run `APP-SMOKE-120-195953` (valid, 120 Hz), SMOKE and not a verdict:
 | Transitions | 20/20 valid; 1 with one long frame; max 16.7 ms |
 | Exit p50 | 71 ms; 0 processes left |
 
+### M3-F01 Media session and now playing — PASS
+
+- **Requirements:** FR-MED-01 (show what is playing, fall back when it ends), FR-MED-03 (session choice), FR-MED-04
+  (art from the session only), SECURITY_AND_PRIVACY_DESIGN §2, §3 and §6.
+- **API:** `GlobalSystemMediaTransportControlsSessionManager` (GSMTC) from the Windows SDK projection that is
+  already referenced. No new package.
+- **Session choice (`MediaSessionSelector`):** Windows' current session while it is listed, else the first one
+  that is playing, else the first one.
+- **Events, no polling:** sessions, current session, properties, playback and timeline events post one message.
+  The island debounces bursts (150 ms) into one refresh, built off the UI thread. Timeline and playback events
+  reuse the cached metadata, and art is re-decoded only when the title, artist or album changes.
+- **User-visible:**
+  - compact pill: a play or pause glyph and the title while a session exists, otherwise the clock;
+  - expanded card: 96 px art (or a placeholder), title, artist, a progress bar and "1:23 / 3:45" when the player
+    reports a valid timeline;
+  - the UIA name becomes "Halo, Playing: <title> by <artist>, <time>, <date>";
+  - when the session closes, the island returns to the clock.
+- **Setting:** "Show what is playing (title, artist, artwork)", `showMedia`, default on. Off releases the
+  manager.
+- **Failure handling:** if the manager fails to start, media is marked unavailable (logged once as a warning)
+  and the island runs without it. A session that disappears mid-read is retried on the next event
+  (`media.refresh_failed`, type and HRESULT only).
+- **Files:** `Halo.Core/Media/MediaModel.cs`, `Halo.App/Island/MediaWatcher.cs`, `IslandVisuals.cs` (media card),
+  `Interop/TextRenderer.cs` (art and glyphs), `IslandWindow.cs`, `SettingsWindow.cs`, `HaloSettings.cs`.
+- **Unit tests:** `MediaModelTests` covers:
+  - no session, Windows' current session wins, playing session, first session;
+  - text cleaning: whitespace, control and zero-width characters, null, a 512-character cap;
+  - timeline: interpolation, pause, hours, invalid timelines hidden, non-zero start;
+  - missing title or artist in the summaries.
+  Settings tests cover the new key.
+- **Desktop tests (real GSMTC):** the test process is the media session: a Windows `MediaPlayer` at volume 0
+  looping `C:\Windows\Media\Alarm01.wav`, with a synthetic title and artist. Nothing is downloaded or heard.
+  - **Shown and ended:** the title arrives, the UIA name follows, the expanded card is drawn, pause is noticed,
+    and closing the session returns the island to the clock;
+  - **Off and private:** with `showMedia` off there are no media states; with it on, the title and artist appear
+    in neither the log file nor the diagnostics.
+- **Test defect found and fixed (audit trail, 2026-10-28):** two runs failed because another app's session became
+  Windows' current session mid-test, and the island correctly followed it. The tests now check for media
+  sessions from other apps first, wait up to 15 s, and fail with an explicit message if one is still present.
+  The `media` diagnostic gained a `sessions` count. The product's session choice did not change.
+- **Not covered:** artwork was checked with the placeholder path only (the test session has no thumbnail);
+  multiple real sessions from different apps were covered only by unit tests; no browser or Spotify session was
+  tested.
+- **Commit:** see M3-F02 (one commit for both, because they share the media card).
+
+### M3-F02 Playback controls — PASS
+
+- **Requirements:** FR-MED-02 (previous, play/pause, next), FR-MED-05 (progress), M3-F02 contract.
+- **Behaviour:**
+  - three buttons on the media card (`MediaControls.Layout`). A button appears only when the session enables
+    that command, and play/pause shows the action it will take;
+  - a press captures the pointer, and the command runs on release over the same button. Button clicks never
+    collapse or toggle the island; empty panel space keeps the ordinary click-to-collapse;
+  - the command goes to the session that was selected **at press time**. If another session is selected by
+    release, it is dropped as `stale`;
+  - commands are sent off the UI thread. The island does not assume success: it shows what the session reports
+    next. Results are logged as `accepted`, `refused` or `failed` (a vanished session; logged as a warning with
+    its HRESULT);
+  - progress is redrawn at 1 Hz only while the card is visible and playing. There is no timer when paused,
+    collapsed or hidden.
+- **Seeking:** not built. GSMTC playback-position changes are not reliable across players, and the contract
+  allows leaving it out.
+- **Unit tests:** `MediaControlsTests`: no session, no buttons; only enabled commands are offered; buttons sit
+  inside the expanded shape and are large enough; hit testing, including the gaps; the play/pause glyph.
+- **Desktop test (real session and pointer):** clicking play/pause really pauses and resumes the player, and the
+  island follows the session's own report and stays pinned. A click on hidden Next sends nothing and collapses
+  the island like any panel click. Once the player enables Next, the island notices; after re-expanding, the
+  same spot sends Next and the player receives it.
+- **Test defect found and fixed:** the test expected the island to stay open after a click on hidden Next. That
+  click lands on empty panel space, which collapses the island by design, so the test now waits for the
+  collapse and expands again.
+- **Results:** media desktop tests 3/3 in 3 consecutive runs; unit 250/250; island desktop 37/37.
+- **Commit:** MEDIA_COMMIT_PENDING.
+
 ## Next recommended action
 
 1. Owner reviews E1–E3 (E2 now has a precise proposal).

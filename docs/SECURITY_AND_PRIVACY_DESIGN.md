@@ -92,6 +92,18 @@ is revisited if notification content is ever persisted (it is not, by design).
 - Write failures are dropped and counted, and never stop the island.
 - Settings › **Open log folder** shows the folder in File Explorer.
 
+**As built, media (M3-F01/F02, 2026-10-29):**
+
+- Title, artist and album art stay in memory for as long as the session is shown. They are not saved, logged or
+  sent anywhere. Art comes only from the session's own thumbnail and is never downloaded: at most 4 MB, decoded
+  off the UI thread to 96 × 96 px, with a 2 s timeout.
+- Session text is cleaned (`MediaText.Clean`): control and format characters are dropped, whitespace is
+  collapsed and the length is capped at 512 characters. It is drawn as plain text.
+- Diagnostics carry tokens and counts only: state, which controls exist, title *length*, session count and
+  command results. Source app IDs are never logged.
+- Settings › "Show what is playing" (`showMedia`) turns the integration off completely. The session manager is
+  released and no events are received.
+
 ## 7. Licensing, intellectual property and reverse-engineering boundary
 
 | Topic | Position |

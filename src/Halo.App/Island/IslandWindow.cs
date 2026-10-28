@@ -5,6 +5,7 @@ using Halo.App.Interop;
 using Halo.Core.Clock;
 using Halo.Core.Diagnostics;
 using Halo.Core.Island;
+using Halo.Core.Media;
 using Halo.Core.Settings;
 using Halo.Core.Shell;
 using Windows.UI.Composition;
@@ -34,6 +35,11 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
     private const nuint FullscreenTimerId = 3;
     private const nuint AlertTimerId = 4;
     private const nuint SaveTimerId = 5;
+    private const nuint MediaDebounceTimerId = 6;
+    private const nuint MediaTickTimerId = 7;
+
+    /// <summary>Media events closer together than this become one refresh (no flicker on rapid metadata changes).</summary>
+    private const uint MediaDebounceMs = 150;
 
     /// <summary>Settings are written at most once a second (ADR-001 §8 debounce).</summary>
     private const uint SaveDebounceMs = 1000;
@@ -75,6 +81,11 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
     private TrayIcon? _tray;
     private FullscreenWatcher? _fullscreen;
     private SettingsWindow? _settingsWindow;
+    private MediaWatcher? _media;
+    private MediaSnapshot? _mediaSnapshot;
+    private bool _mediaUnavailableLogged;
+    private MediaCommand? _pressedMedia;
+    private string? _pressedMediaSession;
     private IslandLayout _layout = null!;
     private ClockReading _clock = null!;
     private bool _tracking;
@@ -118,7 +129,9 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
 
     public bool IsExpanded => State.IsExpanded;
 
-    public string AccessibleName => $"Halo, {_clock.TimeWithDesignator}, {_clock.LongDate}";
+    public string AccessibleName => _mediaSnapshot is { } m
+        ? $"Halo, {m.AccessibleSummary}, {_clock.TimeWithDesignator}, {_clock.LongDate}"
+        : $"Halo, {_clock.TimeWithDesignator}, {_clock.LongDate}";
 
     public string? AccessibleDescription => State.Alert is { } alert ? alert.Content.Text : State.IsExpanded ? _clock.DayProgressText : null;
 
@@ -340,9 +353,24 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
                 }
 
                 return 0;
+            case WmLButtonDown when MediaButtonAt(LowWord(lParam), HighWord(lParam)) is { } command:
+                // A transport button: it acts on the session and does not collapse or toggle the island.
+                _pressedMedia = command;
+                _pressedMediaSession = _media?.Selected.Id;
+                _ = SetCapture(hwnd);
+                return 0;
             case WmLButtonDown:
                 _ = SetCapture(hwnd);
                 Apply(IslandInput.PointerPressed, "pointer");
+                return 0;
+            case WmLButtonUp when _pressedMedia is { } pressed:
+                _pressedMedia = null;
+                _ = ReleaseCapture();
+                if (MediaButtonAt(LowWord(lParam), HighWord(lParam)) == pressed)
+                {
+                    RunMediaCommand(pressed, _pressedMediaSession);
+                }
+
                 return 0;
             case WmRButtonDown:
                 // Holding the right button must not let the dwell open the island under the menu.
@@ -376,6 +404,19 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
                 // Win32 timers repeat; the island's timers are one-shot.
                 _ = KillTimer(hwnd, IntentTimerId);
                 Present(_controller.TimerElapsed(IslandTimerSlot.Intent), "hover");
+                return 0;
+            case MediaWatcher.DirtyMessage:
+                _ = SetTimer(hwnd, MediaDebounceTimerId, MediaDebounceMs, 0);
+                return 0;
+            case WmTimer when (nuint)wParam == MediaDebounceTimerId:
+                _ = KillTimer(hwnd, MediaDebounceTimerId);
+                OnMediaDirty();
+                return 0;
+            case MediaWatcher.SnapshotMessage:
+                ApplyMedia(_media?.Latest);
+                return 0;
+            case WmTimer when (nuint)wParam == MediaTickTimerId:
+                _visuals?.UpdateMediaProgress(DateTimeOffset.Now);
                 return 0;
             case WmTimer when (nuint)wParam == SaveTimerId:
                 _ = KillTimer(hwnd, SaveTimerId);
@@ -455,6 +496,10 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
                 _fullscreen?.Dispose();
                 _fullscreen = null;
                 _settingsWindow?.Dispose();
+                _ = KillTimer(hwnd, MediaDebounceTimerId);
+                _ = KillTimer(hwnd, MediaTickTimerId);
+                _media?.Dispose();
+                _media = null;
                 _settingsWindow = null;
                 _ = KillTimer(hwnd, IntentTimerId);
                 _ = KillTimer(hwnd, ClockTimerId);
@@ -518,6 +563,11 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
         if (transition.VisibilityChanged)
         {
             ApplyVisibility(source);
+        }
+
+        if (transition.PresentationChanged || transition.VisibilityChanged)
+        {
+            UpdateMediaTick();
         }
 
         var nameBefore = AccessibleName;
@@ -654,6 +704,18 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
         var s = _settings;
         _controller.SetTiming(new IslandTiming(TimeSpan.FromMilliseconds(s.HoverDwellMs), TimeSpan.FromMilliseconds(s.LeaveGraceMs)) { HoverEnabled = s.HoverToExpand });
         _reducedMotion = !AnimationsEnabled() || s.ReduceMotion;
+        if (s.ShowMedia && _media is null && _hwnd != 0)
+        {
+            _media = new MediaWatcher(_hwnd, _log);
+            _ = _media.StartAsync();
+        }
+        else if (!s.ShowMedia && _media is not null)
+        {
+            _media.Dispose();
+            _media = null;
+            ApplyMedia(null);
+        }
+
         if (_fullscreen is not null)
         {
             if (s.HideInFullscreen && !_fullscreen.IsRunning)
@@ -707,6 +769,97 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
         SettingsLoadStatus.RecoveredFromBackup => "recovered_backup",
         _ => "recovered_defaults",
     };
+
+    /// <summary>Debounced media event: reports a failed start once, then builds a new snapshot off the UI thread.</summary>
+    private void OnMediaDirty()
+    {
+        if (_media is null)
+        {
+            return;
+        }
+
+        if (_media.Status == MediaStatus.Unavailable)
+        {
+            if (!_mediaUnavailableLogged)
+            {
+                _mediaUnavailableLogged = true;
+                _log?.Write("media.status", ("status", "unavailable"), ("hresult", _media.FailureHResult));
+                _fileLog?.Write(LogLevel.Warning, "media.unavailable", ("hresult", _media.FailureHResult));
+            }
+
+            return;
+        }
+
+        _media.Refresh();
+    }
+
+    /// <summary>Shows a new media snapshot (null = no session) and keeps the progress timer in step.</summary>
+    private void ApplyMedia(MediaSnapshot? snapshot)
+    {
+        if (!_settings.ShowMedia)
+        {
+            snapshot = null;
+        }
+
+        if (snapshot == _mediaSnapshot)
+        {
+            return;
+        }
+
+        var nameBefore = AccessibleName;
+        _mediaSnapshot = snapshot;
+        _visuals?.ShowMedia(snapshot, DateTimeOffset.Now);
+        _automation?.RaiseChanged(State.IsExpanded, State.IsExpanded, nameBefore, AccessibleName);
+        UpdateMediaTick();
+
+        // Tokens only: never the title, artist or app (SECURITY_AND_PRIVACY_DESIGN §6).
+        _log?.Write(
+            "media",
+            ("state", snapshot is null ? "none" : snapshot.Playback.ToString().ToLowerInvariant()),
+            ("art", snapshot?.Art is null ? 0 : 1),
+            ("timeline", snapshot?.Timeline is null ? 0 : 1),
+            ("play_pause", snapshot?.CanPlayPause == true ? 1 : 0),
+            ("next", snapshot?.CanNext == true ? 1 : 0),
+            ("previous", snapshot?.CanPrevious == true ? 1 : 0),
+            ("title_length", snapshot?.Title.Length ?? 0),
+            ("sessions", snapshot?.SessionCount ?? 0));
+    }
+
+    /// <summary>The transport button under a client point while the media card is on screen.</summary>
+    private MediaCommand? MediaButtonAt(int x, int y) =>
+        State.IsExpanded && _mediaSnapshot is { } m ? MediaControls.HitTest(MediaControls.Layout(_layout, m), x, y) : null;
+
+    /// <summary>
+    /// Sends a transport command to the session that was selected when the button was pressed (a different session
+    /// selected since then makes the command stale, and it is dropped). The island does not assume success: it shows
+    /// whatever the session reports next. The result is logged as a token.
+    /// </summary>
+    private void RunMediaCommand(MediaCommand command, string? sessionId)
+    {
+        var (session, currentId) = _media?.Selected ?? default;
+        var token = command switch { MediaCommand.Previous => "previous", MediaCommand.Next => "next", _ => "play_pause" };
+        if (session is null || !string.Equals(sessionId, currentId, StringComparison.Ordinal))
+        {
+            _log?.Write("media.command", ("command", token), ("result", "stale"));
+            return;
+        }
+
+        MediaWatcher.Send(session, command, token, _log, _fileLog);
+    }
+
+    /// <summary>FR-MED-05: progress ticks at 1 Hz only while the media card is on screen and playing.</summary>
+    private void UpdateMediaTick()
+    {
+        var needed = _mediaSnapshot is { IsPlaying: true, Timeline: not null } && State.IsExpanded && State.Visible;
+        if (needed)
+        {
+            _ = SetTimer(_hwnd, MediaTickTimerId, 1000, 0);
+        }
+        else
+        {
+            _ = KillTimer(_hwnd, MediaTickTimerId);
+        }
+    }
 
     /// <summary>Requests a transient alert through the controller (the single arbitration path).</summary>
     internal void RaiseAlert(IslandAlert alert, string source)

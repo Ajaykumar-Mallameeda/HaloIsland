@@ -92,7 +92,7 @@ internal sealed unsafe partial class TextRenderer : IDisposable
 
     public CompositionGraphicsDevice GraphicsDevice { get; }
 
-    public TextFormat CreateFormat(string family, float sizePx, int weight, TextAlign align)
+    public TextFormat CreateFormat(string family, float sizePx, int weight, TextAlign align, bool trim = false)
     {
         nint format;
         fixed (char* familyName = family)
@@ -107,7 +107,61 @@ internal sealed unsafe partial class TextRenderer : IDisposable
         Check(Vtbl<int>(format, 3)(format, (int)align), "SetTextAlignment");
         Check(Vtbl<int>(format, 4)(format, 2), "SetParagraphAlignment");
         Check(Vtbl<int>(format, 5)(format, 1), "SetWordWrapping");
+        if (trim)
+        {
+            // Text from other apps (media titles) can be any length: cut it with "…" at a character boundary.
+            // IDWriteFactory::CreateEllipsisTrimmingSign is slot 20; IDWriteTextFormat::SetTrimming is slot 9.
+            nint sign;
+            Check(((delegate* unmanaged[Stdcall]<nint, nint, nint*, int>)(*(nint**)_dwriteFactory)[20])(_dwriteFactory, format, &sign), "CreateEllipsisTrimmingSign");
+            var trimming = new Trimming { Granularity = 1 };
+            Check(((delegate* unmanaged[Stdcall]<nint, Trimming*, nint, int>)(*(nint**)format)[9])(format, &trimming, sign), "SetTrimming");
+            _ = Marshal.Release(sign);
+        }
+
         return new TextFormat(format);
+    }
+
+    /// <summary>
+    /// Clears the surface and draws a square premultiplied-BGRA picture scaled to fill it (album art). Returns false
+    /// if the GPU device was lost.
+    /// </summary>
+    public bool TryDrawImage(CompositionDrawingSurface surface, byte[] pixels, int size)
+    {
+        ArgumentNullException.ThrowIfNull(surface);
+        ArgumentNullException.ThrowIfNull(pixels);
+        if (size <= 0 || pixels.Length < size * size * 4)
+        {
+            return true;
+        }
+
+        return WithContext(surface, (context, offset) =>
+        {
+            ((delegate* unmanaged[Stdcall]<nint, float, float, void>)(*(nint**)context)[51])(context, 96f, 96f);
+            var transform = stackalloc float[] { 1, 0, 0, 1, offset.X, offset.Y };
+            ((delegate* unmanaged[Stdcall]<nint, float*, void>)(*(nint**)context)[30])(context, transform);
+            var clear = stackalloc float[] { 0, 0, 0, 0 };
+            ((delegate* unmanaged[Stdcall]<nint, float*, void>)(*(nint**)context)[47])(context, clear);
+
+            // ID2D1RenderTarget::CreateBitmap(D2D1_SIZE_U, data, pitch, D2D1_BITMAP_PROPERTIES*, ID2D1Bitmap**) is
+            // slot 4; DrawBitmap(bitmap, dest, opacity, interpolation, source) is slot 26.
+            var props = new BitmapProperties { Format = 87, Alpha = 1, DpiX = 96, DpiY = 96 }; // B8G8R8A8_UNORM, premultiplied
+            nint bitmap;
+            fixed (byte* data = pixels)
+            {
+                Check(((delegate* unmanaged[Stdcall]<nint, SizeU, byte*, uint, BitmapProperties*, nint*, int>)(*(nint**)context)[4])(
+                    context, new SizeU((uint)size, (uint)size), data, (uint)(size * 4), &props, &bitmap), "CreateBitmap");
+            }
+
+            try
+            {
+                var dest = new RectF(0, 0, (float)surface.Size.Width, (float)surface.Size.Height);
+                ((delegate* unmanaged[Stdcall]<nint, nint, RectF*, float, int, RectF*, void>)(*(nint**)context)[26])(context, bitmap, &dest, 1f, 1, null);
+            }
+            finally
+            {
+                _ = Marshal.Release(bitmap);
+            }
+        });
     }
 
     public CompositionDrawingSurface CreateSurface(int widthPx, int heightPx) =>
@@ -209,6 +263,51 @@ internal sealed unsafe partial class TextRenderer : IDisposable
     }
 
     private static bool IsDeviceLost(int hr) => hr is DxgiErrorDeviceRemoved or DxgiErrorDeviceReset or D2DErrRecreateTarget;
+
+    /// <summary>BeginDraw on a composition surface, runs <paramref name="body"/>, EndDraw; false on device loss.</summary>
+    private static bool WithContext(CompositionDrawingSurface surface, Action<nint, Point> body)
+    {
+        var surfaceUnknown = ((WinRT.IWinRTObject)surface).NativeObject.ThisPtr;
+        Check(Marshal.QueryInterface(surfaceUnknown, in IidDrawingSurfaceInterop, out var interop), "QueryInterface(ICompositionDrawingSurfaceInterop)");
+        try
+        {
+            nint context;
+            Point offset;
+            int hr;
+            fixed (Guid* iid = &IidD2DDeviceContext)
+            {
+                hr = ((delegate* unmanaged[Stdcall]<nint, nint, Guid*, nint*, Point*, int>)(*(nint**)interop)[3])(interop, 0, iid, &context, &offset);
+            }
+
+            if (IsDeviceLost(hr))
+            {
+                return false;
+            }
+
+            Check(hr, "BeginDraw");
+            try
+            {
+                body(context, offset);
+            }
+            finally
+            {
+                hr = ((delegate* unmanaged[Stdcall]<nint, int>)(*(nint**)interop)[4])(interop);
+                _ = Marshal.Release(context);
+            }
+
+            if (IsDeviceLost(hr))
+            {
+                return false;
+            }
+
+            Check(hr, "EndDraw");
+            return true;
+        }
+        finally
+        {
+            _ = Marshal.Release(interop);
+        }
+    }
 
     private void DrawInto(nint context, Point offset, Size size, string text, TextFormat format, Color color, int smallFrom, float smallSize)
     {
@@ -358,6 +457,27 @@ internal sealed unsafe partial class TextRenderer : IDisposable
 
     [StructLayout(LayoutKind.Sequential)]
     private readonly record struct TextRange(uint Start, uint Length);
+
+    private readonly record struct SizeU(uint Width, uint Height);
+
+    private readonly record struct RectF(float Left, float Top, float Right, float Bottom);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct BitmapProperties
+    {
+        public int Format;
+        public int Alpha;
+        public float DpiX;
+        public float DpiY;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct Trimming
+    {
+        public int Granularity;
+        public uint Delimiter;
+        public uint DelimiterCount;
+    }
 
     [StructLayout(LayoutKind.Sequential)]
     private readonly record struct Point2F(float X, float Y);

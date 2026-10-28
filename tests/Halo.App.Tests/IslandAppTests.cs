@@ -891,6 +891,9 @@ public sealed partial class IslandAppTests
             .Where(e => e["event"]?.GetValue<string>() is "phase" or "transition.start")
             .Select(e => e["event"]!.GetValue<string>() == "phase" ? $"{e["phase"]}({e["source"]})" : $"[{e["dir"]}]"));
 
+        /// <summary>The current phase token (the last "phase" event), or "collapsed" if none was logged.</summary>
+        public string State() => LastPhase() ?? "collapsed";
+
         public string? LastPhase() => _events.LastOrDefault(e => e["event"]?.GetValue<string>() == "phase")?["phase"]?.GetValue<string>();
 
         /// <summary>Waits for a "phase" event with the given phase, optionally one logged after another event.</summary>

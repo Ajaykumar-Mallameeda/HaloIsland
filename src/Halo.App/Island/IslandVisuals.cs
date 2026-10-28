@@ -2,6 +2,7 @@ using System.Numerics;
 using Halo.App.Interop;
 using Halo.Core.Clock;
 using Halo.Core.Island;
+using Halo.Core.Media;
 using Windows.UI;
 using Windows.UI.Composition;
 
@@ -62,6 +63,28 @@ internal sealed class IslandVisuals : IDisposable
     private ClockReading? _clock;
     private AlertContent? _alert;
 
+    // Media (M3-F01): an expanded media card beside the clock group, and a compact glyph + title.
+    private readonly ContainerVisual _clockGroup;
+    private readonly ContainerVisual _mediaGroup;
+    private readonly SpriteVisual _artBackground;
+    private readonly SpriteVisual _art;
+    private readonly CompositionSurfaceBrush _artBrush;
+    private readonly TextLine _artPlaceholder;
+    private readonly TextLine _mediaTitle;
+    private readonly TextLine _mediaArtist;
+    private readonly TextLine _mediaTime;
+    private readonly TextLine _mediaClock;
+    private readonly SpriteVisual _mediaTrack;
+    private readonly SpriteVisual _mediaFill;
+    private readonly TextLine _compactMediaGlyph;
+    private readonly TextLine _compactMediaTitle;
+    private readonly TextLine _buttonPrevious;
+    private readonly TextLine _buttonPlayPause;
+    private readonly TextLine _buttonNext;
+    private CompositionDrawingSurface? _artSurface;
+    private MediaSnapshot? _media;
+    private int _artShown = -1;
+
     public IslandVisuals(Compositor compositor, CompositionTarget target, TextRenderer text, IslandLayout layout)
     {
         ArgumentNullException.ThrowIfNull(target);
@@ -95,16 +118,46 @@ internal sealed class IslandVisuals : IDisposable
 
         _compactDate = new TextLine(this, _compactContent);
         _compactTime = new TextLine(this, _compactContent);
-        _bigTime = new TextLine(this, _expandedContent);
-        _longDate = new TextLine(this, _expandedContent);
-        _wordmark = new TextLine(this, _expandedContent);
-        _progressLabel = new TextLine(this, _expandedContent);
+        _clockGroup = compositor.CreateContainerVisual();
+        _mediaGroup = compositor.CreateContainerVisual();
+        _mediaGroup.IsVisible = false;
+        _expandedContent.Children.InsertAtTop(_clockGroup);
+        _expandedContent.Children.InsertAtTop(_mediaGroup);
+        _bigTime = new TextLine(this, _clockGroup);
+        _longDate = new TextLine(this, _clockGroup);
+        _wordmark = new TextLine(this, _clockGroup);
+        _progressLabel = new TextLine(this, _clockGroup);
         _progressTrack = compositor.CreateSpriteVisual();
         _progressTrack.Brush = compositor.CreateColorBrush(Track);
         _progressFill = compositor.CreateSpriteVisual();
         _progressFill.Brush = compositor.CreateColorBrush(Fill);
-        _expandedContent.Children.InsertAtTop(_progressTrack);
-        _expandedContent.Children.InsertAtTop(_progressFill);
+        _clockGroup.Children.InsertAtTop(_progressTrack);
+        _clockGroup.Children.InsertAtTop(_progressFill);
+
+        _artBackground = compositor.CreateSpriteVisual();
+        _artBackground.Brush = compositor.CreateColorBrush(Track);
+        _mediaGroup.Children.InsertAtTop(_artBackground);
+        _artPlaceholder = new TextLine(this, _mediaGroup);
+        _art = compositor.CreateSpriteVisual();
+        _artBrush = compositor.CreateSurfaceBrush();
+        _artBrush.Stretch = CompositionStretch.Fill;
+        _art.Brush = _artBrush;
+        _mediaGroup.Children.InsertAtTop(_art);
+        _mediaTitle = new TextLine(this, _mediaGroup);
+        _mediaArtist = new TextLine(this, _mediaGroup);
+        _mediaTime = new TextLine(this, _mediaGroup);
+        _mediaClock = new TextLine(this, _mediaGroup);
+        _mediaTrack = compositor.CreateSpriteVisual();
+        _mediaTrack.Brush = compositor.CreateColorBrush(Track);
+        _mediaFill = compositor.CreateSpriteVisual();
+        _mediaFill.Brush = compositor.CreateColorBrush(Fill);
+        _mediaGroup.Children.InsertAtTop(_mediaTrack);
+        _mediaGroup.Children.InsertAtTop(_mediaFill);
+        _buttonPrevious = new TextLine(this, _mediaGroup);
+        _buttonPlayPause = new TextLine(this, _mediaGroup);
+        _buttonNext = new TextLine(this, _mediaGroup);
+        _compactMediaGlyph = new TextLine(this, _compactContent);
+        _compactMediaTitle = new TextLine(this, _compactContent);
 
         _alertGlyph = new TextLine(this, _alertContent);
         _alertWide = new TextLine(this, _alertContent);
@@ -168,6 +221,37 @@ internal sealed class IslandVisuals : IDisposable
         _progressFill.Offset = _progressTrack.Offset;
         RoundEnds(_progressTrack);
 
+        // Media card (expanded) and compact media summary.
+        var artPx = Snap(layout.Dip(72));
+        _artBackground.Offset = new Vector3(Snap(e.Left + layout.Dip(24)), Snap(e.Top + layout.Dip(22)), 0);
+        _artBackground.Size = new Vector2(artPx, artPx);
+        RoundCorners(_artBackground, (float)layout.Dip(10));
+        _art.Offset = _artBackground.Offset;
+        _art.Size = _artBackground.Size;
+        RoundCorners(_art, (float)layout.Dip(10));
+        _artSurface?.Dispose();
+        _artSurface = _text.CreateSurface((int)artPx, (int)artPx);
+        _artBrush.Surface = _artSurface;
+        _artShown = -1;
+        _artPlaceholder.Place(e.Left + layout.Dip(24), e.Top + layout.Dip(22), layout.Dip(72), layout.Dip(72), Format(IconFont, 26, Regular, TextAlign.Center), Tertiary);
+        _mediaTitle.Place(e.Left + layout.Dip(112), e.Top + layout.Dip(24), layout.Dip(284), layout.Dip(26), Format(DisplayFont, 17, Semibold, TextAlign.Leading, trim: true), Primary);
+        _mediaArtist.Place(e.Left + layout.Dip(112), e.Top + layout.Dip(52), layout.Dip(284), layout.Dip(20), Format(TextFont, 13, Regular, TextAlign.Leading, trim: true), Secondary);
+        _mediaTrack.Offset = new Vector3(Snap(e.Left + layout.Dip(112)), Snap(e.Top + layout.Dip(86)), 0);
+        _mediaTrack.Size = new Vector2(Snap(layout.Dip(284)), Snap(layout.Dip(4)));
+        _mediaFill.Offset = _mediaTrack.Offset;
+        RoundEnds(_mediaTrack);
+        _mediaTime.Place(e.Left + layout.Dip(112), e.Top + layout.Dip(96), layout.Dip(170), layout.Dip(18), Format(TextFont, 11.5, Regular, TextAlign.Leading), Tertiary);
+        _mediaClock.Place(e.Right - layout.Dip(24 + 110), e.Top + layout.Dip(96), layout.Dip(110), layout.Dip(18), Format(TextFont, 11.5, Semibold, TextAlign.Trailing), Tertiary, smallSize: Px(9.5f));
+        var all = new MediaSnapshot { Title = string.Empty, Artist = string.Empty, CanPrevious = true, CanPlayPause = true, CanNext = true };
+        foreach (var b in MediaControls.Layout(layout, all))
+        {
+            var line = b.Command switch { MediaCommand.Previous => _buttonPrevious, MediaCommand.Next => _buttonNext, _ => _buttonPlayPause };
+            line.Place(b.CenterX - (b.Size / 2), b.CenterY - (b.Size / 2), b.Size, b.Size, Format(IconFont, b.Command == MediaCommand.PlayPause ? 20 : 15, Regular, TextAlign.Center), Primary);
+        }
+
+        _compactMediaGlyph.Place(c.Left + layout.Dip(14), c.Top, layout.Dip(18), c.Height, Format(IconFont, 11, Regular, TextAlign.Center), Secondary);
+        _compactMediaTitle.Place(c.Left + layout.Dip(34), c.Top, layout.Dip(80), c.Height, Format(TextFont, 12.5, Semibold, TextAlign.Leading, trim: true), Secondary);
+
         var a = layout.Alert;
         _alertGlyph.Place(a.Left + layout.Dip(14), a.Top, layout.Dip(26), a.Height, Format(IconFont, 16, Regular, TextAlign.Center), Primary);
         _alertWide.Place(a.Left + layout.Dip(46), a.Top, layout.Dip(236), a.Height, Format(TextFont, 14, Semibold, TextAlign.Leading), Primary);
@@ -178,6 +262,37 @@ internal sealed class IslandVisuals : IDisposable
         _alertFill.Offset = _alertTrack.Offset;
         RoundEnds(_alertTrack);
         RedrawAll();
+    }
+
+    /// <summary>
+    /// Shows the selected media session (null = none: the clock view and the date come back). Only changed lines are
+    /// redrawn; the art surface only when the picture changes.
+    /// </summary>
+    public void ShowMedia(MediaSnapshot? media, DateTimeOffset now)
+    {
+        _media = media;
+        _clockGroup.IsVisible = media is null;
+        _mediaGroup.IsVisible = media is not null;
+        DrawText();
+        UpdateMediaProgress(now);
+    }
+
+    /// <summary>Moves the media progress bar and label (called at most once a second, only while it is visible).</summary>
+    public void UpdateMediaProgress(DateTimeOffset now)
+    {
+        var timeline = _media?.Timeline;
+        _mediaTrack.IsVisible = timeline is not null;
+        _mediaFill.IsVisible = timeline is not null;
+        if (timeline is null || _media is null)
+        {
+            _ = _mediaTime.Show(string.Empty);
+            return;
+        }
+
+        var fraction = Math.Clamp(timeline.FractionAt(now, _media.IsPlaying), 0, 1);
+        _mediaFill.Size = new Vector2(Math.Max(_mediaTrack.Size.Y, Snap(_mediaTrack.Size.X * fraction)), _mediaTrack.Size.Y);
+        RoundEnds(_mediaFill);
+        _ = _mediaTime.Show(timeline.LabelAt(now, _media.IsPlaying));
     }
 
     /// <summary>Shows the content of a transient alert (null clears it). Only changed lines are redrawn.</summary>
@@ -256,6 +371,9 @@ internal sealed class IslandVisuals : IDisposable
             line.Dispose();
         }
 
+        _artSurface?.Dispose();
+        _artSurface = null;
+
         foreach (var format in _formats)
         {
             format.Dispose();
@@ -276,7 +394,44 @@ internal sealed class IslandVisuals : IDisposable
         bar.Clip = _compositor.CreateGeometricClip(geometry);
     }
 
-    private IEnumerable<TextLine> Lines() => [_compactDate, _compactTime, _bigTime, _longDate, _wordmark, _progressLabel, _alertGlyph, _alertWide, _alertNarrow, _alertValue];
+    private IEnumerable<TextLine> Lines() => [_compactDate, _compactTime, _bigTime, _longDate, _wordmark, _progressLabel, _alertGlyph, _alertWide, _alertNarrow, _alertValue,
+        _artPlaceholder, _mediaTitle, _mediaArtist, _mediaTime, _mediaClock, _compactMediaGlyph, _compactMediaTitle, _buttonPrevious, _buttonPlayPause, _buttonNext];
+
+    private void RoundCorners(SpriteVisual visual, float radius)
+    {
+        var geometry = _compositor.CreateRoundedRectangleGeometry();
+        geometry.Size = visual.Size;
+        geometry.CornerRadius = new Vector2(radius);
+        visual.Clip = _compositor.CreateGeometricClip(geometry);
+    }
+
+    /// <summary>Media text and art; true unless the GPU device was lost.</summary>
+    private bool DrawMedia()
+    {
+        var m = _media;
+        var ok = true;
+        ok &= _compactMediaGlyph.Show(m is null ? string.Empty : m.IsPlaying ? "\uE768" : "\uE769");
+        ok &= _compactMediaTitle.Show(m is null ? string.Empty : m.Title.Length > 0 ? m.Title : m.Headline);
+        ok &= _mediaTitle.Show(m is null ? string.Empty : m.Title.Length > 0 ? m.Title : "Unknown title");
+        ok &= _mediaArtist.Show(m?.Artist ?? string.Empty);
+        ok &= _mediaClock.Show(m is null || _clock is null ? string.Empty : _clock.TimeWithDesignator, _clock?.Designator.Length ?? 0);
+        // FR-MED-02: only controls the session reports as enabled are shown.
+        var playing = m?.IsPlaying == true;
+        ok &= _buttonPrevious.Show(m?.CanPrevious == true ? MediaControls.Glyph(MediaCommand.Previous, playing) : string.Empty);
+        ok &= _buttonPlayPause.Show(m?.CanPlayPause == true ? MediaControls.Glyph(MediaCommand.PlayPause, playing) : string.Empty);
+        ok &= _buttonNext.Show(m?.CanNext == true ? MediaControls.Glyph(MediaCommand.Next, playing) : string.Empty);
+        var hasArt = m?.Art is { Count: > 0 };
+        _art.IsVisible = hasArt;
+        ok &= _artPlaceholder.Show(m is not null && !hasArt ? "\uE8D6" : string.Empty);
+        if (hasArt && _artSurface is not null && m!.ArtVersion != _artShown)
+        {
+            var drawn = _text.TryDrawImage(_artSurface, [.. m.Art!], m.ArtSize);
+            _artShown = drawn ? m.ArtVersion : -1;
+            ok &= drawn;
+        }
+
+        return ok;
+    }
 
     private ContainerVisual ContentFor(IslandPresentation presentation) => presentation switch
     {
@@ -304,9 +459,9 @@ internal sealed class IslandVisuals : IDisposable
 
     private float Px(double dip) => (float)_layout.Dip(dip);
 
-    private TextFormat Format(string family, double sizeDip, int weight, TextAlign align)
+    private TextFormat Format(string family, double sizeDip, int weight, TextAlign align, bool trim = false)
     {
-        var format = _text.CreateFormat(family, Px(sizeDip), weight, align);
+        var format = _text.CreateFormat(family, Px(sizeDip), weight, align, trim);
         _formats.Add(format);
         return format;
     }
@@ -316,7 +471,7 @@ internal sealed class IslandVisuals : IDisposable
         var ok = true;
         if (_clock is { } clock)
         {
-            ok &= _compactDate.Show(clock.ShortDate);
+            ok &= _compactDate.Show(_media is null ? clock.ShortDate : string.Empty);
             ok &= _compactTime.Show(clock.TimeWithDesignator, clock.Designator.Length);
             ok &= _bigTime.Show(clock.TimeWithDesignator, clock.Designator.Length);
             ok &= _longDate.Show(clock.LongDate);
@@ -326,6 +481,7 @@ internal sealed class IslandVisuals : IDisposable
         }
 
         ok &= _wordmark.Show("Halo");
+        ok &= DrawMedia();
         if (!ok)
         {
             // The GPU device was lost (driver update, adapter switch): replace it and draw everything again once.
@@ -337,11 +493,13 @@ internal sealed class IslandVisuals : IDisposable
 
             if (_clock is { } again)
             {
-                _ = _compactDate.Show(again.ShortDate) & _compactTime.Show(again.TimeWithDesignator, again.Designator.Length)
+                _ = _compactDate.Show(_media is null ? again.ShortDate : string.Empty) & _compactTime.Show(again.TimeWithDesignator, again.Designator.Length)
                     & _bigTime.Show(again.TimeWithDesignator, again.Designator.Length) & _longDate.Show(again.LongDate) & _progressLabel.Show(again.DayProgressText);
             }
 
             _ = _wordmark.Show("Halo");
+            _artShown = -1;
+            _ = DrawMedia();
         }
     }
 
