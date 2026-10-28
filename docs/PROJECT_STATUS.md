@@ -473,6 +473,24 @@ here as the audit trail.
   - unit settings tests extended for the new key. Unit 225/225; island desktop 34/34.
 - **Not done:** Narrator pass (needs a person listening), Axe.Windows (not installed), high contrast, text
   scaling, the keyboard focus path to the island (FR-ISL-07, opt-in shortcut).
+- **Commit:** `43f4040`.
+
+### M2 completion gate — PASS (with M2-F05 PARTIAL)
+
+Locked restore passed; clean Release build (`--no-incremental`) 0 warnings; unit 225/225; island desktop 34/34
+in 2 consecutive runs; spike desktop 5/5; no Halo process left. Verified in those suites: persistence and
+recovery, every settings-window control and its effect, log privacy and bounds, work-area changes, the UIA
+surface the island exposes, tray lifecycle and single instance.
+
+Smoke run `APP-SMOKE-120-195953` (valid, 120 Hz), SMOKE and not a verdict:
+
+| Measurement | Value |
+|---|---|
+| Start → first frame p50 | 185.2 ms (M1 175.2 ms; settings load and log file added) |
+| Idle 90 s | 0 ms CPU, 1 frame, 1 clock update |
+| Private / working set | 17.4 / 60.7 MB |
+| Transitions | 20/20 valid; 1 with one long frame; max 16.7 ms |
+| Exit p50 | 71 ms; 0 processes left |
 
 ## Next recommended action
 
