@@ -15,9 +15,11 @@ internal sealed unsafe class TrayIcon(nint hwnd) : IDisposable
     public const uint CallbackMessage = WmApp + 2;
 
     public const uint IconId = 1;
-    private const string Tip = "Halo";
+    private const string NormalTip = "Halo";
+    private const string QuietTip = "Halo \u2013 Do Not Disturb is on";
 
     private nint _icon;
+    private string _tip = NormalTip;
 
     public bool IsAdded { get; private set; }
 
@@ -41,6 +43,17 @@ internal sealed unsafe class TrayIcon(nint hwnd) : IDisposable
         _ = Shell_NotifyIconW(NimSetVersion, &data);
         IsAdded = true;
         return true;
+    }
+
+    /// <summary>Shows in the icon's tooltip whether Halo's quiet mode is on (G-F03).</summary>
+    public void SetQuiet(bool quiet)
+    {
+        _tip = quiet ? QuietTip : NormalTip;
+        if (IsAdded)
+        {
+            var data = Data(NifTip | NifShowTip);
+            _ = Shell_NotifyIconW(NimModify, &data);
+        }
     }
 
     /// <summary>Redraws the image for a new DPI (for example after a scale change).</summary>
@@ -154,7 +167,7 @@ internal sealed unsafe class TrayIcon(nint hwnd) : IDisposable
             CallbackMessage = CallbackMessage,
             Icon = _icon,
         };
-        Tip.AsSpan().CopyTo(new Span<char>(data.Tip, 128));
+        _tip.AsSpan().CopyTo(new Span<char>(data.Tip, 127));
         return data;
     }
 }

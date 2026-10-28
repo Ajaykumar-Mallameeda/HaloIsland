@@ -1,5 +1,6 @@
 using System.Numerics;
 using Halo.App.Interop;
+using Halo.Core.Activities;
 using Halo.Core.Audio;
 using Halo.Core.Clock;
 using Halo.Core.Island;
@@ -98,6 +99,27 @@ internal sealed class IslandVisuals : IDisposable
     private readonly SpriteVisual _volumeThumb;
     private VolumeReading? _volume;
 
+    // Activities (B-F03/C-F02): compact slot, expanded card, page dots.
+    private readonly ContainerVisual _compactActivity;
+    private readonly TextLine _compactActivityGlyph;
+    private readonly TextLine _compactActivityText;
+    private readonly SpriteVisual _compactLevelTrack;
+    private readonly SpriteVisual _compactLevelFill;
+    private readonly ContainerVisual _activityGroup;
+    private readonly TextLine _activityGlyph;
+    private readonly TextLine _activityTitle;
+    private readonly TextLine _activitySubtitle;
+    private readonly SpriteVisual _activityTrack;
+    private readonly SpriteVisual _activityFill;
+    private readonly TextLine[] _activityButtons;
+    private readonly SpriteVisual[] _dots;
+    private readonly CompositionColorBrush[] _dotBrushes;
+    private IslandActivity? _activity;
+    private int _activityOthers;
+    private bool _showPrivate;
+    private IslandPage _page = IslandPage.Clock;
+    private IReadOnlyList<IslandPage> _pages = [IslandPage.Clock];
+
     // Status cluster (M3-F04/F05): top right of the open clock view, in place of the wordmark.
     private readonly TextLine _statusGlyphs;
     private readonly TextLine _statusText;
@@ -179,6 +201,41 @@ internal sealed class IslandVisuals : IDisposable
         _buttonNext = new TextLine(this, _mediaGroup);
         _compactMediaGlyph = new TextLine(this, _compactContent);
         _compactMediaTitle = new TextLine(this, _compactContent);
+
+        _compactActivity = compositor.CreateContainerVisual();
+        _compactContent.Children.InsertAtTop(_compactActivity);
+        _compactActivityGlyph = new TextLine(this, _compactActivity);
+        _compactActivityText = new TextLine(this, _compactActivity);
+        _compactLevelTrack = compositor.CreateSpriteVisual();
+        _compactLevelTrack.Brush = compositor.CreateColorBrush(Track);
+        _compactLevelFill = compositor.CreateSpriteVisual();
+        _compactLevelFill.Brush = compositor.CreateColorBrush(Fill);
+        _compactActivity.Children.InsertAtTop(_compactLevelTrack);
+        _compactActivity.Children.InsertAtTop(_compactLevelFill);
+
+        _activityGroup = compositor.CreateContainerVisual();
+        _activityGroup.IsVisible = false;
+        _expandedContent.Children.InsertAtTop(_activityGroup);
+        _activityGlyph = new TextLine(this, _activityGroup);
+        _activityTitle = new TextLine(this, _activityGroup);
+        _activitySubtitle = new TextLine(this, _activityGroup);
+        _activityTrack = compositor.CreateSpriteVisual();
+        _activityTrack.Brush = compositor.CreateColorBrush(Track);
+        _activityFill = compositor.CreateSpriteVisual();
+        _activityFill.Brush = compositor.CreateColorBrush(Fill);
+        _activityGroup.Children.InsertAtTop(_activityTrack);
+        _activityGroup.Children.InsertAtTop(_activityFill);
+        _activityButtons = [new TextLine(this, _activityGroup), new TextLine(this, _activityGroup), new TextLine(this, _activityGroup)];
+        _dots = new SpriteVisual[3];
+        _dotBrushes = new CompositionColorBrush[3];
+        for (var i = 0; i < _dots.Length; i++)
+        {
+            _dotBrushes[i] = compositor.CreateColorBrush(Tertiary);
+            _dots[i] = compositor.CreateSpriteVisual();
+            _dots[i].Brush = _dotBrushes[i];
+            _dots[i].IsVisible = false;
+            _expandedContent.Children.InsertAtTop(_dots[i]);
+        }
 
         _volumeGroup = compositor.CreateContainerVisual();
         _expandedContent.Children.InsertAtTop(_volumeGroup);
@@ -290,6 +347,7 @@ internal sealed class IslandVisuals : IDisposable
 
         _compactMediaGlyph.Place(c.Left + layout.Dip(14), c.Top, layout.Dip(18), c.Height, Format(IconFont, 11, Regular, TextAlign.Center), Secondary);
         _compactMediaTitle.Place(c.Left + layout.Dip(34), c.Top, layout.Dip(80), c.Height, Format(TextFont, 12.5, Semibold, TextAlign.Leading, trim: true), Secondary);
+        PlaceActivity(layout);
 
         PlaceVolume(layout);
 
@@ -312,10 +370,72 @@ internal sealed class IslandVisuals : IDisposable
     public void ShowMedia(MediaSnapshot? media, DateTimeOffset now)
     {
         _media = media;
-        _clockGroup.IsVisible = media is null;
-        _mediaGroup.IsVisible = media is not null;
         DrawText();
         UpdateMediaProgress(now);
+    }
+
+    /// <summary>
+    /// Shows the primary activity (null = none) in the compact slot and on the activity page. <paramref name="others"/>
+    /// further activities show as "+N". Private text is redacted unless <paramref name="showPrivate"/>.
+    /// </summary>
+    public void ShowActivity(IslandActivity? activity, int others, bool showPrivate, bool reducedMotion)
+    {
+        var levelBefore = _activity?.Level;
+        (_activity, _activityOthers, _showPrivate) = (activity, others, showPrivate);
+        DrawText();
+        DrawActivityLevel(MotionPlanner.Level(levelBefore, activity?.Level, reducedMotion));
+    }
+
+    /// <summary>
+    /// Shows one page of the expanded island and its page dots (FR-ISL-08). A change while the page is on screen
+    /// swaps the content (MOTION_SYSTEM.md); <paramref name="animate"/> is false when the island is not expanded.
+    /// </summary>
+    public void ShowPage(IslandPage page, IReadOnlyList<IslandPage> pages, bool animate, bool reducedMotion)
+    {
+        var changed = page != _page;
+        (_page, _pages) = (page, pages);
+        _activityGroup.IsVisible = page == IslandPage.Activity;
+        _mediaGroup.IsVisible = page == IslandPage.Media;
+        _clockGroup.IsVisible = page == IslandPage.Clock;
+        var dots = ActivityLayout.Dots(_layout, pages.Count);
+        for (var i = 0; i < _dots.Length; i++)
+        {
+            _dots[i].IsVisible = i < dots.Count;
+            if (i < dots.Count)
+            {
+                var size = Snap(_layout.Dip(6));
+                _dots[i].Size = new Vector2(size, size);
+                _dots[i].Offset = new Vector3(Snap(dots[i].CenterX - (size / 2)), Snap(dots[i].CenterY - (size / 2)), 0);
+                RoundCorners(_dots[i], size / 2);
+                _dotBrushes[i].Color = pages[i] == page ? Primary : Tertiary;
+            }
+        }
+
+        if (changed && animate && MotionPlanner.Swap(reducedMotion) is { Count: > 0 } swap)
+        {
+            var spec = swap[0].Spec;
+            var a = _compositor.CreateScalarKeyFrameAnimation();
+            a.InsertKeyFrame(0f, 0.35f);
+            a.InsertKeyFrame(1f, 1f, _ease);
+            a.Duration = spec.Duration;
+            _expandedContent.StartAnimation("Opacity", a);
+        }
+    }
+
+    /// <summary>Emphasis (MOTION_SYSTEM.md): one gentle brightness step on the activity, never a flash.</summary>
+    public void Emphasise(IReadOnlyList<MotionStep> steps)
+    {
+        if (steps.Count == 0)
+        {
+            return;
+        }
+
+        var a = _compositor.CreateScalarKeyFrameAnimation();
+        a.InsertKeyFrame(0.5f, 0.7f, _ease);
+        a.InsertKeyFrame(1f, 1f, _ease);
+        a.Duration = steps[0].Spec.Duration;
+        _compactActivity.StartAnimation("Opacity", a);
+        _activityTitle.Visual.StartAnimation("Opacity", a);
     }
 
     /// <summary>Moves the media progress bar and label (called at most once a second, only while it is visible).</summary>
@@ -497,7 +617,8 @@ internal sealed class IslandVisuals : IDisposable
 
     private IEnumerable<TextLine> Lines() => [_compactDate, _compactTime, _bigTime, _longDate, _wordmark, _progressLabel, _alertGlyph, _alertWide, _alertNarrow, _alertValue,
         _artPlaceholder, _mediaTitle, _mediaArtist, _mediaTime, _mediaClock, _compactMediaGlyph, _compactMediaTitle, _buttonPrevious, _buttonPlayPause, _buttonNext,
-        _volumeGlyph, _volumeValue, _volumeNone, _statusGlyphs, _statusText];
+        _volumeGlyph, _volumeValue, _volumeNone, _statusGlyphs, _statusText, _compactActivityGlyph, _compactActivityText, _activityGlyph, _activityTitle,
+        _activitySubtitle, .. _activityButtons];
 
     private bool DrawStatus()
     {
@@ -556,6 +677,86 @@ internal sealed class IslandVisuals : IDisposable
         return ok;
     }
 
+    private void PlaceActivity(IslandLayout layout)
+    {
+        var c = layout.Compact;
+        var e = layout.Expanded;
+        _compactActivityGlyph.Place(c.Left + layout.Dip(14), c.Top, layout.Dip(18), c.Height, Format(IconFont, 12, Regular, TextAlign.Center), Primary);
+        _compactActivityText.Place(c.Left + layout.Dip(34), c.Top - layout.Dip(1.5), layout.Dip(84), c.Height, Format(TextFont, 13, Semibold, TextAlign.Leading, trim: true), Primary);
+        _compactLevelTrack.Offset = new Vector3(Snap(c.Left + layout.Dip(35)), Snap(c.Bottom - layout.Dip(8)), 0);
+        _compactLevelTrack.Size = new Vector2(Snap(layout.Dip(56)), Snap(layout.Dip(2.5)));
+        _compactLevelFill.Offset = _compactLevelTrack.Offset;
+        RoundEnds(_compactLevelTrack);
+
+        _activityGlyph.Place(e.Left + layout.Dip(24), e.Top + layout.Dip(28), layout.Dip(28), layout.Dip(40), Format(IconFont, 20, Regular, TextAlign.Center), Secondary);
+        _activityTitle.Place(e.Left + layout.Dip(58), e.Top + layout.Dip(16), layout.Dip(220), layout.Dip(62), Format(DisplayFont, 44, Semibold, TextAlign.Leading, trim: true), Primary);
+        _activitySubtitle.Place(e.Left + layout.Dip(26), e.Top + layout.Dip(78), layout.Dip(368), layout.Dip(24), Format(TextFont, 15, Regular, TextAlign.Leading, trim: true), Secondary);
+        _activityTrack.Offset = new Vector3(Snap(e.Left + layout.Dip(26)), Snap(e.Top + layout.Dip(116)), 0);
+        _activityTrack.Size = new Vector2(Snap(layout.Dip(368)), Snap(layout.Dip(6)));
+        _activityFill.Offset = _activityTrack.Offset;
+        RoundEnds(_activityTrack);
+        foreach (var square in ActivityLayout.Actions(layout, ActivityLayout.MaxActions))
+        {
+            _activityButtons[square.Index].Place(square.CenterX - (square.Size / 2), square.CenterY - (square.Size / 2), square.Size, square.Size, Format(IconFont, 16, Regular, TextAlign.Center), Primary);
+        }
+
+        _activityLevelShown = null;
+    }
+
+    private double? _activityLevelShown;
+
+    /// <summary>Activity text in the compact slot and the card; true unless the GPU device was lost.</summary>
+    private bool DrawActivity()
+    {
+        var a = _activity;
+        var ok = _compactActivityGlyph.Show(a?.Glyph ?? string.Empty);
+        var compact = a is null ? string.Empty : a.CompactFor(_showPrivate) + (_activityOthers > 0 ? $"  +{_activityOthers}" : string.Empty);
+        ok &= _compactActivityText.Show(compact);
+        ok &= _activityGlyph.Show(a?.Glyph ?? string.Empty);
+        ok &= _activityTitle.Show(a is null ? string.Empty : a.Privacy == ActivityPrivacy.Private && !_showPrivate ? a.RedactedText : a.Title);
+        ok &= _activitySubtitle.Show(a?.Subtitle ?? string.Empty);
+        var squares = ActivityLayout.Actions(_layout, a?.Actions.Count ?? 0);
+        for (var i = 0; i < _activityButtons.Length; i++)
+        {
+            // Buttons sit right-aligned: the placed slots are for three; fewer actions use the rightmost slots.
+            var slot = i - (ActivityLayout.MaxActions - squares.Count);
+            ok &= _activityButtons[i].Show(a is not null && slot >= 0 && slot < a.Actions.Count ? a.Actions[slot].Glyph : string.Empty);
+        }
+
+        return ok;
+    }
+
+    /// <summary>The activity's level bars (compact and card), animated between values when it has a previous value.</summary>
+    private void DrawActivityLevel(IReadOnlyList<MotionStep> steps)
+    {
+        var level = _activity?.Level;
+        _compactLevelTrack.IsVisible = level is not null;
+        _compactLevelFill.IsVisible = level is not null;
+        _activityTrack.IsVisible = level is not null;
+        _activityFill.IsVisible = level is not null;
+        if (level is not { } l || _activityLevelShown == l)
+        {
+            _activityLevelShown = level;
+            return;
+        }
+
+        _activityLevelShown = l;
+        l = Math.Clamp(l, 0, 1);
+        foreach (var (track, fill) in new[] { (_compactLevelTrack, _compactLevelFill), (_activityTrack, _activityFill) })
+        {
+            var size = new Vector2(Math.Max(track.Size.Y, Snap(track.Size.X * l)), track.Size.Y);
+            RoundEnds(fill, track.Size);
+            if (steps.Count > 0)
+            {
+                fill.StartAnimation("Size", Vector2To(size, Ms(steps[0].Spec.Duration)));
+            }
+            else
+            {
+                fill.Size = size;
+            }
+        }
+    }
+
     private void RoundCorners(SpriteVisual visual, float radius)
     {
         var geometry = _compositor.CreateRoundedRectangleGeometry();
@@ -569,8 +770,10 @@ internal sealed class IslandVisuals : IDisposable
     {
         var m = _media;
         var ok = true;
-        ok &= _compactMediaGlyph.Show(m is null ? string.Empty : m.IsPlaying ? "\uE768" : "\uE769");
-        ok &= _compactMediaTitle.Show(m is null ? string.Empty : m.Title.Length > 0 ? m.Title : m.Headline);
+        // The compact slot shows one thing: the primary activity, else what is playing, else the date.
+        var compactMedia = m is not null && _activity is null;
+        ok &= _compactMediaGlyph.Show(!compactMedia ? string.Empty : m!.IsPlaying ? "\uE768" : "\uE769");
+        ok &= _compactMediaTitle.Show(!compactMedia ? string.Empty : m!.Title.Length > 0 ? m.Title : m.Headline);
         ok &= _mediaTitle.Show(m is null ? string.Empty : m.Title.Length > 0 ? m.Title : "Unknown title");
         ok &= _mediaArtist.Show(m?.Artist ?? string.Empty);
         ok &= _mediaClock.Show(m is null || _clock is null ? string.Empty : _clock.TimeWithDesignator, _clock?.Designator.Length ?? 0);
@@ -643,7 +846,7 @@ internal sealed class IslandVisuals : IDisposable
         var ok = true;
         if (_clock is { } clock)
         {
-            ok &= _compactDate.Show(_media is null ? clock.ShortDate : string.Empty);
+            ok &= _compactDate.Show(_media is null && _activity is null ? clock.ShortDate : string.Empty);
             ok &= _compactTime.Show(clock.TimeWithDesignator, clock.Designator.Length);
             ok &= _bigTime.Show(clock.TimeWithDesignator, clock.Designator.Length);
             ok &= _longDate.Show(clock.LongDate);
@@ -655,6 +858,7 @@ internal sealed class IslandVisuals : IDisposable
         ok &= DrawStatus();
         ok &= DrawMedia();
         ok &= DrawVolume();
+        ok &= DrawActivity();
         if (!ok)
         {
             // The GPU device was lost (driver update, adapter switch): replace it and draw everything again once.
@@ -674,6 +878,7 @@ internal sealed class IslandVisuals : IDisposable
             _artShown = -1;
             _ = DrawMedia();
             _ = DrawVolume();
+            _ = DrawActivity();
         }
     }
 
@@ -751,6 +956,9 @@ internal sealed class IslandVisuals : IDisposable
         }
 
         public void Invalidate() => _shown = null;
+
+        /// <summary>The sprite that shows the text (for opacity motions).</summary>
+        public SpriteVisual Visual => _visual;
 
         /// <summary>Draws the text if it changed. The last <paramref name="smallTail"/> characters use the small size.</summary>
         public bool Show(string text, int smallTail = 0)

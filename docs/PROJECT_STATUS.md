@@ -960,6 +960,83 @@ Starting point: `4f26bc9`, clean tree; baseline unit 319/319, island desktop 52/
   Activities are the ongoing layer. One `IslandController` still owns presentation state.
 - **Tests:** unit +10 (`ActivityBoardTests`, on a manual clock with separate wall and monotonic time); Core 266/266.
 
+### G-F01 Focus timer and C-F02 timer animation — PASS
+
+- **Engine (`Halo.Core/Timers/CountdownTimer`):**
+  - remaining time comes from `TimeProvider.GetTimestamp` (monotonic), so a wall-clock change (by hand, DST, network time) neither shortens nor lengthens it;
+  - start (1 s to 24 h), pause, resume, reset, +1 minute and snooze;
+  - completion fires exactly once.
+- **Persistence (`state.json`, FR-TIM-02):**
+  - a running countdown stores its wall-clock end and a paused one stores its remaining time;
+  - a countdown that ended while Halo was closed restores as completed ("ended while Halo was closed");
+  - a clock moved back while closed is capped at the duration.
+- **Sleep:** the state is captured on `PBT_APMSUSPEND` and restored on resume from wall-clock end times, so the countdown is right whatever the sleep length.
+- **Waking (no idle cost):**
+  - one one-shot Win32 timer fires at the next whole second only while the island can be seen;
+  - while hidden, locked or with the display off, it fires only at completion.
+- **Shared store (`Halo.Core/Storage/AtomicJsonFile`):**
+  - size cap, `*.tmp` + `File.Replace` + `*.bak`, corrupt file set aside, unchanged content not rewritten;
+  - used by `StateStore` and by later stores.
+- **Visuals (C-F02):**
+  - **compact:** glyph, `m:ss`, a thin remaining-time bar, and "+N" when other activities exist;
+  - **expanded:** an activity page with large digits, "Timer · 1 min 35 s · ends 3:03 AM", a progress bar and up to three action buttons (pause/resume, +1 min/reset, cancel; dismiss and snooze once done);
+  - **last 10 s:** one gentle brightness step per second (Emphasis), with no flashing and no colour-only state;
+  - **completion:** a "Time's up" alert with the Arrival motion, then "Time's up" stays in the pill until dismissed, or for 10 minutes;
+  - reduced motion turns off Level, Emphasis and Arrival.
+- **Pages (FR-ISL-08):**
+  - the open island has an activity, a now-playing and a clock page;
+  - opening shows the activity page first;
+  - page dots are 24 DIP targets, and the mouse wheel also steps pages.
+- **Ways to start:** tray › Timer (1/5/10/15/25/45 min, pause/resume, cancel or dismiss) and the island's action buttons.
+- **UIA:**
+  - the activity is a progress bar named e.g. "Timer, 4 minutes left". The name is coarse (minutes, then tens of seconds, then seconds), so it is not a new value every second;
+  - the actions and page dots are buttons;
+  - "Timer finished" is announced;
+  - the island's name includes the activity.
+- **Screens checked:** compact countdown, expanded card, clock page with dots, completion alert and compact "Time's up". The screenshots were taken during the run and not committed.
+
+### G-F02 Focus sessions — PASS
+
+- `FocusSession` runs on the same countdown: work, short break, and a long break after each cycle. It defaults to 25/5/15 minutes with 4 cycles, within bounds.
+- A phase ending starts the next one, with an alert ("Short break time", "Back to focus").
+- Controls: pause/resume, skip and stop, in the tray and as island buttons.
+- A phase that ended while Halo was closed resumes at the next phase, paused, so nothing is replayed.
+- No gamification and no accounts.
+
+### G-F03 Do Not Disturb (Halo quiet mode) — PASS
+
+- **Modes:** for 1 hour, until tomorrow (the next local midnight, DST-aware), and until turned off. The choice is persisted and its end is re-checked after a time or zone change.
+- **Windows settings:** the Windows Focus / Do Not Disturb setting is **not** touched.
+- **Precedence**, highest first:
+  1. the user opening the island;
+  2. full-screen suppression;
+  3. quiet mode.
+- **What quiet mode does:**
+  - critical alerts and the completion of a timer or focus session the user started still appear;
+  - other alerts are counted, not queued, and what was already queued is dropped;
+  - activities not allowed in quiet mode cannot be primary.
+- **When it ends:** one summary alert ("1 alert while Do Not Disturb was on") replaces the missed items.
+- **Indicators:** the tray tooltip and the island's UIA name say when it is on.
+
+**Tests (G-F01/G-F02/G-F03/C-F02):**
+- unit, +40:
+  - countdown: run, pause, resume and complete once; wall-clock jumps; add, snooze and reset; bounds; once-a-second `NextChange`;
+  - format and spoken text; restart, missed and capped restore;
+  - activity states, actions and emphasis window; focus cycle with the long break; skip, stop and restore;
+  - quiet durations, including a custom DST zone; quiet gate; the controller holding alerts in quiet mode;
+  - state round trip and strictness; corrupt-file recovery from the backup; duration labels;
+- unit total 398/398;
+- desktop, +7:
+  - countdown in the pill, completion alert and the UIA notification **received**, dismiss through the UIA button;
+  - pause holds the time and resume works;
+  - a running timer survives a real exit and restart (`state.json` holds `endUtc`);
+  - pages and page buttons, and reopening starts on the activity page;
+  - the focus phase change with its alert;
+  - quiet mode holds an alert, lets the timer through and sends the summary;
+  - the tray submenu starts a timer.
+- **Test change:** the tray Exit step now selects the last item with Up instead of counting Down presses. The assertion is unchanged.
+- **Not done:** real sleep and resume (needs the machine to sleep), and a real wall-clock change on the desktop (needs administrator rights). Both are covered by unit tests on a manual clock.
+
 ## Next recommended action
 
 1. **Owner decisions:** E1–E3 (§5). Add: whether to package Halo as MSIX, which unblocks notifications (O-F01),

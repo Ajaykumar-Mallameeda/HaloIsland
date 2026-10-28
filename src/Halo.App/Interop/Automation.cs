@@ -194,6 +194,12 @@ internal enum AutomationRequest
     MediaNext = 12,
     ToggleMute = 13,
     SetVolume = 14,
+
+    /// <summary>One of the primary activity's actions (value = its index).</summary>
+    ActivityAction = 15,
+
+    /// <summary>Show a page of the expanded island (value = page index).</summary>
+    ShowPage = 16,
 }
 
 /// <summary>
@@ -717,7 +723,11 @@ internal sealed class IslandAutomationElement(IslandAutomationProvider root, str
         // Elements are not focusable: the island never takes keyboard focus through UIA.
     }
 
-    public void Invoke() => root.Post(Request(Node(), AccessibleRole.Button));
+    public void Invoke()
+    {
+        var node = Node();
+        root.Post(Request(node, AccessibleRole.Button), node.Argument);
+    }
 
     public void Toggle() => root.Post(Request(Node(), AccessibleRole.ToggleButton));
 
@@ -750,6 +760,8 @@ internal sealed class IslandAutomationElement(IslandAutomationProvider root, str
             AccessibleCommand.MediaPlayPause => AutomationRequest.MediaPlayPause,
             AccessibleCommand.MediaNext => AutomationRequest.MediaNext,
             AccessibleCommand.ToggleMute => AutomationRequest.ToggleMute,
+            AccessibleCommand.ActivityAction => AutomationRequest.ActivityAction,
+            AccessibleCommand.ShowPage => AutomationRequest.ShowPage,
             _ => throw new InvalidOperationException("The element has no action."),
         };
     }

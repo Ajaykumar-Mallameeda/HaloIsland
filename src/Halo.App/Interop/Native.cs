@@ -19,6 +19,8 @@ internal static unsafe partial class Native
     public const uint WmRButtonUp = 0x0205;
     public const uint WmContextMenu = 0x007B;
     public const uint WmMouseLeave = 0x02A3;
+    public const uint WmMouseWheel = 0x020A;
+    public const nint PbtApmSuspend = 0x4;
     public const uint WmCaptureChanged = 0x0215;
     public const uint WmPowerBroadcast = 0x0218;
     public const uint WmDpiChanged = 0x02E0;
@@ -112,6 +114,8 @@ internal static unsafe partial class Native
     public const long WsCaption = 0x00C00000;
     public const int DwmwaCloaked = 14;
     public const uint MfChecked = 0x0008;
+    public const uint MfGrayed = 0x0001;
+    public const uint MfPopup = 0x0010;
     public const uint NinSelect = 0x0400;
     public const uint NinKeySelect = 0x0401;
 

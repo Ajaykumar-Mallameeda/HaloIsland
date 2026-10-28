@@ -1,4 +1,5 @@
 using System.Globalization;
+using Halo.Core.Activities;
 using Halo.Core.Audio;
 using Halo.Core.Clock;
 using Halo.Core.Island;
@@ -39,6 +40,12 @@ public enum AccessibleCommand
     MediaNext,
     ToggleMute,
     SetVolume,
+
+    /// <summary>One of the primary activity's actions; <see cref="AccessibleNode.Argument"/> is its index.</summary>
+    ActivityAction,
+
+    /// <summary>Show a page of the expanded island; <see cref="AccessibleNode.Argument"/> is the page index.</summary>
+    ShowPage,
 }
 
 /// <summary>
@@ -60,6 +67,9 @@ public sealed record AccessibleNode(string Id, AccessibleRole Role, string Name,
 
     /// <summary>Live-region politeness for <see cref="AccessibleRole.Status"/>: true = assertive (critical), false = polite.</summary>
     public bool Assertive { get; init; }
+
+    /// <summary>Index for <see cref="AccessibleCommand.ActivityAction"/> and <see cref="AccessibleCommand.ShowPage"/>.</summary>
+    public int Argument { get; init; }
 }
 
 /// <summary>Everything the accessibility tree is built from: one immutable snapshot of what the island shows.</summary>
@@ -77,8 +87,11 @@ public sealed record IslandAccessibilityInput(IslandLayout Layout, IslandState S
 
     public NetworkReading? Network { get; init; }
 
-    /// <summary>Extra elements contributed by activities (timer, notifications) while expanded, in display order.</summary>
-    public IReadOnlyList<AccessibleNode> Activities { get; init; } = [];
+    /// <summary>The primary activity (timer, focus session, reminder…), or null. Private text must already be redacted.</summary>
+    public IslandActivity? Activity { get; init; }
+
+    /// <summary>The expanded page on screen; null = the default (activity, else media, else clock).</summary>
+    public IslandPage? Page { get; init; }
 
     /// <summary>When the media progress label is computed.</summary>
     public DateTimeOffset Now { get; init; }
@@ -111,6 +124,9 @@ public static class IslandAccessibility
     public const string NextId = "Halo.Media.Next";
     public const string MuteId = "Halo.Volume.Mute";
     public const string VolumeId = "Halo.Volume";
+    public const string ActivityId = "Halo.Activity";
+    public const string ActivityActionPrefix = "Halo.Activity.Action.";
+    public const string PagePrefix = "Halo.Page.";
 
     public static IReadOnlyList<AccessibleNode> Children(IslandAccessibilityInput input)
     {
@@ -134,7 +150,22 @@ public static class IslandAccessibility
         }
 
         var e = layout.Expanded;
-        if (input.Media is { } media)
+        var pages = IslandPages.Available(input.Activity is not null, input.Media is not null);
+        var page = IslandPages.Resolve(input.Page, pages);
+        if (page == IslandPage.Activity && input.Activity is { } activity)
+        {
+            nodes.Add(new AccessibleNode(ActivityId, activity.Level is null ? AccessibleRole.Text : AccessibleRole.ProgressBar, activity.Accessible.Length > 0 ? activity.Accessible : activity.Title, Box(layout, 24, 16, 290, 120))
+            {
+                Value = activity.Level is { } level ? Math.Round(Math.Clamp(level, 0, 1) * 100) : null,
+            });
+            var squares = ActivityLayout.Actions(layout, activity.Actions.Count);
+            foreach (var square in squares)
+            {
+                var action = activity.Actions[square.Index];
+                nodes.Add(new AccessibleNode(ActivityActionPrefix + action.Id, AccessibleRole.Button, action.Label, square.Bounds, AccessibleCommand.ActivityAction) { Argument = square.Index });
+            }
+        }
+        else if (page == IslandPage.Media && input.Media is { } media)
         {
             nodes.Add(new AccessibleNode(MediaId, AccessibleRole.Text, media.AccessibleSummary, Box(layout, 112, 24, 284, 48)));
             if (media.Timeline is { } timeline)
@@ -176,7 +207,12 @@ public static class IslandAccessibility
             }
         }
 
-        nodes.AddRange(input.Activities);
+        foreach (var dot in ActivityLayout.Dots(layout, pages.Count))
+        {
+            var p = pages[dot.Index];
+            var name = p == page ? $"{Capitalise(IslandPages.Name(p))}, shown" : $"Show {IslandPages.Name(p)}";
+            nodes.Add(new AccessibleNode(PagePrefix + p, AccessibleRole.Button, name, dot.Bounds, AccessibleCommand.ShowPage) { Argument = dot.Index });
+        }
 
         if (VolumeRow.For(layout) is { } row)
         {
@@ -199,6 +235,8 @@ public static class IslandAccessibility
 
     /// <summary>A short spoken text for a 0–100 value ("64 percent").</summary>
     public static string Percent(double value) => string.Create(CultureInfo.CurrentCulture, $"{Math.Round(value)} percent");
+
+    private static string Capitalise(string s) => s.Length == 0 ? s : char.ToUpperInvariant(s[0]) + s[1..];
 
     private static RoundedBox Box(IslandLayout layout, double leftDip, double topDip, double widthDip, double heightDip)
     {

@@ -1,5 +1,6 @@
 using Halo.App.Interop;
 using Halo.Core.Accessibility;
+using Halo.Core.Activities;
 using Halo.Core.Island;
 using Halo.Core.Media;
 
@@ -13,9 +14,31 @@ namespace Halo.App.Island;
 internal sealed partial class IslandWindow
 {
     /// <summary>The live summary of the island (FR-A11Y-01): what is playing, then the time and date.</summary>
-    public string AccessibleName => _mediaSnapshot is { } m
-        ? $"Halo, {m.AccessibleSummary}, {_clock.TimeWithDesignator}, {_clock.LongDate}"
-        : $"Halo, {_clock.TimeWithDesignator}, {_clock.LongDate}";
+    public string AccessibleName
+    {
+        get
+        {
+            var parts = new List<string>(4) { "Halo" };
+            if (AccessibleActivity() is { } activity && activity.Accessible.Length > 0)
+            {
+                parts.Add(activity.Accessible);
+            }
+
+            if (_mediaSnapshot is { } m)
+            {
+                parts.Add(m.AccessibleSummary);
+            }
+
+            if (_quietMode.IsActive(DateTimeOffset.UtcNow))
+            {
+                parts.Add("Do Not Disturb on");
+            }
+
+            parts.Add(_clock.TimeWithDesignator);
+            parts.Add(_clock.LongDate);
+            return string.Join(", ", parts);
+        }
+    }
 
     /// <summary>The alert text while an alert is shown; the open island's summary while expanded; otherwise null.</summary>
     public string? AccessibleDescription => State.Alert is { } alert
@@ -38,6 +61,8 @@ internal sealed partial class IslandWindow
             NoAudioDevice = _volume is { HasDevice: false },
             Power = _batteryWatching ? _battery.Current : null,
             Network = _network is not null ? _networkMonitor.Current : null,
+            Activity = AccessibleActivity(),
+            Page = CurrentPage,
             Now = DateTimeOffset.Now,
         };
         var snapshot = new AutomationSnapshot(
@@ -78,6 +103,12 @@ internal sealed partial class IslandWindow
                 return;
             case AutomationRequest.Toggle:
                 Apply(IslandInput.Toggle, "automation");
+                return;
+            case AutomationRequest.ActivityAction when State.IsExpanded && CurrentPage == IslandPage.Activity:
+                RunPrimaryAction(value, "automation");
+                return;
+            case AutomationRequest.ShowPage:
+                ShowPageAt(value, "automation");
                 return;
         }
 

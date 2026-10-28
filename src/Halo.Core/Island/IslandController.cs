@@ -100,6 +100,15 @@ public sealed class IslandController
 
     public bool IsShutDown { get; private set; }
 
+    /// <summary>
+    /// Quiet mode (G-F03). While on, an alert that is neither critical nor allowed in quiet mode is not shown or queued;
+    /// it is only counted in <see cref="HeldWhileQuiet"/>, so nothing floods in when quiet mode ends.
+    /// </summary>
+    public bool Quiet { get; private set; }
+
+    /// <summary>Alerts held back since quiet mode started.</summary>
+    public int HeldWhileQuiet { get; private set; }
+
     /// <summary>Alerts waiting to be shown, in arrival order.</summary>
     public IReadOnlyList<IslandAlert> QueuedAlerts => _queue;
 
@@ -171,12 +180,42 @@ public sealed class IslandController
         return new IslandTransition(previous, State);
     }
 
-    /// <summary>Requests a transient alert. Returns the change on screen (unchanged if it was queued).</summary>
+    /// <summary>
+    /// Turns quiet mode on or off. Turning it on drops what is queued and not allowed (it would otherwise appear when
+    /// quiet mode ends); the alert on screen finishes normally. Returns the number held back when turned off.
+    /// </summary>
+    public int SetQuiet(bool quiet)
+    {
+        if (quiet == Quiet)
+        {
+            return 0;
+        }
+
+        Quiet = quiet;
+        if (quiet)
+        {
+            HeldWhileQuiet = 0;
+            _ = _queue.RemoveAll(a => !AllowedWhileQuiet(a));
+            return 0;
+        }
+
+        var held = HeldWhileQuiet;
+        HeldWhileQuiet = 0;
+        return held;
+    }
+
+    /// <summary>Requests a transient alert. Returns the change on screen (unchanged if it was queued or held by quiet mode).</summary>
     public IslandTransition Raise(IslandAlert alert)
     {
         ArgumentNullException.ThrowIfNull(alert);
         if (IsShutDown)
         {
+            return Unchanged();
+        }
+
+        if (Quiet && !AllowedWhileQuiet(alert))
+        {
+            HeldWhileQuiet++;
             return Unchanged();
         }
 
@@ -214,6 +253,8 @@ public sealed class IslandController
         _timer.Cancel(IslandTimerSlot.Intent);
         _timer.Cancel(IslandTimerSlot.Alert);
     }
+
+    private static bool AllowedWhileQuiet(IslandAlert alert) => alert.AllowedInQuietMode || alert.Priority == AlertPriority.Critical;
 
     private static bool CanShow(IslandState state, IslandAlert alert) =>
         state.Phase == IslandPhase.Collapsed && !state.Pressed && (!state.Hidden || alert.AllowedWhenSuppressed);

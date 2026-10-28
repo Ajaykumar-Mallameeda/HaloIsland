@@ -3,6 +3,7 @@ using System.Numerics;
 using System.Runtime.InteropServices;
 using Halo.App.Interop;
 using Halo.Core.Accessibility;
+using Halo.Core.Activities;
 using Halo.Core.Audio;
 using Halo.Core.Clock;
 using Halo.Core.Diagnostics;
@@ -13,6 +14,7 @@ using Halo.Core.Network;
 using Halo.Core.Power;
 using Halo.Core.Settings;
 using Halo.Core.Shell;
+using Halo.Core.Timers;
 using Windows.UI.Composition;
 using Windows.UI.Composition.Desktop;
 using static Halo.App.Interop.Native;
@@ -108,6 +110,8 @@ internal sealed unsafe partial class IslandWindow : IDisposable
     private MediaSnapshot? _mediaSnapshot;
     private bool _mediaUnavailableLogged;
     private MediaCommand? _pressedMedia;
+    private int? _pressedAction;
+    private int? _pressedDot;
     private string? _pressedMediaSession;
     private VolumeWatcher? _volume;
     private bool _volumeUnavailableLogged;
@@ -207,6 +211,7 @@ internal sealed unsafe partial class IslandWindow : IDisposable
             throw new InvalidOperationException("Injected startup fault.");
         }
 
+        InitActivities();
         _ = ShowWindow(_hwnd, SwShowNoActivate);
 
         // Completes once the first frame of the visual tree has been committed to DWM.
@@ -340,6 +345,11 @@ internal sealed unsafe partial class IslandWindow : IDisposable
 
     private nint? Handle(nint hwnd, uint msg, nint wParam, nint lParam)
     {
+        if (HandleActivityMessage(msg, wParam) is { } handled)
+        {
+            return handled;
+        }
+
         switch (msg)
         {
             case WmMouseMove when _volumeDragging:
@@ -409,6 +419,40 @@ internal sealed unsafe partial class IslandWindow : IDisposable
                 return 0;
             case WmCaptureChanged when _volumeDragging || _volumeMutePressed:
                 (_volumeDragging, _volumeMutePressed) = (false, false);
+                return 0;
+            case WmLButtonDown when ActivityButtonAt(LowWord(lParam), HighWord(lParam)) is { } action:
+                // An activity action (pause, dismiss…): like the media buttons, it never toggles the island.
+                _pressedAction = action;
+                _ = SetCapture(hwnd);
+                return 0;
+            case WmLButtonUp when _pressedAction is { } pressedAction:
+                _pressedAction = null;
+                _ = ReleaseCapture();
+                if (ActivityButtonAt(LowWord(lParam), HighWord(lParam)) == pressedAction)
+                {
+                    RunPrimaryAction(pressedAction, "pointer");
+                }
+
+                return 0;
+            case WmLButtonDown when PageDotAt(LowWord(lParam), HighWord(lParam)) is { } dot:
+                _pressedDot = dot;
+                _ = SetCapture(hwnd);
+                return 0;
+            case WmLButtonUp when _pressedDot is { } pressedDot:
+                _pressedDot = null;
+                _ = ReleaseCapture();
+                if (PageDotAt(LowWord(lParam), HighWord(lParam)) == pressedDot)
+                {
+                    ShowPageAt(pressedDot, "pointer");
+                }
+
+                return 0;
+            case WmCaptureChanged when _pressedAction is not null || _pressedDot is not null:
+                (_pressedAction, _pressedDot) = (null, null);
+                return 0;
+            case WmMouseWheel when State.IsExpanded && State.Visible:
+                // FR-ISL-08: the wheel steps through the pages of the open island.
+                StepPage((short)HighWord(wParam) > 0 ? -1 : 1, "wheel");
                 return 0;
             case WmLButtonDown when MediaButtonAt(LowWord(lParam), HighWord(lParam)) is { } command:
                 // A transport button: it acts on the session and does not collapse or toggle the island.
@@ -517,7 +561,12 @@ internal sealed unsafe partial class IslandWindow : IDisposable
                 // The time or the time zone changed; .NET caches the local time zone until told otherwise.
                 TimeZoneInfo.ClearCachedData();
                 RefreshClock("time_change");
+                // Countdowns run on monotonic time and are unaffected; quiet mode's end is a wall-clock time.
+                SetQuiet(_quietMode.IsActive(DateTimeOffset.UtcNow) ? _quietMode : QuietMode.Off, "time_change");
                 return 0;
+            case WmPowerBroadcast when wParam == PbtApmSuspend:
+                OnSuspend();
+                return 1;
             case WmSettingChange when IsIntlChange(lParam):
                 // Regional format changed (12/24 h, date order): drop the cached culture data.
                 CultureInfo.CurrentCulture.ClearCachedData();
@@ -566,6 +615,7 @@ internal sealed unsafe partial class IslandWindow : IDisposable
                 Place("resume");
                 _fullscreen?.Schedule();
                 RefreshClock("resume");
+                OnResume();
                 return null;
             case WmTransitionDone when _motion.Complete((int)wParam):
                 ApplyRegion(union: false);
@@ -597,6 +647,8 @@ internal sealed unsafe partial class IslandWindow : IDisposable
             case WmDestroy:
                 // Stop everything that could call back into a closing island: hover timers, clock, full-screen
                 // hooks, tray, UIA, and completion callbacks of animations still running.
+                StopActivityTimers();
+                SaveState(); // a running countdown survives the exit (FR-TIM-02)
                 _controller.Shutdown();
                 _motion.Shutdown();
                 _ = KillTimer(hwnd, SaveTimerId);
@@ -686,9 +738,22 @@ internal sealed unsafe partial class IslandWindow : IDisposable
             ApplyVisibility(source);
         }
 
+        if (transition.PresentationChanged && state.IsExpanded && !transition.Previous.IsExpanded)
+        {
+            // Opening the island starts on the default page (activity, else media, else clock).
+            ResetPage();
+            ApplyPage(animate: false);
+        }
+
         if (transition.PresentationChanged || transition.VisibilityChanged)
         {
             UpdateMediaTick();
+        }
+
+        if (transition.VisibilityChanged)
+        {
+            _ = _board.SetSuppressed(state.Hidden);
+            ArmActivityTimers(); // per-second redraws only while the island can be seen
         }
 
         if (transition.PresentationChanged)
@@ -763,10 +828,12 @@ internal sealed unsafe partial class IslandWindow : IDisposable
         {
             _ = KillTimer(_hwnd, ClockTimerId);
             _log?.Write("clock", ("reason", "paused"), ("by", reason));
+            ArmActivityTimers(); // countdowns now wake only for their completion
         }
         else if (!paused && wasPaused)
         {
             RefreshClock("resumed");
+            SyncActivities("resumed");
         }
     }
 
@@ -989,6 +1056,7 @@ internal sealed unsafe partial class IslandWindow : IDisposable
 
         _mediaSnapshot = snapshot;
         _visuals?.ShowMedia(snapshot, DateTimeOffset.Now);
+        ApplyPage(animate: false); // a session appearing or ending adds or removes the media page
         PublishAutomation();
         UpdateMediaTick();
 
@@ -1030,7 +1098,7 @@ internal sealed unsafe partial class IslandWindow : IDisposable
     /// <summary>FR-MED-05: progress ticks at 1 Hz only while the media card is on screen and playing.</summary>
     private void UpdateMediaTick()
     {
-        var needed = _mediaSnapshot is { IsPlaying: true, Timeline: not null } && State.IsExpanded && State.Visible;
+        var needed = _mediaSnapshot is { IsPlaying: true, Timeline: not null } && State.IsExpanded && State.Visible && CurrentPage == IslandPage.Media;
         if (needed)
         {
             _ = SetTimer(_hwnd, MediaTickTimerId, 1000, 0);
@@ -1247,10 +1315,12 @@ internal sealed unsafe partial class IslandWindow : IDisposable
     /// <summary>Requests a transient alert through the controller (the single arbitration path).</summary>
     internal void RaiseAlert(IslandAlert alert, string source)
     {
+        var held = _controller.HeldWhileQuiet;
         var transition = _controller.Raise(alert);
         if (!transition.Changed)
         {
-            _log?.Write("alert", ("state", "queued"), ("kind", AlertToken(alert.Kind)), ("priority", (int)alert.Priority), ("source", source));
+            var state = _controller.HeldWhileQuiet > held ? "held_quiet" : "queued";
+            _log?.Write("alert", ("state", state), ("kind", AlertToken(alert.Kind)), ("priority", (int)alert.Priority), ("source", source));
         }
 
         Present(transition, source);
@@ -1285,6 +1355,10 @@ internal sealed unsafe partial class IslandWindow : IDisposable
         AlertKind.Power => "power",
         AlertKind.Network => "network",
         AlertKind.Media => "media",
+        AlertKind.Timer => "timer",
+        AlertKind.Reminder => "reminder",
+        AlertKind.Notification => "notification",
+        AlertKind.Halo => "halo",
         _ => "test",
     };
 
@@ -1410,10 +1484,24 @@ internal sealed unsafe partial class IslandWindow : IDisposable
     {
         var align = (GetSystemMetrics(SmMenuDropAlignment) != 0 ? TpmRightAlign : 0) | TpmBottomAlign;
         // "Show island now" exists only while a full-screen app suppresses the island; checked while it is shown anyway.
-        (int, string?, bool)[] items = State.Suppressed
-            ? [(TrayOpen, "Open Halo", false), (TrayCollapse, "Collapse Halo", false), (TrayShowNow, "Show island now", State.ShowNow), (TraySettings, "Settings\u2026", false), (0, null, false), (TrayExit, "Exit Halo", false)]
-            : [(TrayOpen, "Open Halo", false), (TrayCollapse, "Collapse Halo", false), (TraySettings, "Settings\u2026", false), (0, null, false), (TrayExit, "Exit Halo", false)];
+        var items = new List<MenuEntry> { new(TrayOpen, "Open Halo"), new(TrayCollapse, "Collapse Halo") };
+        if (State.Suppressed)
+        {
+            items.Add(new MenuEntry(TrayShowNow, "Show island now", State.ShowNow));
+        }
+
+        items.Add(new MenuEntry(TraySettings, "Settings\u2026"));
+        items.Add(new MenuEntry(0, "Timer", Children: TimerMenu()));
+        items.Add(new MenuEntry(0, "Focus session", Children: FocusMenu()));
+        items.Add(new MenuEntry(0, "Do Not Disturb", Children: QuietMenu()));
+        items.Add(new MenuEntry(0, null));
+        items.Add(new MenuEntry(TrayExit, "Exit Halo"));
         var command = RunMenu(x, y, align, items, TrayOpen);
+        if (RunFeatureMenuCommand(command))
+        {
+            return;
+        }
+
         switch (command)
         {
             case TrayOpen:
@@ -1464,7 +1552,46 @@ internal sealed unsafe partial class IslandWindow : IDisposable
     /// </summary>
     private int RunMenu(int x, int y, uint align, ReadOnlySpan<(int Id, string? Text, bool Checked)> items, int defaultId)
     {
+        var entries = new List<MenuEntry>(items.Length);
+        foreach (var (id, text, isChecked) in items)
+        {
+            entries.Add(new MenuEntry(id, text, isChecked));
+        }
+
+        return RunMenu(x, y, align, entries, defaultId);
+    }
+
+    private static nint BuildMenu(IReadOnlyList<MenuEntry> items)
+    {
         var menu = CreatePopupMenu();
+        if (menu == 0)
+        {
+            return 0;
+        }
+
+        foreach (var e in items)
+        {
+            if (e.Text is null)
+            {
+                _ = AppendMenuW(menu, MfSeparator, 0, null);
+            }
+            else if (e.Children is { } children && BuildMenu(children) is var sub && sub != 0)
+            {
+                // The submenu belongs to its parent from now on; DestroyMenu on the top level destroys it.
+                _ = AppendMenuW(menu, MfPopup, (nuint)sub, e.Text);
+            }
+            else
+            {
+                _ = AppendMenuW(menu, MfString | (e.Checked ? MfChecked : 0) | (e.Disabled ? MfGrayed : 0), (nuint)e.Id, e.Text);
+            }
+        }
+
+        return menu;
+    }
+
+    private int RunMenu(int x, int y, uint align, IReadOnlyList<MenuEntry> items, int defaultId)
+    {
+        var menu = BuildMenu(items);
         if (menu == 0)
         {
             return 0;
@@ -1474,10 +1601,6 @@ internal sealed unsafe partial class IslandWindow : IDisposable
         _menuOpen = true;
         try
         {
-            foreach (var (id, text, isChecked) in items)
-            {
-                _ = text is null ? AppendMenuW(menu, MfSeparator, 0, null) : AppendMenuW(menu, MfString | (isChecked ? MfChecked : 0), (nuint)id, text);
-            }
 
             if (defaultId != 0)
             {

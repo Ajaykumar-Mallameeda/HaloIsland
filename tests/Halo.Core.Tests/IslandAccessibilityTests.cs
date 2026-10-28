@@ -1,4 +1,5 @@
 using Halo.Core.Accessibility;
+using Halo.Core.Activities;
 using Halo.Core.Audio;
 using Halo.Core.Clock;
 using Halo.Core.Island;
@@ -152,12 +153,39 @@ public class IslandAccessibilityTests
     }
 
     [Fact]
-    public void ActivityElementsAreIncludedWhileExpanded()
+    public void TheActivityPageExposesTheActivityItsActionsAndThePageButtons()
     {
-        var timer = new AccessibleNode("Halo.Timer", AccessibleRole.ProgressBar, "Timer, 4 minutes left", new RoundedBox(0, 0, 1, 1, 0));
-        var nodes = IslandAccessibility.Children(Input(Expanded) with { Activities = [timer] });
-        Assert.Contains(timer, nodes);
-        Assert.DoesNotContain(timer, IslandAccessibility.Children(Input(Collapsed) with { Activities = [timer] }));
+        var timer = new IslandActivity("timer", ActivityKind.Timer, AlertPriority.Normal)
+        {
+            Title = "4:00",
+            Level = 0.8,
+            Accessible = "Timer, 4 minutes left",
+            Actions = [new ActivityAction("pause", "Pause", "p"), new ActivityAction("cancel", "Cancel timer", "c")],
+        };
+        var media = new MediaSnapshot { Title = "Song", Artist = "Band", CanPlayPause = true };
+        var nodes = IslandAccessibility.Children(Input(Expanded) with { Activity = timer, Media = media });
+
+        var activity = nodes.Single(n => n.Id == IslandAccessibility.ActivityId);
+        Assert.Equal((AccessibleRole.ProgressBar, "Timer, 4 minutes left", 80d), (activity.Role, activity.Name, activity.Value));
+        var actions = nodes.Where(n => n.Command == AccessibleCommand.ActivityAction).ToList();
+        Assert.Equal(["Pause", "Cancel timer"], actions.Select(a => a.Name));
+        Assert.Equal([0, 1], actions.Select(a => a.Argument));
+        Assert.DoesNotContain(nodes, n => n.Id == IslandAccessibility.MediaId); // one page at a time, like the screen
+
+        var pages = nodes.Where(n => n.Command == AccessibleCommand.ShowPage).ToList();
+        Assert.Equal(["Activity, shown", "Show now playing", "Show clock"], pages.Select(p => p.Name));
+        Assert.All(pages, p => Assert.True(p.Bounds.Width >= Layout.Dip(24))); // FR-A11Y-07
+
+        var mediaPage = IslandAccessibility.Children(Input(Expanded) with { Activity = timer, Media = media, Page = IslandPage.Media });
+        Assert.Contains(mediaPage, n => n.Id == IslandAccessibility.MediaId);
+        Assert.DoesNotContain(mediaPage, n => n.Id == IslandAccessibility.ActivityId);
+        Assert.Empty(IslandAccessibility.Children(Input(Collapsed) with { Activity = timer }));
+    }
+
+    [Fact]
+    public void TheClockOnlyIslandHasNoPageButtons()
+    {
+        Assert.DoesNotContain(IslandAccessibility.Children(Input(Expanded)), n => n.Command == AccessibleCommand.ShowPage);
     }
 
     [Fact]

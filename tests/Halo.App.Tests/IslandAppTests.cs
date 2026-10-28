@@ -343,9 +343,9 @@ public sealed partial class IslandAppTests
             Assert.Equal("expanded_pinned", island.LastPhase());
             island.WaitFor("transition.end", skip: 2);
 
-            // Menu: "Exit Halo" (Open, Collapse, Settings…, then Down skips the separator: Down ×4, Enter).
+            // Menu: "Exit Halo" is the last item; Up from a fresh menu selects the last item, then Enter.
             OpenTrayMenu(automation);
-            PressKeys(0x28, 0x28, 0x28, 0x28, 0x0D);
+            PressKeys(0x26, 0x0D);
             Assert.True(island.WaitForExit(TimeSpan.FromSeconds(10)), "Halo did not exit from the tray menu");
             Assert.Equal(0, island.ExitCode);
             Assert.Contains(island.Events("exit.request"), e => e["source"]?.GetValue<string>() == "tray");
@@ -841,7 +841,7 @@ public sealed partial class IslandAppTests
         /// <summary>Private data folder of this run: tests never read or change the owner's own settings.</summary>
         public string DataDir { get; private set; } = string.Empty;
 
-        public static IslandProcess Start(string? fault = null, bool waitForReady = true, string? settingsJson = null)
+        public static IslandProcess Start(string? fault = null, bool waitForReady = true, string? settingsJson = null, string? dataDirectory = null)
         {
             // A previous failed test could have left an island running; the single-instance check would then exit.
             var stale = FindWindowW("ProjectHalo.Island", null);
@@ -852,7 +852,8 @@ public sealed partial class IslandAppTests
                 Thread.Sleep(1000);
             }
 
-            var dataDir = Path.Combine(Path.GetTempPath(), "halo-desktop-tests", Guid.NewGuid().ToString("N"));
+            // A test may pass the folder of an earlier run to check what survives a restart.
+            var dataDir = dataDirectory ?? Path.Combine(Path.GetTempPath(), "halo-desktop-tests", Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(dataDir);
             if (settingsJson is not null)
             {

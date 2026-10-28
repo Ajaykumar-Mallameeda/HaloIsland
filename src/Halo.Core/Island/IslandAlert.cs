@@ -18,6 +18,18 @@ public enum AlertKind
     Network,
     Media,
     Test,
+
+    /// <summary>Timer and focus-session completions.</summary>
+    Timer,
+
+    /// <summary>Reminders and tasks that are due.</summary>
+    Reminder,
+
+    /// <summary>Notifications from Halo's notification framework.</summary>
+    Notification,
+
+    /// <summary>Halo's own state changes (quiet mode ended, summaries).</summary>
+    Halo,
 }
 
 /// <summary>What a transient alert shows: an icon glyph, one short line and an optional 0–1 level bar.</summary>
@@ -58,4 +70,10 @@ public sealed record IslandAlert(
 {
     /// <summary>When the alert was raised (set by the controller).</summary>
     public DateTimeOffset RaisedAt { get; init; }
+
+    /// <summary>
+    /// May appear while quiet mode is on (G-F03): the completion of something the user started. Critical alerts always
+    /// may.
+    /// </summary>
+    public bool AllowedInQuietMode { get; init; }
 }
