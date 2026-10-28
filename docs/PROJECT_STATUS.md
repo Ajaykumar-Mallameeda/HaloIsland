@@ -936,6 +936,30 @@ Starting point: `4f26bc9`, clean tree; baseline unit 319/319, island desktop 52/
 - **Not measured:** PB-05 for the new swap, level and arrival motions. They are DWM animations of 90–260 ms, but
   no frame evidence was collected.
 
+### B-F03 Activity model and lifecycle — PASS (model; first consumer is G-F01)
+
+- **`Halo.Core/Activities`: `IslandActivity` fields:**
+  - stable ID, kind and priority;
+  - glyph, compact and redacted text;
+  - title, subtitle and a 0–1 level;
+  - ongoing or transient, plus an expiry;
+  - action descriptors (fixed tokens, never content);
+  - privacy class and accessible text;
+  - whether it is allowed over full screen and in quiet mode;
+  - an emphasis flag.
+- **`ActivityBoard`:**
+  - **one primary:** the user's explicit choice while it exists and is eligible; otherwise the highest priority,
+    then the most recently changed;
+  - **coalescing:** an equal update changes nothing and does not reorder;
+  - **bounded:** at most 8; the lowest-priority, oldest activity is dropped first;
+  - **expiry:** `NextExpiry` arms one timer;
+  - **explicit switching:** `Select` and `SelectNext`, in a stable order;
+  - **quiet mode and full-screen suppression:** filter eligibility without discarding anything;
+  - private text is redacted unless previews are allowed.
+- **Relation to alerts:** transient system alerts keep their tested `IslandController` path (M1-F02/M3-F06).
+  Activities are the ongoing layer. One `IslandController` still owns presentation state.
+- **Tests:** unit +10 (`ActivityBoardTests`, on a manual clock with separate wall and monotonic time); Core 266/266.
+
 ## Next recommended action
 
 1. **Owner decisions:** E1–E3 (§5). Add: whether to package Halo as MSIX, which unblocks notifications (O-F01),
