@@ -106,6 +106,6 @@ public sealed class NetworkMonitor
             _ => $"Connected to {next.KindName}",
         };
         var duration = next.State == NetworkState.Connected ? TimeSpan.FromMilliseconds(2500) : TimeSpan.FromSeconds(3);
-        return new IslandAlert(Key, AlertKind.Network, AlertPriority.Normal, new AlertContent(next.Glyph, text) { Accessible = next.Spoken }, duration, TimeSpan.FromSeconds(5));
+        return new IslandAlert(Key, AlertKind.Network, AlertPriority.Normal, new AlertContent(next.Glyph, text) { Accessible = next.Spoken }, duration, TimeSpan.FromSeconds(10));
     }
 }

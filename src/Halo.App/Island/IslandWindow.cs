@@ -853,6 +853,7 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
             _volume = null;
             _visuals?.ShowVolume(null);
             _log?.Write("volume.device", ("status", "off"), ("reason", reason), ("hresult", 0));
+            Present(_controller.DropAlerts(AlertKind.Volume), "settings"); // a turned-off feature leaves no pill behind
         }
 
         _battery.Thresholds = new BatteryThresholds(s.BatteryLowPercent, s.BatteryCriticalPercent);
@@ -865,6 +866,7 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
             StopBattery();
             UpdateStatus();
             _log?.Write("power", ("battery", 0), ("percent", -1), ("source", "off"), ("charging", 0), ("reason", reason));
+            Present(_controller.DropAlerts(AlertKind.Battery, AlertKind.Power), "settings");
         }
 
         if (s.ShowNetwork && _network is null && _hwnd != 0)
@@ -884,6 +886,7 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
             _network = null;
             UpdateStatus();
             _log?.Write("network", ("state", "off"), ("kind", "none"), ("reason", reason));
+            Present(_controller.DropAlerts(AlertKind.Network), "settings");
         }
 
         if (_layout is not null && _layout.VolumeRow != s.ShowVolume)

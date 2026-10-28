@@ -145,6 +145,32 @@ public sealed class IslandController
     /// <summary>The hover timer fired (kept for callers that only use hover timing).</summary>
     public IslandTransition TimerElapsed() => TimerElapsed(IslandTimerSlot.Intent);
 
+    /// <summary>
+    /// Removes every alert of the given kinds, queued or on screen (a feature was turned off, so what it raised no
+    /// longer applies). An alert on screen ends at once and the next queued one, if any, takes its place.
+    /// </summary>
+    public IslandTransition DropAlerts(params ReadOnlySpan<AlertKind> kinds)
+    {
+        if (IsShutDown)
+        {
+            return Unchanged();
+        }
+
+        var set = kinds.ToArray();
+        _ = _queue.RemoveAll(a => set.Contains(a.Kind));
+        if (State.Alert is not { } shown || !set.Contains(shown.Kind))
+        {
+            return Unchanged();
+        }
+
+        var previous = State;
+        _timer.Cancel(IslandTimerSlot.Alert);
+        _alertArmed = false;
+        State = State with { Alert = null };
+        ShowNextQueued();
+        return new IslandTransition(previous, State);
+    }
+
     /// <summary>Requests a transient alert. Returns the change on screen (unchanged if it was queued).</summary>
     public IslandTransition Raise(IslandAlert alert)
     {

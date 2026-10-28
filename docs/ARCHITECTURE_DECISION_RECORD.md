@@ -212,6 +212,28 @@ would close 400 ms later, because the pointer is at the tray.
 - **Timers:** keyed (`Intent` for dwell/grace, `Alert`). A late callback for an unarmed slot is ignored.
 - **Not built:** activity arbitration and pages (§6.2); the island shows the clock, plus M3 content.
 
+**As built, M3 (2026-10-29): system events.** Every source raises alerts through the same `IslandController`.
+There is no second overlay, window or timer per feature.
+
+| Source | Key | Priority | Shown for | Dropped after waiting | Over full screen | Notes |
+|---|---|---|---|---|---|---|
+| Battery critical | `battery` | Critical (3) | 8 s | 60 s | **yes** | once per discharge |
+| Battery low | `battery` | High (2) | 5 s | 30 s | no | once per discharge |
+| Charger connected/disconnected | `power` | Normal (1) | 2.5 s | 3 s | no | |
+| Network lost/limited/restored | `network` | Normal (1) | 3 s / 2.5 s | 10 s | no | read after 2 s of quiet |
+| Volume / mute (changed elsewhere) | `volume` | Normal (1) | 1.5 s | 1 s | no | not raised while the island is open |
+| Media | — | — | — | — | — | shown in the compact and expanded views, not as an alert |
+
+- Changes to one source update its pill in place, because each source has one key.
+- When several sources fire at once, the highest priority shows; equal priority means the newer replaces the older.
+  Lower-priority alerts wait and are dropped once stale, so a volume pill is never shown late, while "Offline"
+  still appears after a 5 s low-battery alert.
+- Turning a feature off in settings removes its alerts, on screen and queued (`IslandController.DropAlerts`).
+- While the user has the island open (hover, pinned or pressed), no alert interrupts. The open island shows the
+  same information (volume row, status cluster), so waiting alerts usually expire unseen.
+- Watchers post window messages and never touch the controller from their own threads. On exit, every watcher
+  is disposed and its timers are killed before the window goes away.
+
 ### 6.2 Activities
 
 ```text

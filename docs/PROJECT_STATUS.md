@@ -693,7 +693,8 @@ Smoke run `APP-SMOKE-120-195953` (valid, 120 Hz), SMOKE and not a verdict:
   - the first known reading never alerts, even when offline;
   - lost → "Offline" (3 s); limited → "Limited connectivity" (3 s); restored or type switched → "Connected to
     Wi-Fi" or "Connected to Ethernet" (2.5 s). All are Normal priority with one key, so changes update a single
-    pill, and none appear over full screen;
+    pill, and none appear over full screen. A waiting pill is dropped after 10 s (5 s at first; changed in
+    M3-F06);
   - an unchanged or unknown reading (API failure) never alerts. After a failure, the next reading is compared with
     the last known one, so a failed read cannot fake a "Connected".
 - **User-visible:** a network glyph before the battery glyph in the open clock view's status cluster: Wi-Fi,
@@ -721,7 +722,37 @@ Smoke run `APP-SMOKE-120-195953` (valid, 120 Hz), SMOKE and not a verdict:
 - **Runtime check:** screenshot of the open island: Wi-Fi glyph, battery glyph, "100%".
 - **Not verified with real hardware changes:** disconnecting Wi-Fi, a cable change, a captive portal or a metered
   or cellular link (they would disrupt the owner's connection; covered by synthetic readings and unit tests).
-- **Commit:** see the next entry.
+- **Commit:** `da8cb4e`.
+
+### M3-F06 Event presentation integration — PASS
+
+- **Requirements:** the M3-F06 contract (priorities, transient vs. pinned, no interruption of the user,
+  coalescing, expiry, full-screen suppression, feature settings, no stray timers, return to compact), ADR §6.1.
+- **What was already in place:** every M3 source raises alerts through the one `IslandController` (M1-F02), so no
+  feature has its own window, overlay or alert timer. The rules are now written down in one table, in ADR §6.1
+  "As built, M3".
+- **New:**
+  - `IslandController.DropAlerts(kinds)`: turning volume, battery or network off in settings removes that feature's
+    pill at once, on screen or queued, and cancels its timer;
+  - the network alert's stale time is now 10 s (was 5 s). With 5 s, "Offline" raised together with a 5 s
+    low-battery alert expired exactly when its turn came, a race found while writing this feature's test.
+- **Unit tests (6 new, `EventIntegrationTests`, using the real alert factories):** volume, low battery and offline
+  at once → battery, then "Offline", with the volume pill gone; equal priority replaces; over full screen only
+  critical battery shows and the island hides again after it; nothing interrupts an island the user opened, and
+  what waited expires unseen; `DropAlerts` on screen and queued, with no timer left; nothing after shutdown.
+  Unit 319/319.
+- **Desktop tests (4 new):**
+  - **Simultaneous:** a real volume change plus synthetic low battery and offline. The battery alert is on
+    screen first, "Offline" follows when it ends, the volume pill never returns, the island ends collapsed, and
+    focus is unchanged;
+  - **Full screen:** with a full-screen test window in front, real volume, offline and low battery stay hidden;
+    critical battery appears without taking focus and leaves again;
+  - **Setting off:** with the real settings window opened from Explorer's tray button, unticking the battery box
+    ends a critical-battery pill at once (`source=settings`);
+  - **Exit with everything busy:** a pill on screen, another queued and a network debounce pending. Exit takes
+    under 5 s with code 0, no window is left, and the pending debounce never fires.
+  Island desktop 52/52; the system volume was back at its starting 28 % afterwards.
+- **Commit:** see the M3 gate.
 
 ## Next recommended action
 
