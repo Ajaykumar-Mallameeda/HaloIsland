@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Status | **Protocol v1.3 — v1.2 was fixed before any gated measurement; v1.3 changes one PB-02 rule after a partial gated batch (§11). Results: see §9** |
+| Status | **Protocol v1.3. Results recorded (§9); the matrix is incomplete by owner decision (§9.6). A and B FAIL PB-05. C has no FAIL but does not pass (PB-02 INVALID, 60 Hz INVALID, session 3 missing). Option C is provisionally selected in ADR §13** |
 | Date | 2026-10-27 |
 | Related | ADR-001 §4, §9, §13; `TESTING_STRATEGY.md` §4.2, §4.4, §4.8, §5; `PROJECT_STATUS.md` |
 | Protocol history | v0 (proposal, commit `b6228b7`) → v1.0 (commit `5853eba`) → v1.1 → v1.2 → **v1.3** (this document; changes in §11) |
@@ -18,6 +18,13 @@ Before writing this protocol, a feasibility probe found that the v0 frame-timing
 (`DwmGetCompositionTimingInfo`) returns **synthetic counters** on this Windows build (new gap G8). v1.0
 replaces it with DXGI Desktop Duplication, attributed to the overlay's screen region. The method
 must pass a predeclared calibration before any PB-03/PB-05 result counts.
+
+**Results (2026-10-28, §9):** calibration is VALID at 120 Hz and INVALID at 60 Hz. At 120 Hz, both WPF
+techniques **FAIL PB-05** (all 50 evaluated transitions had long frames, up to 4 in one transition and
+up to 74.8 ms); C passes PB-05 with
+about one sixth of their memory. PB-02 is INVALID for all three. C passes every automated S2 item except
+the expected UI Automation gap (S2-12). The owner stopped the matrix early (§9.6), so no technique
+passes S1 under §8.10; ADR §13 records a **provisional** selection of C with the open items listed.
 
 ## 2. Baseline verification (Phase A, 2026-10-27)
 
@@ -377,21 +384,121 @@ documentation step.
 
 ## 9. Results
 
+All numbers below are copied from `perf-results/<date>/<run>/summary.json` (ignored by Git), protocol
+v1.3 unless marked. Machine: 1920×1080, 125 %, AC power, not elevated, Nusa not running (checked at the
+start and end of every run). The owner reduced the matrix on 2026-10-28 (§9.6): it is **incomplete**,
+and no rule below was relaxed to make up for that.
+
 ### 9.1 Calibration
 
-NOT RUN yet.
+| Run | 120 Hz (2026-10-28) | 60 Hz (2026-10-28) |
+|---|---|---|
+| BASE (0 attributed frames in 60 s) | PASS — 0 frames | PASS — 0 frames |
+| POS (C continuous) | PASS — 120.08 frames/s, median 8.33 ms, p95 9.22 ms, 0 coalesced | PASS — 60.00 frames/s, median 16.66 ms, p95 17.87 ms, 0 coalesced |
+| NEG-A (50 ms stall; every transition has a gap ≥ 40 ms) | PASS — 20/20 (49.5–80.4 ms) | PASS — 20/20 (50.0–77.4 ms) |
+| NEGCTL-A (≤ 2 of 20 transitions with a gap ≥ 40 ms, no stall) | PASS — 1/20 | **FAIL — 10/20** |
+| NEG-B / NEGCTL-B (fallback pair, only if NEGCTL-A fails) | not needed | **FAIL — 18/20 / FAIL — 7/20** |
+| TICK-A/B/C (every tick matched within 250 ms, no unexplained frame) | PASS ×3 — 12/12 each | PASS ×3 — 12/12 each |
+| **Method** | **VALID** | **INVALID** — the batch stopped by rule (§8.7) |
 
-### 9.2 S1
+At 60 Hz the negative controls failed because the WPF overlays produced gaps of 40 ms or more
+**without** an injected stall. That points at WPF's own frame pacing at 60 Hz, but by the predeclared
+rule the method is unproven at 60 Hz: **PB-03 and PB-05 are INVALID at 60 Hz for all techniques**, and
+no S1 session ran at 60 Hz. C cannot act as the negative control, because its animations run in DWM,
+where an app-thread stall cannot be injected (§8.7).
 
-NOT RUN yet.
+### 9.2 S1 at 120 Hz
 
-### 9.3 S2
+Two of three sessions per technique completed (§9.6). Values: session 1 / session 2.
 
-NOT RUN yet.
+| Budget | A (WPF layered) | B (WPF DWM frame) | C (Win32 + Composition) |
+|---|---|---|---|
+| PB-01 CPU settled (≤ 0.5 s/10 min) | PASS — 0.000 / 0.000 s | PASS — 0.000 / 0.000 s | PASS — 0.000 / 0.000 s |
+| PB-02 wake-ups (≤ 2/s) | **INVALID** — new threads (0.082 / 0.062 counted) | **INVALID** — new threads (0.082 / 0.055) | **INVALID** — new threads (0.017 / 0.035) |
+| PB-03 frames settled (0/s) | PASS — 0 / 0 in 600 s | PASS — 0 / 0 | PASS — 0 / 0 |
+| PB-05 pacing (≤ 1 long frame per transition; p95 ≤ 1.5× refresh) | **FAIL** — 50/50 transitions with long frames, worst 3 / 4 per transition, max 74.8 / 58.4 ms, p95 9.55 / 9.35 ms | **FAIL** — 50/50, worst 2 / 4, max 33.6 / 52.7 ms, p95 9.09 / 9.62 ms | PASS — 3/50 with one long frame each, max 16.8 / 18.0 ms, p95 9.29 / 9.28 ms |
+| PB-10 private memory (≤ 120 MB) | PASS — 68.0 / 67.7 MB | PASS — 69.8 / 69.5 MB | PASS — 11.0 / 11.1 MB |
+| PB-12 GPU settled (≤ 0.5 %) | PASS — 0.0002 / 0.0000 % | PASS — 0.0001 / 0.0001 % | PASS — 0.0000 / 0.0000 % |
+| PB-04 | DEFERRED (M3) | DEFERRED (M3) | DEFERRED (M3) |
+| Session 3 | S1-A-120-3 **STOPPED/INCOMPLETE** (start snapshot only; never counted) | NOT RUN | NOT RUN |
 
-### 9.4 Informational
+**Per technique (§8.10):** A **FAIL** (PB-05). B **FAIL** (PB-05). C **does not pass**: PB-02 is
+INVALID, the third 120 Hz session and every 60 Hz session are missing, and PB-03/PB-05 are INVALID at
+60 Hz. C has no FAIL.
 
-NOT RUN yet.
+**PB-02:** in every session a WPF or composition worker thread started during the settled window, so
+under v1.3 the sampled count cannot be bounded. The counted rates are 25–200 times below the budget, but
+that is not proof. Smallest measurement that could settle it: one WPR `CSwitch` trace (WPR is built into
+Windows and already listed as the cross-check in ADR §9) over a 10-minute settled window of the
+selected technique, counting context switches into its threads, including short-lived ones.
+
+**Audit trail: first 120 Hz batch (2026-10-27, protocol v1.2), stopped by the host for low memory.**
+Calibration VALID (TICK-C needed its one rerun after user input); STU-A/B/C done; S1-A-120-1/2,
+S1-B-120-1 and S1-C-120-1 done with the same pattern (A/B PB-05 FAIL with max 38.7–58.8 ms; C PB-05
+PASS; PB-02 INVALID under the v1.2 churn rule); S1-B-120-2 **STOPPED/INCOMPLETE**. The whole batch was
+repeated under v1.3, so these runs are kept as evidence and not counted twice.
+
+### 9.3 S2 at 120 Hz (2026-10-28, `harness s2 --techniques C,A,B`, all runs valid)
+
+| ID | Item | C | A | B | Evidence (C) |
+|---|---|---|---|---|---|
+| S2-01 | Lifecycle | PASS | PASS | PASS | Visible, rectangle matches, responsive, exit code 0 in 13 ms, window and process gone |
+| S2-02 | Transparent outside the shape | PASS | PASS | PASS | 138 136/138 136 (compact) and 46 620/46 620 (expanded) outside pixels equal the probe colour; PNGs |
+| S2-03 | Click-through outside | PASS | PASS | PASS | 200/200 clicks reached the probe, 0 the overlay |
+| S2-04 | Clicks inside reach the overlay | PASS | PASS | PASS | 100/100 to the overlay, 0 to the probe |
+| S2-05 | Input routing during transitions | PASS | PASS | PASS | 40/40 outside the union to the probe, 40/40 inside compact to the overlay, 20 transitions |
+| S2-06 | No activation; keystrokes stay with the probe | PASS | PASS | PASS | 220 foreground checks, 0 lost; 100 hover cycles; keystrokes received |
+| S2-07 | Not in taskbar or Alt-Tab | **PASS** | NOT RUN | NOT RUN | Styles correct; taskbar: 20 buttons read, probe present, overlay absent; Alt-Tab: 3 items read, probe present (positive control met), overlay absent. For A/B the switcher exposed no items, so manual S2-07M remains |
+| S2-08 | Topmost | PASS | PASS | PASS | `WindowFromPoint` returns the overlay; overlay above the probe |
+| S2-09 | Placement and fixed canvas | PASS | PASS | PASS | Centre error 0.5 px, top 0 px, 725 samples, 0 changes |
+| S2-10 | Suppression below full-screen | PASS | PASS | PASS | 0 overlay pixels while suppressed (normal and topmost full-screen probe); visible after restore |
+| S2-11a | Work-area and display-change messages | PASS | PASS | PASS | Placement correct after both |
+| S2-11M | Manual DPI changes 100–175 % | NOT RUN | NOT RUN | NOT RUN | Owner away; scale changes are a manual step. Multi-monitor and mixed-DPI: BLOCKED (one display) |
+| S2-12 | UI Automation exposure | **FAIL** (expected) | PASS | PASS | Root named; no compact text element (the baseline has no text or provider) |
+
+**S2 per technique:** C passes every automated gating item except S2-12, the expected cost recorded in
+ADR §4.5; S2-11M is NOT RUN. A and B pass every automated item; S2-07M and S2-11M are NOT RUN.
+
+**S2-12 follow-up (smallest concrete fix):** the product island (`src/Halo.App`) implements a UI
+Automation provider (button; name = live clock summary; Invoke and ExpandCollapse patterns). A FlaUI
+desktop test (`AutomationExposesLiveClockAndExpandCollapse`) passed on 2026-10-28. This is product
+evidence, not a rerun of S2-12 on the baseline, and it does not cover Narrator or Axe.Windows
+(FR-A11Y-01…07 remain open).
+
+### 9.4 Informational (never gating)
+
+| Measurement | A | B | C |
+|---|---|---|---|
+| Warm start → first frame, p50 of 10 (STU-120, 2026-10-28) | 373.5 ms | 330.6 ms | 119.5 ms |
+| Working set after 10 min settled | 111.3–111.4 MB | 112.7 MB | 44.8–45.6 MB |
+| Peak private memory during transitions | 121.1–121.9 MB | 133.6–150.4 MB | 14.9–15.0 MB |
+| CPU during transitions | 2.5–2.9 s/min | 2.6–2.9 s/min | 0.19–0.23 s/min |
+| Command → first frame p50 | 18–22 ms | 15–16 ms | 14.5–15 ms |
+
+### 9.5 Product island smoke check (not S1; `harness app-check`)
+
+Same instruments as S1 over a grey backdrop, but a 90 s idle window, 20 transitions and 5 measured
+launches. These are **SMOKE** results, not budget verdicts.
+
+| Run | Refresh | Start → first frame p50 | Idle 90 s | Private / working set | Transitions | Exit |
+|---|---|---|---|---|---|---|
+| APP-SMOKE-60-161618 | 60 Hz | 150.5 ms | 0 ms CPU; 2 frames (minute clock) | 17.3 / 58.6 MB | 20/20 valid; 3 with one long frame; max 35.7 ms; p95 18.0 ms | p50 64 ms; 0 processes left |
+| APP-SMOKE-120-162208 | 120 Hz | 156.9 ms | 15.6 ms CPU; 2 frames (minute clock) | 17.4 MB | 9/20 valid (11 had one capture-coalesced frame); valid ones: 0 long frames; max 10.0 ms; p95 8.9 ms | p50 70 ms; 0 processes left |
+
+The clock redraws once a minute, so the product island is **not** at 0 frames/s while settled. PB-03
+as written ("0 per second", no activity) would count those frames. Whether a visible clock counts as an
+activity is an open owner decision (PROJECT_STATUS).
+
+### 9.6 Deviations from the §8.8 matrix (owner-directed, 2026-10-28)
+
+- The interrupted 120 Hz batch was **not** resumed; session 3 of S1 at 120 Hz is missing for all techniques.
+- S2 ran on its own after the S1 sessions (`s2` command, same checklist and rerun rule).
+- The owner was away and asked for the 60 Hz switch to be done for them. A one-off script outside the
+  repository changed the refresh rate (dynamic, not saved) and later restored 120 Hz. The harness
+  itself still cannot change display settings (`InteropSurface` test).
+- At 60 Hz only technique C was scheduled for S1 (`batch --hz 60 --techniques C`). Calibration failed
+  first, so no S1 session ran.
+- Manual items S2-07M and S2-11M were not run.
 
 ## 10. Limitations known in advance
 
@@ -413,3 +520,4 @@ NOT RUN yet.
 | v1.1 | 2026-10-27 | TICK match window 50 → 250 ms. The overlay logs `tick` when it changes a property; the frame appears after the render tick, the render-thread present and the next DWM composition, about 3 refresh periods (≈ 50 ms at 60 Hz). 50 ms would fail a working method at 60 Hz. Ticks are 5000 ms apart, so a 250 ms window cannot pair a frame with the wrong tick. Changed while writing the code, before any calibration run | Yes |
 | v1.2 | 2026-10-27 | Harness defects and implementation details found in DEV shake-down runs (IDs `DEV-…`, never results), before any gated run: (1) clicks are injected as one atomic `SendInput` batch each, because moving with `SetCursorPos` and clicking with a separate `SendInput` raced (S2-05 clicks landed at the next point); (2) S2-11a sends rather than posts `WM_SETTINGCHANGE` (Windows refuses to post it); (3) S2-06 gives the probe's text box focus with a click first; (4) the Alt-Tab list cannot be read through UI Automation on this build, so it becomes manual S2-07M; (5) C's cross-fade uses a placeholder bar; (6) a read-only reference-app check was added to §8.4; (7) §8.13 records the packages that actually resolve. No rule, threshold or budget changed | Yes |
 | v1.3 | 2026-10-28 | **Changed after seeing gated data — owner-approved (option b).** The first gated 120 Hz batch (`perf-results/2026-10-27`) was stopped by the host for low system memory after calibration (VALID), startup and 5 of 9 S1 sessions. In all 5 sessions PB-02 was INVALID under the v1.0 churn rule only because 1–2 startup threads present in the first sample **ended** within the first 20 s of the settled window; no new thread appeared (A: 0.15 switches/s, C: 0.013/s, budget ≤ 2). The rule now invalidates PB-02 only for a **new** thread (or ID reuse); ended threads are counted to their last sample and reported (`pb02_threads_ended`) as a limitation. The PB-02 threshold, aggregation and all other rules are unchanged. The aborted batch is kept as an audit trail (§9) and the whole 120 Hz batch, including calibration, is rerun under v1.3 | **No** — after 5 gated S1 sessions |
+| v1.3 execution | 2026-10-28 | No rule or threshold changed. Harness commands added for the owner-directed reduced scope: `s2` (S2 checklist only, same rerun rule) and `batch --techniques` (limits STU/S1/S2 to listed techniques; calibration unchanged); `app-check` (SMOKE check of the product island, never a gated result). Deviations from §8.8 are listed in §9.6 | n/a (no rule change) |

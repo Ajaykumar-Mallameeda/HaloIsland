@@ -141,8 +141,8 @@ Windows App Certification Kit (WACK).
 | Milestone | Acceptance |
 |---|---|
 | M0 Toolchain & skeleton | Solution builds with zero warnings-as-errors violations; one passing unit test per project; `dotnet test` green; analyzers enabled — **met 2026-10-27** for the spike solution (production projects deferred to M2, see PROTOTYPE_S1_S2_REPORT §3 C1) |
-| M1 Spikes S1–S8 | Each spike has a written result in ADR §13 with raw numbers; S1/S2 pass or the owner approves a fallback. S1/S2: protocol and results in `PROTOTYPE_S1_S2_REPORT.md` — **NOT RUN, protocol awaiting approval** |
-| M2 Island shell | FR-ISL-01…13, FR-APP-01…05/07/08 tests green; §4.1, §4.4 pass; PB-01–PB-03, PB-05, PB-06, PB-09, PB-10 measured |
+| M1 Spikes S1–S8 | Each spike has a written result in ADR §13 with raw numbers; S1/S2 pass or the owner approves a fallback. S1/S2: protocol and results in `PROTOTYPE_S1_S2_REPORT.md` — **run 2026-10-28, incomplete by owner decision; A/B FAIL PB-05, C provisionally selected (ADR §13.1)** |
+| M2 Island shell | FR-ISL-01…13, FR-APP-01…05/07/08 tests green; §4.1, §4.4 pass; PB-01–PB-03, PB-05, PB-06, PB-09, PB-10 measured. **Started 2026-10-28:** vertical slice in `src/Halo.App`; unit tests in `tests/Halo.Core.Tests` and `tests/Halo.App.Tests`; desktop tests (`Category=Integration`) in `tests/Halo.App.Tests` cover placement, styles, input region, click toggle without focus change, UIA name and patterns, drawn text, right-click exit, single instance; SMOKE performance via `harness app-check` |
 | M3 Media + system indicators | FR-MED-01…06, FR-SYS-01…04 tests green; §4.5 pass; PB-04 (moved here from S1, target unchanged), PB-07, PB-08 measured |
 | M4 Timer + tasks | FR-TIM, FR-TSK-01/02 tests green; sleep/resume reminder test passes |
 | M5 Accessibility + packaging | §4.7 all pass; MSIX §4.9 on a clean machine; PB-11 soak; privacy checklist |

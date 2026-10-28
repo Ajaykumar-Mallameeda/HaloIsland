@@ -1,7 +1,7 @@
 # Spikes (throw-away prototypes)
 
 Code in this folder answers the Phase 4 entry questions in ADR-001 §13. It is **not shipped** and is
-**not** the start of the production application; production projects will live elsewhere from M2.
+**not** the production application, which lives in `src/` (from 2026-10-28).
 
 | Project | Target | Purpose |
 |---|---|---|
@@ -9,10 +9,10 @@ Code in this folder answers the Phase 4 entry questions in ADR-001 §13. It is *
 | `src/Halo.Spikes.Windows` | `net10.0-windows` | Win32 interop: environment snapshot, Desktop Duplication frame metadata (no pixels), PDH counters, GDI capture of the test region, window helpers |
 | `src/Halo.Spikes.Overlay` | `net10.0-windows`, WPF | Techniques **A** (layered) and **B** (DWM-extended frame + `SetWindowRgn`), `--technique A` or `--technique B`; `--smoke` kept from M0 |
 | `src/Halo.Spikes.CompositionBaseline` | `net10.0-windows10.0.19041.0` | Technique **C** minimal baseline: Win32 + `Windows.UI.Composition` (no text, no UIA; report §6) |
-| `src/Halo.Spikes.Harness` | `net10.0-windows`, WPF | Runs the S1/S2 protocol: backdrop and probe windows, overlay control, Desktop Duplication, counters, calibration, S2 checklist (FlaUI UIA3), artifacts in `perf-results/` |
+| `src/Halo.Spikes.Harness` | `net10.0-windows`, WPF | Runs the S1/S2 protocol: backdrop and probe windows, overlay control, Desktop Duplication, counters, calibration, S2 checklist (FlaUI UIA3), artifacts in `perf-results/`. Also `app-check`, a SMOKE check of the product island |
 | `tests/Halo.Spikes.Tests` | `net10.0-windows` | xUnit v3 tests (Microsoft.Testing.Platform) |
 
-Status: S1/S2 prototypes and harness implemented for protocol v1.3 (`docs/PROTOTYPE_S1_S2_REPORT.md`).
+Status: S1/S2 run under protocol v1.3 on 2026-10-28; results in `docs/PROTOTYPE_S1_S2_REPORT.md` §9.
 
 ## Build and test
 
@@ -25,8 +25,9 @@ $env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'   # also honoured by Microsoft.Testing.Pl
 dotnet build Halo.slnx -c Release
 # Unit tests (no desktop needed)
 dotnet test --solution Halo.slnx -c Release -- --filter-not-trait "Category=Integration"
-# Integration tests (need an interactive desktop; briefly show the test surface at the top of the screen)
-dotnet test --solution Halo.slnx -c Release -- --filter-trait "Category=Integration"
+# Integration tests (need an interactive desktop; briefly show the test surface at the top of the screen).
+# Run one test project at a time: the spike and island suites both use the top of the screen.
+dotnet test --project spikes/tests/Halo.Spikes.Tests/Halo.Spikes.Tests.csproj -c Release -- --filter-trait "Category=Integration"
 ```
 
 ## Running the protocol (machine idle, Do Not Disturb on, AC power)
@@ -36,6 +37,9 @@ $h = 'spikes\src\Halo.Spikes.Harness\bin\Release\net10.0-windows\Halo.Spikes.Har
 & $h env                       # check run conditions only
 & $h batch --hz 120            # calibration, startup, 3 S1 sessions per technique, S2 (about 2.6 h)
 & $h batch --hz 60             # after the owner switches the display to 60 Hz (about 50 min)
+& $h batch --hz 60 --techniques C   # calibration, then S1/S2 only for the listed techniques
+& $h s2 --techniques C,A,B     # gated S2 checklist only (same rerun rule)
+& $h app-check                 # SMOKE check of src/Halo.App: startup, idle, 20 transitions, screenshots, exit
 & $h s2-dpi --technique A      # manual S2-11M: owner changes scaling 100/150/175/125 %
 & $h report --date 2026-10-27  # writes perf-results/<date>/REPORT.md
 ```

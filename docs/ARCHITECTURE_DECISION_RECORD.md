@@ -4,7 +4,7 @@
 |---|---|
 | Status | **PROPOSED** — awaiting owner approval at the Phase 3 gate |
 | Date | 2026-10-27 |
-| Decision confidence | **Medium** overall. High for runtime/platform choices (§2, §5–§8); Medium-Low for the overlay rendering path until spikes S1–S2 are measured (§4, §13) |
+| Decision confidence | **Medium** overall. High for runtime/platform choices (§2, §5–§8); Medium for the overlay rendering path: option C provisionally selected after S1/S2 (§13.1) |
 | Inputs | `NUSA_EVIDENCE_REGISTER.md`, `NUSA_FEATURE_MATRIX.md`, `ENVIRONMENT_AUDIT.md`, `EXTERNAL_REFERENCES.md` |
 | Related | `PRODUCT_REQUIREMENTS.md`, `SECURITY_AND_PRIVACY_DESIGN.md`, `TESTING_STRATEGY.md` |
 
@@ -39,10 +39,10 @@ Windows App SDK 2.0 is current (servicing to 2027-04-29); Visual Studio 2022 Com
 | Layer | Choice |
 |---|---|
 | Language / runtime | C# on **.NET 10 LTS**, TFM `net10.0-windows10.0.19041.0` (WinRT projections via CsWinRT) |
-| UI framework | **WPF** for the island content, settings window and accessibility tree |
+| UI framework | **WPF** for the settings window. Island content: **amended 2026-10-28** to Windows.UI.Composition with a custom UIA provider (option C, provisional, §13.1) |
 | Win32 / COM interop | Isolated adapters using `Microsoft.Windows.CsWin32` source-generated P/Invoke (no hand-written signatures where avoidable) |
 | WinRT | Built-in .NET Windows SDK projections (GSMTC, NetworkInformation, DeviceWatcher, UserNotificationListener) |
-| Overlay window | Dedicated topmost, non-activating, tool window; transparency technique chosen by spike S1 between **A** (WPF layered window) and **B** (non-layered window with DWM per-pixel alpha); **C** (Win32 + `Windows.UI.Composition` desktop target) is the fallback if neither A nor B meets the budgets |
+| Overlay window | Dedicated topmost, non-activating, tool window; transparency technique chosen by spike S1 between **A** (WPF layered window) and **B** (non-layered window with DWM per-pixel alpha); **C** (Win32 + `Windows.UI.Composition` desktop target) is the fallback if neither A nor B meets the budgets. **2026-10-28: C provisionally selected (§13.1)** |
 | Persistence | Versioned JSON files via `System.Text.Json` (in-box), atomic replace |
 | Logging | `Microsoft.Extensions.Logging` abstractions + a small in-repo rolling file sink |
 | Packaging | **MSIX** (package identity), distributed via the Microsoft Store as the primary channel; signed direct download only if the owner funds a certificate (§11) |
@@ -368,6 +368,9 @@ protocol is **PROPOSED** in [`PROTOTYPE_S1_S2_REPORT.md`](PROTOTYPE_S1_S2_REPORT
 built-in measurement methods for PB-02/03/05 (with a calibration step) and moving PB-04 to M3. No
 budget value in §9 is changed. On approval, the §9 *Method* column is amended accordingly.
 
+**Update 2026-10-28:** the protocol was approved and run (v1.3); results and the provisional rendering
+decision are in §13.1.
+
 | Spike | Question | Pass criteria |
 |---|---|---|
 | S1 | Which transparency technique (A/B/C) meets PB-01–PB-05, PB-10, PB-12 on this machine? | All listed budgets met at 60 and 120 Hz |
@@ -378,3 +381,53 @@ budget value in §9 is changed. On approval, the §9 *Method* column is amended 
 | S6 | Caps Lock / input language without a global hook | Correct state within 500 ms, or documented "not feasible" |
 | S7 | Full-screen detection matrix | Correct for F11 browser, video player fullscreen, PowerPoint slideshow, borderless and exclusive games |
 | S8 | Self-contained WPF in MSIX: size, startup, StartupTask, uninstall | Recorded numbers; PB-09 met |
+
+### 13.1 S1/S2 result and rendering decision (2026-10-28)
+
+**Decision: option C — Win32 host window + `Windows.UI.Composition` — is PROVISIONALLY SELECTED** for
+the island surface and the first vertical slice. It is **not** SELECTED: the S1/S2 gate did not pass
+under its own rules (PROTOTYPE_S1_S2_REPORT §8.10), because the owner stopped the matrix early and some
+mandatory measurements are INVALID. WPF (technique B, then A) stays the documented fallback; it is not
+built in parallel. Decision confidence: **Medium** for the rendering path.
+
+**Evidence** (PROTOTYPE_S1_S2_REPORT §9; calibration VALID at 120 Hz):
+
+| Criterion | A (WPF layered) | B (WPF DWM frame) | C (composition) |
+|---|---|---|---|
+| PB-05 frame pacing, 120 Hz, 2 sessions | **FAIL** — long frames in 50/50 transitions, up to 4 per transition, max 74.8 ms | **FAIL** — 50/50, up to 4, max 52.7 ms | PASS — 3/50 with one long frame, max 18.0 ms |
+| PB-01, PB-03, PB-10, PB-12, 120 Hz | PASS (68 MB private) | PASS (70 MB) | PASS (11 MB) |
+| PB-02 | INVALID | INVALID | INVALID |
+| 60 Hz | INVALID (calibration) | INVALID | INVALID |
+| S2 automated items | all PASS | all PASS | all PASS except S2-12 (UIA), expected |
+
+**Why C, under §8.10 rule 2(a):** every WPF technique has a valid FAIL of a mandatory criterion (PB-05)
+that C passes in the same, calibrated comparison. Rule 3 (UNRESOLVED) also applies to the gate as a
+whole because PB-02 and the 60 Hz results are INVALID, so the selection is provisional rather than
+final. The owner's 2026-10-28 instruction was to make a provisional decision and start building, so
+the vertical slice uses C now and the outstanding items below must close before ADR-001 is approved.
+
+**Amendments to §2 and §4 for the island surface** (other layers unchanged):
+
+- The island window is rendered by `Windows.UI.Composition` through `ICompositorDesktopInterop` on a
+  `WS_EX_NOREDIRECTIONBITMAP` window, not by WPF. Text is drawn with Direct2D/DirectWrite into
+  composition drawing surfaces on a **WARP** (software) Direct3D device: a hardware device loaded the
+  GPU's user-mode driver and raised private memory from about 17 MB to 62–68 MB (PROJECT_STATUS §3).
+- UI Automation comes from a custom provider (`WM_GETOBJECT` → `UiaReturnRawElementProvider`), not WPF
+  automation peers. This is C's known extra cost (§4.5).
+- WPF is still the proposed framework for the Settings window (FR-APP-02), which is out of the slice.
+- The island code calls Win32 and COM directly in `Halo.App/Interop` (internal). §5's "UI never calls
+  P/Invoke" rule is relaxed for the island surface, because the surface *is* the Win32/composition
+  layer; feature adapters still belong in `Halo.Platform.Windows` when they arrive.
+
+**Outstanding before the decision can become SELECTED:**
+
+1. PB-02 for C: one WPR `CSwitch` trace over a 10-minute settled window (smallest settling measurement).
+2. 60 Hz: a negative-control design that does not depend on WPF's own pacing (for example, a stall
+   injected into a C-hosted, app-driven animation), then calibration and one S1-C-60 session.
+3. The third S1-C-120 session.
+4. Manual S2-11M (scaling 100/150/175 %) and an Axe.Windows/Narrator pass on the product island.
+5. Owner decision on whether a once-a-minute clock redraw is an "activity" under PB-03.
+
+**Risks:** composition text and UIA are hand-written interop (mitigated by desktop tests that read the
+island through FlaUI and check drawn pixels); no WPF fallback is being kept in sync; device-loss
+recovery for the text device is implemented but untested.
