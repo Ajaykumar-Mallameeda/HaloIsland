@@ -1120,6 +1120,51 @@ Starting point: `4f26bc9`, clean tree; baseline unit 319/319, island desktop 52/
     - a reminder missed while closed is shown at start;
     - the tasks window adds and completes a task through UIA.
 
+### E-F01–E-F04 Email and F-F01–F-F03 Calendar — PASS with test doubles; live use BLOCKED (owner sign-in)
+
+- **Provider layer (`Halo.Core/Accounts`), vendor-neutral:**
+  - `IMailProvider` and `ICalendarProvider` return snapshots plus a status: not connected, connected, sign-in
+    required, permission denied, throttled or unavailable;
+  - `IAccessTokenSource` owns sign-in and token storage. The shipped `NotConnectedTokenSource` never touches the
+    network;
+  - `LinkPolicy` allows only HTTPS links on Outlook and Teams hosts, never `file:`, `javascript:`, look-alike hosts
+    or user-info URLs.
+- **Microsoft Graph adapter (`GraphClient`):**
+  - read-only GET requests to graph.microsoft.com only;
+  - delegated least privilege: `User.Read Mail.ReadBasic Calendars.ReadBasic offline_access`. `ReadBasic` excludes
+    body, preview and attachments (RESEARCH S7);
+  - `$select` asks only for the fields shown;
+  - calendar times are requested in UTC;
+  - 10 s timeout and a 1 MB cap;
+  - HTTP 401/403/429/5xx map to statuses, and nothing is read from error bodies.
+  - It never sends, deletes, accepts, declines or modifies.
+- **`MailWatcher` (E-F03):**
+  - the first read after connecting is a baseline: existing unread mail is counted, not announced;
+  - each new message is submitted once, and the center deduplicates a push and a poll;
+  - "N unread" is an activity;
+  - "Open in Outlook" appears only with an allowed link;
+  - polling every 2 min, exponential backoff to 30 min on failure, `Retry-After` honoured on 429, and **no retry
+    loop** when not connected, sign-in is required or permission is denied.
+- **`CalendarWatcher` (F-F02/F-F03):**
+  - the glance shows the meeting in progress, else the next one within 12 h. Cancelled and all-day events are
+    skipped;
+  - the reminder comes 5 min before, once per start time; a moved event reminds again at its new time and a
+    cancelled one is withdrawn;
+  - join and open links are offered when they are allowed;
+  - private or confidential events never show their subject, whatever the preview setting;
+  - nothing is modified.
+- **E-F04 other providers:** the extension points exist; no second live provider was built (prompt §8 rule).
+- **Tests:** unit +11 (`AccountProviderTests`) with a fake HTTP handler and fixtures shaped like the documented
+  Graph responses. Core 334/334. **No real account was used.**
+- **BLOCKED, owner action needed for live use:**
+  1. register an Entra ID app as a public client with a loopback redirect;
+  2. grant the delegated scopes above;
+  3. sign in interactively.
+  Then add a token source using the system browser with PKCE, and Windows Credential Manager for token storage.
+  No secret is needed for a public client.
+- **Not wired into the island yet:** without a token source there is nothing to show, and no placeholder
+  settings were added.
+
 ## Next recommended action
 
 1. **Owner decisions:** E1–E3 (§5). Add: whether to package Halo as MSIX, which unblocks notifications (O-F01),
