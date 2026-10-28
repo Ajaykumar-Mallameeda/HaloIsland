@@ -187,6 +187,15 @@ concrete need appears after release.
 The state machine is a pure function `(state, event, now) → (state, effects)`, driven by an injected
 `TimeProvider`, so every transition is unit-testable without a window.
 
+**As built (M2, 2026-10-28; Compact/Expanded only):** `IslandStateMachine` is a pure function of
+`(state, input)`. Timer expiries are inputs, and `IslandController` owns one injectable one-shot
+timer, so tests run on virtual time without a `TimeProvider` package. The window implements the timer
+with a Win32 timer on the UI thread. Phases: `Collapsed`, `ExpandPending`, `ExpandedByHover`,
+`CollapsePending`, `ExpandedPinned`. Refinement of the table above: the "pointer leaves + grace" exit
+applies only to a hover-opened island. Click, menu, tray, UIA and second-launch expansion **pin** it
+until an explicit collapse, and a click on a hover-opened island pins it. Otherwise a tray "Open"
+would close 400 ms later, because the pointer is at the tray.
+
 ### 6.2 Activities
 
 ```text
@@ -418,6 +427,10 @@ the vertical slice uses C now and the outstanding items below must close before 
 - The island code calls Win32 and COM directly in `Halo.App/Interop` (internal). §5's "UI never calls
   P/Invoke" rule is relaxed for the island surface, because the surface *is* the Win32/composition
   layer; feature adapters still belong in `Halo.Platform.Windows` when they arrive.
+- The tray icon (`ITrayIcon`, §7) is in `Halo.App/Island/TrayIcon.cs` for now. It is bound to the
+  island window's message loop (`Shell_NotifyIconW` callbacks, `TaskbarCreated`), and
+  `Halo.Platform.Windows` does not exist yet. Move it there when that project is created. Its image is
+  drawn in code (`Halo.Core/Tray/TrayGlyph`), so no binary icon file is committed.
 
 **Outstanding before the decision can become SELECTED:**
 

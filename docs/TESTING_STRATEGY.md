@@ -54,6 +54,14 @@ expanded (no page change under the pointer); alert coalescing by key; priority p
 activity drop-out; pinned activity; suppression during full screen with `AllowedWhenSuppressed`;
 reduced-motion transitions; keyboard focus and `Esc` restore.
 
+**Covered so far (2026-10-28, `tests/Halo.Core.Tests/HoverIntentTests.cs`, virtual time):** dwell
+below/above the threshold, re-entry restarts the dwell, pill → panel, leave grace, return within grace,
+click before the dwell, click pins a hover-opened island, explicit expansion vs. stale timers, tray
+expand/collapse during pending timers, menu cancels a pending expansion, shutdown with a timer
+pending, timer armed only while something is pending. The same behaviour is checked on the desktop
+with real pointer input (`IslandAppTests`). Alerts, arbitration, full screen, reduced motion and the
+keyboard path are not built yet.
+
 ### 4.2 Geometry and displays (unit + manual)
 
 Monitor sets as data: 1–3 monitors, negative coordinates, top/left/bottom taskbars, auto-hide,
@@ -142,7 +150,7 @@ Windows App Certification Kit (WACK).
 |---|---|
 | M0 Toolchain & skeleton | Solution builds with zero warnings-as-errors violations; one passing unit test per project; `dotnet test` green; analyzers enabled — **met 2026-10-27** for the spike solution (production projects deferred to M2, see PROTOTYPE_S1_S2_REPORT §3 C1) |
 | M1 Spikes S1–S8 | Each spike has a written result in ADR §13 with raw numbers; S1/S2 pass or the owner approves a fallback. S1/S2: protocol and results in `PROTOTYPE_S1_S2_REPORT.md` — **run 2026-10-28, incomplete by owner decision; A/B FAIL PB-05, C provisionally selected (ADR §13.1)** |
-| M2 Island shell | FR-ISL-01…13, FR-APP-01…05/07/08 tests green; §4.1, §4.4 pass; PB-01–PB-03, PB-05, PB-06, PB-09, PB-10 measured. **Started 2026-10-28:** vertical slice in `src/Halo.App`; unit tests in `tests/Halo.Core.Tests` and `tests/Halo.App.Tests`; desktop tests (`Category=Integration`) in `tests/Halo.App.Tests` cover placement, styles, input region, click toggle without focus change, UIA name and patterns, drawn text, right-click exit, single instance; SMOKE performance via `harness app-check` |
+| M2 Island shell | FR-ISL-01…13, FR-APP-01…05/07/08 tests green; §4.1, §4.4 pass; PB-01–PB-03, PB-05, PB-06, PB-09, PB-10 measured. **Started 2026-10-28:** vertical slice in `src/Halo.App`; unit tests in `tests/Halo.Core.Tests` and `tests/Halo.App.Tests`; desktop tests (`Category=Integration`) in `tests/Halo.App.Tests` cover placement, styles, input region, click toggle without focus change, UIA name and patterns, drawn text, right-click exit, single instance; SMOKE performance via `harness app-check`. **Added 2026-10-28:** hover-intent (dwell and grace timing in the running app, early leave, cancel on return, exit with timers pending) and the tray icon through Explorer's own notification-area button (toggle; Open/Collapse/Exit menu; icon deleted on exit, proven by the shell's reply because Windows also drops icons of exited processes); injected tray and start-up failures (`HALO_TEST_FAULT`, `--diagnostics` only); no duplicate process. Not yet: Explorer restart (`TaskbarCreated`), §4.4's 100-cycle focus run, PB-06 |
 | M3 Media + system indicators | FR-MED-01…06, FR-SYS-01…04 tests green; §4.5 pass; PB-04 (moved here from S1, target unchanged), PB-07, PB-08 measured |
 | M4 Timer + tasks | FR-TIM, FR-TSK-01/02 tests green; sleep/resume reminder test passes |
 | M5 Accessibility + packaging | §4.7 all pass; MSIX §4.9 on a clean machine; PB-11 soak; privacy checklist |

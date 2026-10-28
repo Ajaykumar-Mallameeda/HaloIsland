@@ -484,10 +484,16 @@ launches. These are **SMOKE** results, not budget verdicts.
 |---|---|---|---|---|---|---|
 | APP-SMOKE-60-161618 | 60 Hz | 150.5 ms | 0 ms CPU; 2 frames (minute clock) | 17.3 / 58.6 MB | 20/20 valid; 3 with one long frame; max 35.7 ms; p95 18.0 ms | p50 64 ms; 0 processes left |
 | APP-SMOKE-120-162208 | 120 Hz | 156.9 ms | 15.6 ms CPU; 2 frames (minute clock) | 17.4 MB | 9/20 valid (11 had one capture-coalesced frame); valid ones: 0 long frames; max 10.0 ms; p95 8.9 ms | p50 70 ms; 0 processes left |
+| APP-SMOKE-120-172126 (hover + tray build) | 120 Hz | 158.8 ms | 15.6 ms CPU; 2 frames, 2 clock updates | 17.1 / 58.6 MB | 9/20 valid (11 coalesced); valid ones: 0 long frames; max 10.0 ms; p95 9.0 ms | p50 65 ms; 0 processes left |
 
 The clock redraws once a minute, so the product island is **not** at 0 frames/s while settled. PB-03
 as written ("0 per second", no activity) would count those frames. Whether a visible clock counts as an
-activity is an open owner decision (PROJECT_STATUS).
+activity is an open owner decision (PROJECT_STATUS E2, which now proposes precise wording).
+
+The hover + tray build (2026-10-28) adds no periodic work: the hover timer exists only while an
+action is pending, and the tray icon has no timer. Its smoke numbers match the slice. The limits are
+unchanged: 11 of 20 transitions still coalesce at 120 Hz, so this is not PB-05 evidence. The run was
+not repeated at 60 Hz, and PB-02 was not measured.
 
 ### 9.6 Deviations from the §8.8 matrix (owner-directed, 2026-10-28)
 
