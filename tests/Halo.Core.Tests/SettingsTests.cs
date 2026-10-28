@@ -28,6 +28,7 @@ public sealed class SettingsTests : IDisposable
         Assert.False(d.StartExpanded);
         Assert.False(d.ReduceMotion);
         Assert.True(d.HideInFullscreen);
+        Assert.True(d.AnnounceAlerts);
     }
 
     [Fact]
@@ -45,7 +46,7 @@ public sealed class SettingsTests : IDisposable
     [Fact]
     public void SettingsPersistAcrossRestarts()
     {
-        var changed = HaloSettings.Defaults with { HoverToExpand = false, HoverDwellMs = 250, LeaveGraceMs = 900, StartExpanded = true, ReduceMotion = true, HideInFullscreen = false };
+        var changed = HaloSettings.Defaults with { HoverToExpand = false, HoverDwellMs = 250, LeaveGraceMs = 900, StartExpanded = true, ReduceMotion = true, HideInFullscreen = false, AnnounceAlerts = false };
         Assert.True(new SettingsStore(_dir).Save(changed));
 
         var reloaded = new SettingsStore(_dir).Load(out var status);
@@ -179,12 +180,12 @@ public sealed class SettingsTests : IDisposable
     {
         var json = HaloSettings.Defaults.ToJson();
 
-        foreach (var key in new[] { "schemaVersion", "hoverToExpand", "hoverDwellMs", "leaveGraceMs", "startExpanded", "reduceMotion", "hideInFullscreen" })
+        foreach (var key in new[] { "schemaVersion", "hoverToExpand", "hoverDwellMs", "leaveGraceMs", "startExpanded", "reduceMotion", "hideInFullscreen", "announceAlerts" })
         {
             Assert.Contains($"\"{key}\"", json, StringComparison.Ordinal);
         }
 
-        Assert.Equal(7, json.Count(c => c == ':'));
+        Assert.Equal(8, json.Count(c => c == ':'));
     }
 
     [Fact]

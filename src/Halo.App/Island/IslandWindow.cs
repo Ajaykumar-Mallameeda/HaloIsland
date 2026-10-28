@@ -120,7 +120,7 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
 
     public string AccessibleName => $"Halo, {_clock.TimeWithDesignator}, {_clock.LongDate}";
 
-    public string? AccessibleDescription => State.IsExpanded ? _clock.DayProgressText : null;
+    public string? AccessibleDescription => State.Alert is { } alert ? alert.Content.Text : State.IsExpanded ? _clock.DayProgressText : null;
 
     private IslandState State => _controller.State;
 
@@ -508,6 +508,11 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
         {
             _visuals?.ShowAlert(state.Alert?.Content);
             LogAlert(transition, source);
+            if (state.Alert is { } shown && _settings.AnnounceAlerts)
+            {
+                var hr = _automation?.Announce(shown.Content.Text, $"Halo.Alert.{AlertToken(shown.Kind)}", shown.Priority == AlertPriority.Critical);
+                _log?.Write("announce", ("listening", hr is null ? 0 : 1), ("hresult", hr ?? 0));
+            }
         }
 
         if (transition.VisibilityChanged)

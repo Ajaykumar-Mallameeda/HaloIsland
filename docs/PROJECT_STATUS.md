@@ -440,6 +440,39 @@ here as the audit trail.
   - Island desktop 31/31.
 - **Not verified (stated, not claimed):** a real resolution or DPI change (display settings are reserved for the
   owner), a real sleep/resume, multi-monitor, mixed DPI and monitor hot-plug (one display, D7).
+- **Commit:** `80b6384`.
+
+### M2-F05 Accessibility foundation — PARTIAL (known defect: UIA events not delivered)
+
+- **Requirements:** FR-A11Y-01, FR-A11Y-02, FR-A11Y-05 (reduced motion), FR-APP-02.
+- **Surface today:**
+  - the island is one UIA button named "Halo, <time>, <date>" (live), with Invoke and ExpandCollapse. Its full
+    description is the day progress when expanded and the alert text while an alert is shown (new);
+  - the settings window uses standard controls with names, roles, states and keyboard operation (M2-F02);
+  - alerts carry a glyph **and** text (no information by colour alone).
+- **New:**
+  - each shown alert calls `UiaRaiseNotificationEvent`: critical uses ImportantMostRecent, everything else uses
+    MostRecent, so repeated volume changes replace each other. The activity ID is `Halo.Alert.<kind>`;
+  - a setting, "Announce alerts to screen readers" (`announceAlerts`, default on), satisfies FR-A11Y-02
+    "announcements can be turned off". The settings window now has 5 check boxes.
+- **Known defect, found while testing (OPEN):** events raised by the island's UIA provider reach no UIA client.
+  Raising notifications and property changes returns `S_OK` while a client listens, but nothing arrives, whether
+  the client subscribes on the island element or on the desktop subtree. This includes the expand/collapse and
+  name changes raised since the first slice, which were never verified before. Removing `UseComThreading` made no
+  difference.
+  - **Likely next step:** implement the provider as a fragment root (`IRawElementProviderFragmentRoot`, with a
+    runtime ID and bounding rectangle) and re-test with Narrator.
+  - **Effect:** screen-reader users get the live name and description on demand, but not spontaneous
+    announcements.
+- **Tests:**
+  - **desktop, 3 new:**
+    - while a UIA client is attached, a shown alert is raised (S_OK) and appears in the island's description,
+      which clears when the alert ends;
+    - with announcements off, nothing is raised;
+    - reduce motion: the transition completes in under 200 ms, against more than 250 ms in a normal control run;
+  - unit settings tests extended for the new key. Unit 225/225; island desktop 34/34.
+- **Not done:** Narrator pass (needs a person listening), Axe.Windows (not installed), high contrast, text
+  scaling, the keyboard focus path to the island (FR-ISL-07, opt-in shortcut).
 
 ## Next recommended action
 

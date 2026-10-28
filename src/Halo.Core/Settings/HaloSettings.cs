@@ -35,6 +35,9 @@ public sealed record HaloSettings
     /// <summary>Hide while a full-screen app is in front (FR-ISL-09 "user can disable").</summary>
     public bool HideInFullscreen { get; init; } = true;
 
+    /// <summary>Announce transient alerts to screen readers (FR-A11Y-02 "announcements can be turned off").</summary>
+    public bool AnnounceAlerts { get; init; } = true;
+
     /// <summary>Serialises to the versioned JSON file format (indented, stable key order).</summary>
     public string ToJson()
     {
@@ -49,6 +52,7 @@ public sealed record HaloSettings
             w.WriteBoolean("startExpanded", StartExpanded);
             w.WriteBoolean("reduceMotion", ReduceMotion);
             w.WriteBoolean("hideInFullscreen", HideInFullscreen);
+            w.WriteBoolean("announceAlerts", AnnounceAlerts);
             w.WriteEndObject();
         }
 
@@ -125,6 +129,7 @@ public sealed record HaloSettings
                 StartExpanded = Bool("startExpanded", d.StartExpanded),
                 ReduceMotion = Bool("reduceMotion", d.ReduceMotion),
                 HideInFullscreen = Bool("hideInFullscreen", d.HideInFullscreen),
+                AnnounceAlerts = Bool("announceAlerts", d.AnnounceAlerts),
             };
             return true;
         }

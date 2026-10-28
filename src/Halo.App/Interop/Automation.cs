@@ -139,6 +139,22 @@ internal sealed partial class IslandAutomationProvider(nint hwnd, IIslandAutomat
         }
     }
 
+    /// <summary>
+    /// FR-A11Y-02: asks screen readers to announce a transient alert. <paramref name="important"/> = interrupt
+    /// (critical battery); otherwise the most recent replaces any queued one (repeated volume changes).
+    /// </summary>
+    /// <returns>The HRESULT of the raise, or null when no UIA client is listening.</returns>
+    public int? Announce(string text, string activityId, bool important)
+    {
+        if (!UiaClientsAreListening() || string.IsNullOrEmpty(text))
+        {
+            return null;
+        }
+
+        // NotificationKind_Other = 4; NotificationProcessing_ImportantMostRecent = 1, _MostRecent = 3.
+        return UiaRaiseNotificationEvent(this, 4, important ? 1 : 3, text, activityId);
+    }
+
     /// <summary>Releases UIA's references before the window is destroyed.</summary>
     public void Disconnect()
     {
@@ -163,5 +179,8 @@ internal sealed partial class IslandAutomationProvider(nint hwnd, IIslandAutomat
 
     [DllImport("UIAutomationCore.dll")]
     private static extern int UiaDisconnectProvider(IRawElementProviderSimple provider);
+
+    [DllImport("UIAutomationCore.dll", CharSet = CharSet.Unicode)]
+    private static extern int UiaRaiseNotificationEvent(IRawElementProviderSimple provider, int kind, int processing, [MarshalAs(UnmanagedType.BStr)] string displayString, [MarshalAs(UnmanagedType.BStr)] string activityId);
 #pragma warning restore SYSLIB1054
 }
