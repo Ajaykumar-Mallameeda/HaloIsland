@@ -817,7 +817,10 @@ public sealed partial class IslandAppTests
 
         public int ExitCode => _process.ExitCode;
 
-        public static IslandProcess Start(string? fault = null, bool waitForReady = true)
+        /// <summary>Private data folder of this run: tests never read or change the owner's own settings.</summary>
+        public string DataDir { get; private set; } = string.Empty;
+
+        public static IslandProcess Start(string? fault = null, bool waitForReady = true, string? settingsJson = null)
         {
             // A previous failed test could have left an island running; the single-instance check would then exit.
             var stale = FindWindowW("ProjectHalo.Island", null);
@@ -828,14 +831,24 @@ public sealed partial class IslandAppTests
                 Thread.Sleep(1000);
             }
 
-            var info = new ProcessStartInfo(ExePath, "--diagnostics") { UseShellExecute = false, RedirectStandardOutput = true, CreateNoWindow = true };
+            var dataDir = Path.Combine(Path.GetTempPath(), "halo-desktop-tests", Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(dataDir);
+            if (settingsJson is not null)
+            {
+                File.WriteAllText(Path.Combine(dataDir, "settings.json"), settingsJson);
+            }
+
+            var info = new ProcessStartInfo(ExePath) { UseShellExecute = false, RedirectStandardOutput = true, CreateNoWindow = true };
+            info.ArgumentList.Add("--diagnostics");
+            info.ArgumentList.Add("--data-dir");
+            info.ArgumentList.Add(dataDir);
             info.Environment.Remove("HALO_TEST_FAULT");
             if (fault is not null)
             {
                 info.Environment["HALO_TEST_FAULT"] = fault;
             }
 
-            var island = new IslandProcess(Process.Start(info)!);
+            var island = new IslandProcess(Process.Start(info)!) { DataDir = dataDir };
             if (!waitForReady)
             {
                 return island;
@@ -933,6 +946,13 @@ public sealed partial class IslandAppTests
             }
 
             _process.Dispose();
+            try
+            {
+                Directory.Delete(DataDir, recursive: true);
+            }
+            catch (IOException)
+            {
+            }
         }
     }
 }

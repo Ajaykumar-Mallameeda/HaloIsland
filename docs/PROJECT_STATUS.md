@@ -320,9 +320,48 @@ Smoke run `APP-SMOKE-120-192017` (valid, 120 Hz):
 | Transitions | 20/20 valid; 1 with one long frame; max 17.2 ms |
 | Exit p50 | 69 ms; 0 processes left |
 
+Commit: `bcd588d`.
+
 The earlier gate attempt (`APP-SMOKE-120-181627`) was INVALID (`user_input_during_run`), and one hover test in the
 same session failed with "the pointer was moved during the test". Both were caused by real mouse use and are kept
 here as the audit trail.
+
+### M2-F01 Persistent settings — PASS
+
+- **Requirements:** FR-APP-05, NFR-07, ADR §8, FR-ISL-03/04/09/13 settings.
+- **Storage:** `%LOCALAPPDATA%\ProjectHalo\settings.json` (per user, no roaming, no cloud, no secrets),
+  `schemaVersion` 1.
+- **Settings (only ones with an effect today):**
+
+  | Key | Default | Range / meaning |
+  |---|---|---|
+  | `hoverToExpand` | true | off = click-only mode |
+  | `hoverDwellMs` | 120 | 0–500 |
+  | `leaveGraceMs` | 400 | 100–2000 |
+  | `startExpanded` | false | open (pinned) at start |
+  | `reduceMotion` | false | instant transitions, on top of the Windows setting |
+  | `hideInFullscreen` | true | off removes the full-screen hooks |
+
+- **Robustness:**
+  - writes are atomic (`.tmp`, flush, `File.Replace` keeping `.bak`), and an identical save is skipped. Runtime
+    changes are saved at most once a second and flushed on exit; a failed save is logged and the island keeps
+    running;
+  - each field is checked on its own: a wrong type or an out-of-range value takes its default and the rest is kept;
+  - an unreadable or oversized (> 64 KB) file is renamed `.corrupt-<time>`, then the backup is used, else defaults;
+  - a file without `schemaVersion` is migrated and written back as v1. A file from a newer version is read for
+    known fields and copied to `.v{N}.bak` before it is first overwritten.
+- **Applied live:** hover timing and click-only mode through `IslandController.SetTiming` (from the next pending
+  action), reduce motion, full-screen hooks on/off (turning it off ends a current suppression), start expanded.
+- **Test isolation:** `--data-dir <path>` (honoured only with `--diagnostics`); every desktop test island uses its
+  own temporary folder.
+- **Unit tests:** 21 new (`SettingsTests.cs`: defaults, missing file, persistence across restarts, no rewrite of
+  identical content, backup and no temp leftovers, 6 invalid-field cases, 3 corrupt cases with backup, corrupt
+  without backup, oversized, v0 migration, newer-version backup, documented keys only, click-only mode, timing
+  change). Unit total 205/205.
+- **Desktop tests:** 4 new: click-only mode (hover does not open, click does); start expanded plus custom dwell;
+  full-screen suppression off; corrupt file set aside and defaults used. Island desktop 27/27.
+- **Not yet:** a UI to change settings (M2-F02), so a runtime change → save → restart cycle is covered by unit
+  tests, not yet end to end.
 
 ## Next recommended action
 

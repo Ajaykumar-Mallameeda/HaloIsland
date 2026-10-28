@@ -27,6 +27,9 @@ public sealed record IslandTiming
 
     public TimeSpan LeaveGrace { get; }
 
+    /// <summary>False = click-only mode (FR-ISL-04): the pointer never opens the island by itself.</summary>
+    public bool HoverEnabled { get; init; } = true;
+
     public TimeSpan DelayFor(IslandTimer timer) => timer switch
     {
         IslandTimer.HoverDwell => HoverDwell,
@@ -104,7 +107,7 @@ public sealed class IslandController
     public void SetTiming(IslandTiming timing) => Timing = timing ?? throw new ArgumentNullException(nameof(timing));
 
     public IslandTransition Apply(IslandInput input) =>
-        IsShutDown ? Unchanged() : Commit(IslandStateMachine.Apply(State, input));
+        IsShutDown ? Unchanged() : Commit(IslandStateMachine.Apply(State, input, Timing.HoverEnabled));
 
     /// <summary>A timer fired. Ignored when the slot is not armed (a late callback after a cancel or shutdown).</summary>
     public IslandTransition TimerElapsed(IslandTimerSlot slot)

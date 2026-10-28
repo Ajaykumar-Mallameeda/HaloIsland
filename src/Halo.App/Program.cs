@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using Halo.App.Island;
+using Halo.Core.Settings;
 using static Halo.App.Interop.Native;
 
 namespace Halo.App;
@@ -38,7 +39,7 @@ internal static class Program
         try
         {
             var log = args.Contains("--diagnostics", StringComparer.Ordinal) ? new DiagnosticsLog(Console.Out) : null;
-            using var window = new IslandWindow(log, log is null ? IslandFault.None : FaultFromEnvironment());
+            using var window = new IslandWindow(log, new SettingsStore(DataDirectory(args, log is not null)), log is null ? IslandFault.None : FaultFromEnvironment());
             return window.Run();
         }
         catch (Exception ex) when (ex is InvalidOperationException or COMException)
@@ -51,6 +52,16 @@ internal static class Program
         {
             instance.ReleaseMutex();
         }
+    }
+
+    /// <summary>
+    /// Settings folder: <c>%LOCALAPPDATA%\ProjectHalo</c>. Tests pass <c>--data-dir &lt;path&gt;</c>, honoured only with
+    /// --diagnostics, so they never read or change the user's own settings.
+    /// </summary>
+    private static string DataDirectory(string[] args, bool diagnostics)
+    {
+        var i = Array.IndexOf(args, "--data-dir");
+        return diagnostics && i >= 0 && i + 1 < args.Length ? args[i + 1] : SettingsStore.DefaultDirectory();
     }
 
     /// <summary>Desktop-test fault injection: <c>HALO_TEST_FAULT=tray|startup</c>, read only with --diagnostics.</summary>

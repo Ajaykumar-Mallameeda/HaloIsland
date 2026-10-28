@@ -160,7 +160,10 @@ public readonly record struct IslandTransition(IslandState Previous, IslandState
 /// </summary>
 public static class IslandStateMachine
 {
-    public static IslandTransition Apply(IslandState state, IslandInput input)
+    /// <param name="state">Current state.</param>
+    /// <param name="input">The input.</param>
+    /// <param name="hoverEnabled">False in click-only mode: entering the pill gives feedback but starts no dwell.</param>
+    public static IslandTransition Apply(IslandState state, IslandInput input, bool hoverEnabled = true)
     {
         var previous = state;
         if (state.Hidden && input is IslandInput.Expand or IslandInput.Toggle)
@@ -176,7 +179,7 @@ public static class IslandStateMachine
 
         var next = input switch
         {
-            IslandInput.PointerEntered => Enter(state),
+            IslandInput.PointerEntered => Enter(state, hoverEnabled),
             IslandInput.PointerLeft => Leave(state),
             IslandInput.PointerPressed => state with { Pressed = true, Phase = state.Phase == IslandPhase.ExpandPending ? IslandPhase.Collapsed : state.Phase },
             IslandInput.PointerReleasedInside when state.Pressed => Click(state) with { Pressed = false },
@@ -225,7 +228,7 @@ public static class IslandStateMachine
             Alert = state.Alert is { AllowedWhenSuppressed: true } ? state.Alert : null,
         };
 
-    private static IslandState Enter(IslandState state)
+    private static IslandState Enter(IslandState state, bool hoverEnabled)
     {
         if (state.Hovered)
         {
@@ -235,7 +238,7 @@ public static class IslandStateMachine
 
         var phase = state.Phase switch
         {
-            IslandPhase.Collapsed when !state.Pressed => IslandPhase.ExpandPending,
+            IslandPhase.Collapsed when !state.Pressed && hoverEnabled => IslandPhase.ExpandPending,
             IslandPhase.CollapsePending => IslandPhase.ExpandedByHover,
             var p => p,
         };

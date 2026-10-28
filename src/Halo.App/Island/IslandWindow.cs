@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using Halo.App.Interop;
 using Halo.Core.Clock;
 using Halo.Core.Island;
+using Halo.Core.Settings;
 using Halo.Core.Shell;
 using Windows.UI.Composition;
 using Windows.UI.Composition.Desktop;
@@ -31,6 +32,10 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
     private const nuint IntentTimerId = 2;
     private const nuint FullscreenTimerId = 3;
     private const nuint AlertTimerId = 4;
+    private const nuint SaveTimerId = 5;
+
+    /// <summary>Settings are written at most once a second (ADR-001 §8 debounce).</summary>
+    private const uint SaveDebounceMs = 1000;
 
     /// <summary>Diagnostics-only test hook: raise a synthetic alert (wParam = priority 0–3, lParam bit 0 = allowed
     /// over full screen, bits 8+ = duration in ms). Ignored without --diagnostics.</summary>
@@ -53,6 +58,9 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
 
     private readonly DiagnosticsLog? _log;
     private readonly IslandFault _fault;
+    private readonly SettingsStore _store;
+    private HaloSettings _settings = HaloSettings.Defaults;
+    private bool _savePending;
     private readonly IslandController _controller;
     private nint _hwnd;
     private uint _taskbarCreated;
@@ -74,11 +82,30 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
     private bool _reducedMotion;
     private int _transitionId;
 
-    public IslandWindow(DiagnosticsLog? log, IslandFault fault = IslandFault.None)
+    public IslandWindow(DiagnosticsLog? log, SettingsStore store, IslandFault fault = IslandFault.None)
     {
         _log = log;
+        _store = store;
         _fault = fault;
         _controller = new IslandController(new WindowTimer(this), IslandTiming.Default);
+    }
+
+    /// <summary>The settings in effect.</summary>
+    public HaloSettings Settings => _settings;
+
+    /// <summary>Applies changed settings immediately and saves them shortly after (debounced).</summary>
+    public void UpdateSettings(HaloSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        if (settings == _settings)
+        {
+            return;
+        }
+
+        _settings = settings;
+        ApplySettings("changed");
+        _savePending = true;
+        _ = SetTimer(_hwnd, SaveTimerId, SaveDebounceMs, 0);
     }
 
     public bool IsExpanded => State.IsExpanded;
@@ -96,7 +123,9 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
         // thread, apartment 2 = STA).
         var options = new DispatcherQueueOptions { Size = sizeof(DispatcherQueueOptions), ThreadType = 2, ApartmentType = 2 };
         Check(CreateDispatcherQueueController(options, out _), "CreateDispatcherQueueController");
-        _reducedMotion = !AnimationsEnabled();
+        _settings = _store.Load(out var settingsStatus);
+        _log?.Write("settings", ("status", SettingsToken(settingsStatus)), ("invalid_fields", _store.LastIssues.Count));
+        _reducedMotion = !AnimationsEnabled() || _settings.ReduceMotion;
         _taskbarCreated = RegisterWindowMessageW("TaskbarCreated");
         _clock = ClockFace.Read(DateTimeOffset.Now, CultureInfo.CurrentCulture);
 
@@ -116,7 +145,7 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
         var displayStatus = GuidSessionDisplayStatus;
         _displayNotification = RegisterPowerSettingNotification(_hwnd, &displayStatus, 0);
         _fullscreen = new FullscreenWatcher(_hwnd, FullscreenTimerId);
-        _log?.Write("fullscreen.watch", ("status", _fullscreen.Start() ? "running" : "failed"));
+        ApplySettings("startup");
         if (_fault == IslandFault.Startup)
         {
             // Test hook (--diagnostics only): fail after everything is created, to prove nothing is left behind.
@@ -128,6 +157,10 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
         // Completes once the first frame of the visual tree has been committed to DWM.
         var ready = _compositor.GetCommitBatch(CompositionBatchTypes.Animation);
         ready.Completed += (_, _) => _log?.Write("ready", ("left", _layout.Canvas.Left), ("top", _layout.Canvas.Top), ("width", _layout.Canvas.Width), ("height", _layout.Canvas.Height), ("dpi", (int)Math.Round(_layout.Scale * 96)));
+        if (_settings.StartExpanded)
+        {
+            Apply(IslandInput.Expand, "startup");
+        }
 
         Msg msg;
         while (GetMessageW(&msg, 0, 0, 0) > 0)
@@ -323,6 +356,10 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
                 _ = KillTimer(hwnd, IntentTimerId);
                 Present(_controller.TimerElapsed(IslandTimerSlot.Intent), "hover");
                 return 0;
+            case WmTimer when (nuint)wParam == SaveTimerId:
+                _ = KillTimer(hwnd, SaveTimerId);
+                SaveSettings();
+                return 0;
             case WmTimer when (nuint)wParam == AlertTimerId:
                 _ = KillTimer(hwnd, AlertTimerId);
                 Present(_controller.TimerElapsed(IslandTimerSlot.Alert), "alert");
@@ -380,7 +417,7 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
                 _fullscreen?.Schedule();
                 return null;
             case WmSettingChange when wParam == (nint)SpiSetClientAreaAnimation:
-                _reducedMotion = !AnimationsEnabled();
+                _reducedMotion = !AnimationsEnabled() || _settings.ReduceMotion;
                 return null;
             case WmClose:
                 _ = DestroyWindow(hwnd);
@@ -389,6 +426,8 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
                 // Stop everything that could call back into a closing island: hover timers, clock, full-screen
                 // hooks, tray, UIA.
                 _controller.Shutdown();
+                _ = KillTimer(hwnd, SaveTimerId);
+                SaveSettings(); // a change made less than a second before exit is not lost
                 _fullscreen?.Dispose();
                 _fullscreen = null;
                 _ = KillTimer(hwnd, IntentTimerId);
@@ -566,6 +605,60 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
             SetRoundedRegion(_hwnd, Shape(_layout.ShapeFor(State.Presentation)));
         }
     }
+
+    /// <summary>Puts the current settings into effect: hover timing, motion, full-screen suppression.</summary>
+    private void ApplySettings(string reason)
+    {
+        var s = _settings;
+        _controller.SetTiming(new IslandTiming(TimeSpan.FromMilliseconds(s.HoverDwellMs), TimeSpan.FromMilliseconds(s.LeaveGraceMs)) { HoverEnabled = s.HoverToExpand });
+        _reducedMotion = !AnimationsEnabled() || s.ReduceMotion;
+        if (_fullscreen is not null)
+        {
+            if (s.HideInFullscreen && !_fullscreen.IsRunning)
+            {
+                _log?.Write("fullscreen.watch", ("status", _fullscreen.Start() ? "running" : "failed"));
+            }
+            else if (!s.HideInFullscreen && _fullscreen.IsRunning)
+            {
+                _fullscreen.Stop();
+                _log?.Write("fullscreen.watch", ("status", "off"));
+                if (State.Suppressed)
+                {
+                    Apply(IslandInput.FullscreenEnded, "settings");
+                }
+            }
+        }
+
+        _log?.Write("settings.applied", ("reason", reason), ("hover", s.HoverToExpand ? 1 : 0), ("dwell_ms", s.HoverDwellMs), ("grace_ms", s.LeaveGraceMs), ("reduce_motion", s.ReduceMotion ? 1 : 0), ("fullscreen", s.HideInFullscreen ? 1 : 0));
+    }
+
+    private void SaveSettings()
+    {
+        if (!_savePending)
+        {
+            return;
+        }
+
+        _savePending = false;
+        try
+        {
+            _log?.Write("settings.saved", ("written", _store.Save(_settings) ? 1 : 0));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // NFR-05: a failed save never takes the island down; the settings stay in effect for this session.
+            _log?.Write("settings.save_failed", ("hresult", ex.HResult));
+        }
+    }
+
+    private static string SettingsToken(SettingsLoadStatus status) => status switch
+    {
+        SettingsLoadStatus.Missing => "missing",
+        SettingsLoadStatus.Loaded => "loaded",
+        SettingsLoadStatus.Migrated => "migrated",
+        SettingsLoadStatus.RecoveredFromBackup => "recovered_backup",
+        _ => "recovered_defaults",
+    };
 
     /// <summary>Requests a transient alert through the controller (the single arbitration path).</summary>
     internal void RaiseAlert(IslandAlert alert, string source)
