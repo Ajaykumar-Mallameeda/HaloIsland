@@ -63,6 +63,19 @@ internal static unsafe partial class Native
     public const uint NifTip = 0x04;
     public const uint NifShowTip = 0x80;
     public const uint NotifyIconVersion4 = 4;
+    public const uint EventSystemForeground = 0x0003;
+    public const uint EventObjectLocationChange = 0x800B;
+    public const uint WinEventOutOfContext = 0x0000;
+    public const uint WinEventSkipOwnProcess = 0x0002;
+    public const int ObjIdWindow = 0;
+    public const uint AbmNew = 0;
+    public const uint AbmRemove = 1;
+    public const nint AbnFullscreenApp = 2;
+    public const uint MonitorDefaultToNull = 0;
+    public const int GwlStyle = -16;
+    public const long WsCaption = 0x00C00000;
+    public const int DwmwaCloaked = 14;
+    public const uint MfChecked = 0x0008;
     public const uint NinSelect = 0x0400;
     public const uint NinKeySelect = 0x0401;
 
@@ -149,6 +162,18 @@ internal static unsafe partial class Native
         public uint InfoFlags;
         public Guid GuidItem;
         public nint BalloonIcon;
+    }
+
+    /// <summary>APPBARDATA (shellapi.h), 48 bytes on x64.</summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public struct AppBarData
+    {
+        public uint Size;
+        public nint Hwnd;
+        public uint CallbackMessage;
+        public uint Edge;
+        public Rect Rect;
+        public nint LParam;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -399,6 +424,54 @@ internal static unsafe partial class Native
     [LibraryImport("gdi32.dll", EntryPoint = "DeleteObject")]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static partial bool DeleteGdiObject(nint handle);
+
+    [LibraryImport("user32.dll")]
+    public static partial nint SetWinEventHook(uint eventMin, uint eventMax, nint module, delegate* unmanaged[Stdcall]<nint, uint, nint, int, int, uint, uint, void> callback, uint processId, uint threadId, uint flags);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool UnhookWinEvent(nint hook);
+
+    [LibraryImport("shell32.dll")]
+    public static partial nuint SHAppBarMessage(uint message, AppBarData* data);
+
+    [LibraryImport("shell32.dll")]
+    public static partial int SHQueryUserNotificationState(out int state);
+
+    [LibraryImport("user32.dll")]
+    public static partial nint MonitorFromWindow(nint hwnd, uint flags);
+
+    [LibraryImport("user32.dll")]
+    public static partial uint GetWindowThreadProcessId(nint hwnd, out uint processId);
+
+    [LibraryImport("user32.dll", StringMarshalling = StringMarshalling.Utf16)]
+    public static partial int GetClassNameW(nint hwnd, char* name, int max);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool IsIconic(nint hwnd);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool IsZoomed(nint hwnd);
+
+    [LibraryImport("user32.dll", EntryPoint = "GetWindowLongPtrW")]
+    public static partial nint GetWindowLongPtr(nint hwnd, int index);
+
+    [LibraryImport("dwmapi.dll")]
+    public static partial int DwmGetWindowAttribute(nint hwnd, int attribute, void* value, int size);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool IsWindowVisible(nint hwnd);
+
+    /// <summary>Full rectangle of the primary monitor (not the work area) and its handle.</summary>
+    public static (nint Monitor, Rect Bounds) PrimaryMonitor()
+    {
+        var monitor = MonitorFromPoint(default, MonitorDefaultToPrimary);
+        var info = new MonitorInfo { Size = (uint)sizeof(MonitorInfo) };
+        return (monitor, GetMonitorInfoW(monitor, &info) ? info.Monitor : default);
+    }
 
     [LibraryImport("user32.dll")]
     private static partial int SetWindowRgn(nint hwnd, nint region, [MarshalAs(UnmanagedType.Bool)] bool redraw);

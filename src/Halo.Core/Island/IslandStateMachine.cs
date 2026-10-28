@@ -67,12 +67,35 @@ public enum IslandInput
 
     /// <summary>A context menu is about to open: a pending hover expansion is dropped.</summary>
     MenuRequested,
+
+    /// <summary>A full-screen app took the foreground on the island's monitor (FR-ISL-09).</summary>
+    FullscreenStarted,
+
+    /// <summary>The full-screen condition ended.</summary>
+    FullscreenEnded,
+
+    /// <summary>The user asked to see the island despite full screen (tray "Show island now").</summary>
+    ShowNowRequested,
+
+    /// <summary>The user returned to automatic suppression.</summary>
+    ShowNowCleared,
 }
 
-/// <summary>Visual and interaction state of the island at one instant.</summary>
+/// <summary>
+/// Visual and interaction state of the island at one instant. <see cref="Suppressed"/> means a full-screen app is in
+/// front; <see cref="ShowNow"/> is the user's override. Precedence: the user's override, then full-screen suppression,
+/// then normal behaviour.
+/// </summary>
 public readonly record struct IslandState(IslandPhase Phase, bool Hovered, bool Pressed)
 {
     public static IslandState Initial { get; } = new(IslandPhase.Collapsed, Hovered: false, Pressed: false);
+
+    public bool Suppressed { get; init; }
+
+    public bool ShowNow { get; init; }
+
+    /// <summary>False while suppressed without an override: the window is hidden and does not render.</summary>
+    public bool Visible => !Suppressed || ShowNow;
 
     public IslandPresentation Presentation => Phase is IslandPhase.Collapsed or IslandPhase.ExpandPending ? IslandPresentation.Compact : IslandPresentation.Expanded;
 
@@ -98,6 +121,8 @@ public readonly record struct IslandTransition(IslandState Previous, IslandState
 
     public bool PressChanged => Previous.Pressed != Next.Pressed;
 
+    public bool VisibilityChanged => Previous.Visible != Next.Visible;
+
     public bool Changed => Previous != Next;
 
     /// <summary>True when the previous phase's timer must be stopped.</summary>
@@ -119,6 +144,17 @@ public static class IslandStateMachine
 {
     public static IslandTransition Apply(IslandState state, IslandInput input)
     {
+        if (!state.Visible && input is IslandInput.Expand or IslandInput.Toggle)
+        {
+            // An explicit request to open the island while it is suppressed is also a request to see it.
+            state = state with { ShowNow = true };
+        }
+        else if (!state.Visible && IsPointer(input))
+        {
+            // A hidden window gets no real pointer input; late messages are ignored.
+            return new IslandTransition(state, state);
+        }
+
         var next = input switch
         {
             IslandInput.PointerEntered => Enter(state),
@@ -136,10 +172,24 @@ public static class IslandStateMachine
             IslandInput.LeaveGraceElapsed => state,
             IslandInput.MenuRequested when state.Phase == IslandPhase.ExpandPending => state with { Phase = IslandPhase.Collapsed },
             IslandInput.MenuRequested => state,
+            IslandInput.FullscreenStarted when state.ShowNow => state with { Suppressed = true },
+            IslandInput.FullscreenStarted => Hide(state),
+            IslandInput.FullscreenEnded => state with { Suppressed = false, ShowNow = false },
+            IslandInput.ShowNowRequested when state.Suppressed => state with { ShowNow = true },
+            IslandInput.ShowNowRequested => state,
+            IslandInput.ShowNowCleared when state.Suppressed => Hide(state),
+            IslandInput.ShowNowCleared => state with { ShowNow = false },
             _ => throw new ArgumentOutOfRangeException(nameof(input), input, null),
         };
         return new IslandTransition(state, next);
     }
+
+    private static bool IsPointer(IslandInput input) => input is IslandInput.PointerEntered or IslandInput.PointerLeft or IslandInput.PointerPressed
+        or IslandInput.PointerReleasedInside or IslandInput.PointerReleasedOutside;
+
+    /// <summary>Suppressed without override: collapsed, no feedback, nothing pending.</summary>
+    private static IslandState Hide(IslandState state) =>
+        state with { Suppressed = true, ShowNow = false, Phase = IslandPhase.Collapsed, Hovered = false, Pressed = false };
 
     private static IslandState Enter(IslandState state)
     {

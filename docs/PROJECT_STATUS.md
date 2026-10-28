@@ -196,6 +196,53 @@ Earlier decisions Q1–Q8 were answered on 2026-10-27, and the PB-02 rule change
   0x10172 → 0x1059E (65906 → 66974).
 - The canonical repository is `C:\dev\Notch\advanced-windows-island`; the OneDrive copy was not touched.
 
+## 8. Feature execution register (campaign M1 → M3, started 2026-10-28)
+
+One record per feature. Status is PASS only when the behaviour is implemented and its tests passed on this
+machine (1920×1080 @ 120 Hz, 125 %, one display). "Desktop" = `Category=Integration` tests against real Windows.
+
+### M1-F01 Full-screen suppression and "Show island now" — PASS
+
+- **Requirements:** FR-ISL-09, FR-ISL-06 (no focus change), FR-ISL-11 (Explorer restart), FR-ISL-12 (no drawing
+  while hidden).
+- **Rule (ADR §4.9, `Halo.Core/Shell/FullscreenRule`):** suppress when the foreground application window is on the
+  island's monitor, visible, not minimised or cloaked, and its rectangle covers the whole monitor, except an
+  ordinary maximised window that still has a title bar. Exclusive Direct3D full screen and presentation mode
+  (`SHQueryUserNotificationState`) always suppress. The desktop ends suppression. Taskbar, Start, Alt+Tab,
+  flyouts, menus and Halo's own windows keep the previous decision, so they do not flash the island over a game.
+- **Triggers, no polling:** `EVENT_SYSTEM_FOREGROUND` (all processes); `EVENT_OBJECT_LOCATIONCHANGE` scoped to the
+  foreground application's process, filtered to its top-level window (F11 in the same window); `ABN_FULLSCREENAPP`
+  through an app-bar registration that reserves no space; display, DPI, work-area changes and `TaskbarCreated`.
+  Every trigger schedules one probe 100 ms later (debounce: one probe per burst, no flicker during resizes).
+- **Behaviour:** suppression hides the window (`SW_HIDE`), collapses it and cancels pending hover timers. Pointer
+  input is ignored while hidden, and the minute clock is not redrawn until the island is shown again. The tray
+  menu gains **Show island now** (checked while active) only while suppressed. Choosing it shows the island over
+  the full-screen app without taking the foreground. Choosing it again returns to automatic suppression, and the
+  override also ends when the full-screen condition ends. Tray *Open Halo* or a second launch while hidden counts
+  as the override and pins the island open. Precedence: user override > full-screen suppression > normal.
+- **Also fixed:** `WM_MOUSELEAVE` while the pointer is still inside the shape (seen once as a spurious
+  leave/re-enter in a hover test, likely after the window region is replaced) is now checked against the real
+  pointer position, and tracking is re-armed. The cause was not proven.
+- **Files:** `Halo.Core/Shell/FullscreenRule.cs` (rule + class classifier), `IslandStateMachine.cs` (suppressed,
+  show-now, visibility), `Halo.App/Island/FullscreenWatcher.cs`, `IslandWindow.cs`, `Interop/Native.cs`.
+- **Unit tests:** 29 new (`FullscreenTests.cs`: ordinary, maximised with/without auto-hide taskbar, borderless on
+  the monitor, other monitor, minimised/cloaked, exclusive D3D and presentation mode, shell/own/none keep state,
+  desktop, classifier, hide/collapse/cancel, show again, pointer ignored while hidden, override on/off/auto-end,
+  tray open while hidden, controller cancels dwell). Total unit 161/161.
+- **Desktop tests:** 5 new, using a window the test owns, switched between ordinary, maximised and borderless
+  full screen: no false suppression for ordinary or maximised windows; hide on full screen; show again when full
+  screen ends in the same window; foreground switching both ways; Show island now on/off/auto-end through the
+  real menu, with the foreground kept by the full-screen window; `TaskbarCreated` re-registration; exit while
+  suppressed; CPU < 100 ms in 5 s while suppressed. Island desktop suite 19/19 in 3 consecutive runs.
+- **Evidence limits:** the "Show island now" test sends the tray callback itself, because the taskbar is covered
+  by the full-screen window; the real Explorer tray path is covered by the existing tray test. A real Explorer
+  restart was not performed (it would disrupt the owner's session); `TaskbarCreated` was posted instead. Not
+  verified with games, exclusive full-screen D3D, video players or PowerPoint: the §4.3 full-screen matrix
+  remains manual.
+- **Privacy:** only the foreground window's class, rectangle and state are read; no titles or process names are
+  logged (diagnostic tokens: desktop/shell/own/application).
+- **Commit:** see `git log --grep "full-screen suppression"`.
+
 ## Next recommended action
 
 1. Owner reviews E1–E3 (E2 now has a precise proposal).

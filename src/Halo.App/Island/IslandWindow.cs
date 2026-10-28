@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using Halo.App.Interop;
 using Halo.Core.Clock;
 using Halo.Core.Island;
+using Halo.Core.Shell;
 using Windows.UI.Composition;
 using Windows.UI.Composition.Desktop;
 using static Halo.App.Interop.Native;
@@ -28,6 +29,7 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
     private const uint SpiSetClientAreaAnimation = 0x1043;
     private const nuint ClockTimerId = 1;
     private const nuint IntentTimerId = 2;
+    private const nuint FullscreenTimerId = 3;
 
     // Island right-click menu.
     private const int MenuExpand = 1;
@@ -38,6 +40,7 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
     private const int TrayOpen = 11;
     private const int TrayCollapse = 12;
     private const int TrayExit = 13;
+    private const int TrayShowNow = 14;
 
     private static readonly TimeSpan ClockSlack = TimeSpan.FromMilliseconds(40);
 
@@ -54,10 +57,12 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
     private IslandVisuals? _visuals;
     private IslandAutomationProvider? _automation;
     private TrayIcon? _tray;
+    private FullscreenWatcher? _fullscreen;
     private IslandLayout _layout = null!;
     private ClockReading _clock = null!;
     private bool _tracking;
     private bool _menuOpen;
+    private bool _clockDirty;
     private bool _reducedMotion;
     private int _transitionId;
 
@@ -98,6 +103,8 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
         ArmClock();
         _tray = new TrayIcon(_hwnd);
         AddTray("initial");
+        _fullscreen = new FullscreenWatcher(_hwnd, FullscreenTimerId);
+        _log?.Write("fullscreen.watch", ("status", _fullscreen.Start() ? "running" : "failed"));
         if (_fault == IslandFault.Startup)
         {
             // Test hook (--diagnostics only): fail after everything is created, to prove nothing is left behind.
@@ -252,7 +259,18 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
                 _tracking = false;
                 if (!_menuOpen && GetCapture() != hwnd)
                 {
-                    SetHovered(false);
+                    // WM_MOUSELEAVE can also arrive when the window region is replaced while the pointer stays put
+                    // (end of a transition). Trust the real pointer position, and keep tracking if it is still inside.
+                    if (PointerInside())
+                    {
+                        var again = new TrackMouseEventInfo { Size = (uint)sizeof(TrackMouseEventInfo), Flags = TmeLeave, Hwnd = hwnd };
+                        _tracking = TrackMouseEvent(&again);
+                        _log?.Write("pointer.leave_ignored");
+                    }
+                    else
+                    {
+                        SetHovered(false);
+                    }
                 }
 
                 return 0;
@@ -293,6 +311,12 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
                 _ = KillTimer(hwnd, IntentTimerId);
                 Present(_controller.TimerElapsed(), "hover");
                 return 0;
+            case WmTimer when (nuint)wParam == FullscreenTimerId:
+                OnFullscreenTimer();
+                return 0;
+            case FullscreenWatcher.AppBarMessage:
+                _ = _fullscreen?.OnAppBarMessage(wParam, lParam);
+                return 0;
             case TrayIcon.CallbackMessage:
                 OnTrayEvent((uint)(lParam & 0xFFFF), LowWord(wParam), HighWord(wParam));
                 return 0;
@@ -312,13 +336,16 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
             case WmDpiChanged:
                 Place("dpi_changed");
                 _tray?.UpdateDpi(PrimaryWorkArea().Dpi);
+                _fullscreen?.Schedule();
                 return 0;
             case WmDisplayChange:
                 Place("display_changed");
                 _tray?.UpdateDpi(PrimaryWorkArea().Dpi);
+                _fullscreen?.Schedule();
                 return null;
             case WmSettingChange when wParam == (nint)SpiSetWorkArea:
                 Place("work_area_changed");
+                _fullscreen?.Schedule();
                 return null;
             case WmSettingChange when wParam == (nint)SpiSetClientAreaAnimation:
                 _reducedMotion = !AnimationsEnabled();
@@ -327,8 +354,11 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
                 _ = DestroyWindow(hwnd);
                 return 0;
             case WmDestroy:
-                // Stop everything that could call back into a closing island: hover timers, clock, tray, UIA.
+                // Stop everything that could call back into a closing island: hover timers, clock, full-screen
+                // hooks, tray, UIA.
                 _controller.Shutdown();
+                _fullscreen?.Dispose();
+                _fullscreen = null;
                 _ = KillTimer(hwnd, IntentTimerId);
                 _ = KillTimer(hwnd, ClockTimerId);
                 if (_tray?.Remove() is { } removed)
@@ -347,6 +377,7 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
                 {
                     Place("taskbar_created");
                     AddTray("taskbar_created");
+                    _fullscreen?.OnTaskbarCreated();
                 }
 
                 return null;
@@ -367,6 +398,11 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
         if (transition.PhaseChanged)
         {
             _log?.Write("phase", ("phase", PhaseToken(state.Phase)), ("source", source));
+        }
+
+        if (transition.VisibilityChanged)
+        {
+            ApplyVisibility(source);
         }
 
         var nameBefore = AccessibleName;
@@ -397,7 +433,16 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
     {
         var nameBefore = AccessibleName;
         _clock = ClockFace.Read(DateTimeOffset.Now, CultureInfo.CurrentCulture);
-        _visuals?.ShowClock(_clock);
+        if (State.Visible)
+        {
+            _visuals?.ShowClock(_clock);
+        }
+        else
+        {
+            // FR-ISL-12: nothing is drawn while hidden; the text is redrawn when the island is shown again.
+            _clockDirty = true;
+        }
+
         _automation?.RaiseChanged(State.IsExpanded, State.IsExpanded, nameBefore, AccessibleName);
         _log?.Write("clock", ("reason", reason));
         ArmClock();
@@ -435,6 +480,59 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
         }
     }
 
+    /// <summary>Shows or hides the window for full-screen suppression, without activating it.</summary>
+    private void ApplyVisibility(string source)
+    {
+        if (State.Visible)
+        {
+            if (_clockDirty)
+            {
+                _clockDirty = false;
+                _visuals?.ShowClock(_clock);
+            }
+
+            // Back on top of a topmost full-screen window when the user asked to see the island.
+            _ = SetWindowPos(_hwnd, HwndTopmost, 0, 0, 0, 0, SwpNoActivate | SwpNoMove | SwpNoSize);
+            _ = ShowWindow(_hwnd, SwShowNoActivate);
+        }
+        else
+        {
+            _ = ShowWindow(_hwnd, SwHide);
+        }
+
+        _log?.Write("visibility", ("visible", State.Visible ? 1 : 0), ("suppressed", State.Suppressed ? 1 : 0), ("show_now", State.ShowNow ? 1 : 0), ("source", source));
+    }
+
+    /// <summary>Debounced full-screen evaluation (FR-ISL-09).</summary>
+    private void OnFullscreenTimer()
+    {
+        if (_fullscreen is null)
+        {
+            return;
+        }
+
+        var verdict = _fullscreen.Evaluate(out var kind);
+        if (verdict == FullscreenVerdict.Fullscreen && !State.Suppressed)
+        {
+            _log?.Write("fullscreen", ("state", "started"), ("foreground", KindToken(kind)));
+            Apply(IslandInput.FullscreenStarted, "fullscreen");
+        }
+        else if (verdict == FullscreenVerdict.NotFullscreen && State.Suppressed)
+        {
+            _log?.Write("fullscreen", ("state", "ended"), ("foreground", KindToken(kind)));
+            Apply(IslandInput.FullscreenEnded, "fullscreen");
+        }
+    }
+
+    private static string KindToken(ForegroundKind kind) => kind switch
+    {
+        ForegroundKind.None => "none",
+        ForegroundKind.Desktop => "desktop",
+        ForegroundKind.TransientShell => "shell",
+        ForegroundKind.OwnProcess => "own",
+        _ => "application",
+    };
+
     private static string PhaseToken(IslandPhase phase) => phase switch
     {
         IslandPhase.Collapsed => "collapsed",
@@ -457,13 +555,13 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
     }
 
     /// <summary>Re-reads the pointer after a menu closes, because pointer messages were ignored while it was open.</summary>
-    private void SyncPointer()
-    {
-        var inside = GetCursorPos(out var p)
-            && GetAncestor(WindowFromPoint(p), 2) == _hwnd
-            && InsideTarget(p.X - _layout.Canvas.Left, p.Y - _layout.Canvas.Top);
-        SetHovered(inside);
-    }
+    private void SyncPointer() => SetHovered(PointerInside());
+
+    /// <summary>True when the pointer is over this window and inside the current target shape.</summary>
+    private bool PointerInside() =>
+        GetCursorPos(out var p)
+        && GetAncestor(WindowFromPoint(p), 2) == _hwnd
+        && InsideTarget(p.X - _layout.Canvas.Left, p.Y - _layout.Canvas.Top);
 
     private void AddTray(string reason)
     {
@@ -499,7 +597,11 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
     private void ShowTrayMenu(int x, int y)
     {
         var align = (GetSystemMetrics(SmMenuDropAlignment) != 0 ? TpmRightAlign : 0) | TpmBottomAlign;
-        var command = RunMenu(x, y, align, [(TrayOpen, "Open Halo"), (TrayCollapse, "Collapse Halo"), (0, null), (TrayExit, "Exit Halo")], TrayOpen);
+        // "Show island now" exists only while a full-screen app suppresses the island; checked while it is shown anyway.
+        (int, string?, bool)[] items = State.Suppressed
+            ? [(TrayOpen, "Open Halo", false), (TrayCollapse, "Collapse Halo", false), (TrayShowNow, "Show island now", State.ShowNow), (0, null, false), (TrayExit, "Exit Halo", false)]
+            : [(TrayOpen, "Open Halo", false), (TrayCollapse, "Collapse Halo", false), (0, null, false), (TrayExit, "Exit Halo", false)];
+        var command = RunMenu(x, y, align, items, TrayOpen);
         switch (command)
         {
             case TrayOpen:
@@ -507,6 +609,9 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
                 break;
             case TrayCollapse:
                 Apply(IslandInput.Collapse, "tray");
+                break;
+            case TrayShowNow:
+                Apply(State.ShowNow ? IslandInput.ShowNowCleared : IslandInput.ShowNowRequested, "tray");
                 break;
             case TrayExit:
                 _log?.Write("exit.request", ("source", "tray"));
@@ -520,7 +625,7 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
         // The item reflects the state when the menu opens; it maps to Expand or Collapse, never Toggle, so it does
         // what its label says even if the state changes while the menu is open.
         var expanded = State.IsExpanded;
-        var command = RunMenu(x, y, 0, [(expanded ? MenuCollapse : MenuExpand, expanded ? "Collapse" : "Expand"), (0, null), (MenuExit, "Exit Halo")], 0);
+        var command = RunMenu(x, y, 0, [(expanded ? MenuCollapse : MenuExpand, expanded ? "Collapse" : "Expand", false), (0, null, false), (MenuExit, "Exit Halo", false)], 0);
         switch (command)
         {
             case MenuExpand:
@@ -541,7 +646,7 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
     /// foreground, so the island activates only for this explicit user action and hands the foreground back to the
     /// previous window afterwards (FR-ISL-06). Pointer messages are ignored while the menu is open and re-read after.
     /// </summary>
-    private int RunMenu(int x, int y, uint align, ReadOnlySpan<(int Id, string? Text)> items, int defaultId)
+    private int RunMenu(int x, int y, uint align, ReadOnlySpan<(int Id, string? Text, bool Checked)> items, int defaultId)
     {
         var menu = CreatePopupMenu();
         if (menu == 0)
@@ -553,9 +658,9 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
         _menuOpen = true;
         try
         {
-            foreach (var (id, text) in items)
+            foreach (var (id, text, isChecked) in items)
             {
-                _ = text is null ? AppendMenuW(menu, MfSeparator, 0, null) : AppendMenuW(menu, MfString, (nuint)id, text);
+                _ = text is null ? AppendMenuW(menu, MfSeparator, 0, null) : AppendMenuW(menu, MfString | (isChecked ? MfChecked : 0), (nuint)id, text);
             }
 
             if (defaultId != 0)

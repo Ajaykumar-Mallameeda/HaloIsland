@@ -19,7 +19,7 @@ namespace Halo.App.Tests;
 /// failures and clean exit. One class so the tests never run concurrently.
 /// </summary>
 [Trait("Category", "Integration")]
-public sealed class IslandAppTests
+public sealed partial class IslandAppTests
 {
     private const int WsExTopmost = 0x00000008;
     private const int WsExToolWindow = 0x00000080;
@@ -812,6 +812,8 @@ public sealed class IslandAppTests
         public nint Hwnd { get; private set; }
 
         public bool HasExited => _process.HasExited;
+
+        public int Pid => _process.Id;
 
         public int ExitCode => _process.ExitCode;
 
