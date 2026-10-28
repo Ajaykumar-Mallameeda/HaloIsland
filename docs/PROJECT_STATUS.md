@@ -360,8 +360,37 @@ here as the audit trail.
   change). Unit total 205/205.
 - **Desktop tests:** 4 new: click-only mode (hover does not open, click does); start expanded plus custom dwell;
   full-screen suppression off; corrupt file set aside and defaults used. Island desktop 27/27.
-- **Not yet:** a UI to change settings (M2-F02), so a runtime change → save → restart cycle is covered by unit
-  tests, not yet end to end.
+- **Commit:** `9cb6191`.
+
+### M2-F02 Settings window — PASS
+
+- **Requirements:** FR-APP-02 (keyboard accessible, changes apply live), FR-A11Y-01 for the settings surface.
+- **What it is:** "Halo settings", a small native window of standard Win32 controls (Common Controls v6, now in
+  the manifest; no new package, no WPF). Opened from the tray menu item **Settings…**. It has 4 check boxes
+  (expand on hover, hide in full screen, reduce motion, open at start), 2 sliders (hover delay 0–500 ms in steps
+  of 10, collapse delay 100–2000 ms in steps of 50) with their values in ms, and **Restore defaults** and
+  **Close** buttons. The hover-delay slider is disabled in click-only mode. Every change applies at once through
+  `IslandWindow.UpdateSettings` and is saved within 1 s.
+- **Keyboard:** Tab and Shift+Tab move through the controls (the island's message loop calls `IsDialogMessage`),
+  Space toggles, arrow keys move the sliders, Alt+underlined letters jump, Esc closes.
+- **Defects found and fixed while testing:**
+  - a default Close button would have closed the window when the Enter that picked "Settings…" in the tray menu
+    reached it, so Close is no longer the default button;
+  - the test helper that dismisses the tray flyout sent Esc to whatever window was in front (here the settings
+    window). It now presses Esc only when the flyout itself has the foreground.
+- **Changed test:** the tray menu gained an item, so the existing tray test reaches "Exit Halo" with Down ×4
+  instead of ×3 (same real menu, same assertions).
+- **Desktop test (1 new, end to end through Explorer's real tray button):**
+  - opens the window from the tray and checks that every control has an accessible name and role (4 check boxes,
+    2 sliders, 2 buttons by control ID);
+  - toggles click-only mode through UI Automation, sees it applied and saved, then sees that hovering no longer
+    opens the island;
+  - Tab moves focus to a slider, and Right ×2 sets the collapse delay to 500 ms, which is saved to the file;
+  - Esc closes the window and the island keeps running;
+  - a new island started from the saved file comes up with both changes.
+  Island desktop 28/28 in 2 consecutive runs; unit 205/205.
+- **Not done:** high-contrast and text-scaling review (FR-A11Y-04/06), and a Narrator pass, which needs a person
+  listening; Axe.Windows is not installed.
 
 ## Next recommended action
 

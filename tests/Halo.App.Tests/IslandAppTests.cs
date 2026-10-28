@@ -343,9 +343,9 @@ public sealed partial class IslandAppTests
             Assert.Equal("expanded_pinned", island.LastPhase());
             island.WaitFor("transition.end", skip: 2);
 
-            // Menu: "Exit Halo" (Down ×3 skips the separator, Enter).
+            // Menu: "Exit Halo" (Open, Collapse, Settings…, then Down skips the separator: Down ×4, Enter).
             OpenTrayMenu(automation);
-            PressKeys(0x28, 0x28, 0x28, 0x0D);
+            PressKeys(0x28, 0x28, 0x28, 0x28, 0x0D);
             Assert.True(island.WaitForExit(TimeSpan.FromSeconds(10)), "Halo did not exit from the tray menu");
             Assert.Equal(0, island.ExitCode);
             Assert.Contains(island.Events("exit.request"), e => e["source"]?.GetValue<string>() == "tray");
@@ -455,7 +455,9 @@ public sealed partial class IslandAppTests
     {
         bool Open() => automation.GetDesktop().FindFirstChild(cf => cf.ByClassName("TopLevelWindowForOverflowXamlIsland"))?
             .FindFirstDescendant(cf => cf.ByAutomationId("NotifyItemIcon")) is { IsOffscreen: false };
-        if (Open())
+        // Esc only when the flyout itself has the foreground: otherwise it would reach whatever window does (for
+        // example the settings window the tray menu just opened).
+        if (Open() && Describe(GetForegroundWindow()).Contains("TopLevelWindowForOverflowXamlIsland", StringComparison.Ordinal))
         {
             PressKeys(0x1B); // Esc closes the flyout
         }

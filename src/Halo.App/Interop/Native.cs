@@ -63,6 +63,34 @@ internal static unsafe partial class Native
     public const uint NifTip = 0x04;
     public const uint NifShowTip = 0x80;
     public const uint NotifyIconVersion4 = 4;
+    // Settings window: styles, standard-control messages and colours.
+    public const uint WsExControlParent = 0x00010000;
+    public const uint WsOverlapped = 0x00000000;
+    public const uint WsSysMenu = 0x00080000;
+    public const uint WsMinimizeBox = 0x00020000;
+    public const long WsChild = 0x40000000;
+    public const long WsVisible = 0x10000000;
+    public const long WsTabStop = 0x00010000;
+    public const long BsPushButton = 0x0;
+    public const long BsDefPushButton = 0x1;
+    public const long BsAutoCheckBox = 0x3;
+    public const long TbsNoTicks = 0x10;
+    public const string TrackbarClass = "msctls_trackbar32";
+    public const uint WmCommand = 0x0111;
+    public const uint WmHScroll = 0x0114;
+    public const uint WmCtlColorStatic = 0x0138;
+    public const uint WmSetFont = 0x0030;
+    public const uint BmGetCheck = 0x00F0;
+    public const uint BmSetCheck = 0x00F1;
+    public const uint TbmGetPos = 0x0400;
+    public const uint TbmSetPos = 0x0405;
+    public const uint TbmSetRangeMin = 0x0407;
+    public const uint TbmSetRangeMax = 0x0408;
+    public const uint TbmSetPageSize = 0x0415;
+    public const uint TbmSetLineSize = 0x0417;
+    public const int SwShow = 5;
+    public const int ColorWindow = 5;
+    public const uint IccBarClasses = 0x4;
     public const uint WmWtsSessionChange = 0x02B1;
     public const nint WtsSessionLock = 0x7;
     public const nint WtsSessionUnlock = 0x8;
@@ -167,6 +195,13 @@ internal static unsafe partial class Native
         public uint InfoFlags;
         public Guid GuidItem;
         public nint BalloonIcon;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct InitCommonControlsInfo
+    {
+        public uint Size;
+        public uint Classes;
     }
 
     /// <summary>APPBARDATA (shellapi.h), 48 bytes on x64.</summary>
@@ -469,6 +504,34 @@ internal static unsafe partial class Native
     [LibraryImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static partial bool IsWindowVisible(nint hwnd);
+
+    [LibraryImport("comctl32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool InitCommonControlsEx(InitCommonControlsInfo* info);
+
+    [LibraryImport("user32.dll", EntryPoint = "CreateWindowExW", StringMarshalling = StringMarshalling.Utf16)]
+    public static partial nint CreateWindowExW(uint exStyle, string className, string windowName, uint style, int x, int y, int w, int h, nint parent, nint menu, nint instance, nint param);
+
+    [LibraryImport("gdi32.dll", EntryPoint = "CreateFontW", StringMarshalling = StringMarshalling.Utf16)]
+    public static partial nint CreateFontW(int height, int width, int escapement, int orientation, int weight, uint italic, uint underline, uint strikeOut, uint charSet, uint outPrecision, uint clipPrecision, uint quality, uint pitchAndFamily, string face);
+
+    [LibraryImport("user32.dll")]
+    public static partial nint SendMessageW(nint hwnd, uint msg, nint wParam, nint lParam);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool EnableWindow(nint hwnd, [MarshalAs(UnmanagedType.Bool)] bool enable);
+
+    [LibraryImport("user32.dll", StringMarshalling = StringMarshalling.Utf16)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool SetWindowTextW(nint hwnd, string text);
+
+    [LibraryImport("user32.dll")]
+    public static partial nint GetSysColorBrush(int index);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool IsDialogMessageW(nint dialog, Msg* msg);
 
     [LibraryImport("wtsapi32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]

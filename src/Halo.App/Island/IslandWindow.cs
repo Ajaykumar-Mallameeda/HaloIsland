@@ -51,6 +51,7 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
     private const int TrayCollapse = 12;
     private const int TrayExit = 13;
     private const int TrayShowNow = 14;
+    private const int TraySettings = 15;
 
     private static readonly TimeSpan ClockSlack = TimeSpan.FromMilliseconds(40);
 
@@ -71,6 +72,7 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
     private IslandAutomationProvider? _automation;
     private TrayIcon? _tray;
     private FullscreenWatcher? _fullscreen;
+    private SettingsWindow? _settingsWindow;
     private IslandLayout _layout = null!;
     private ClockReading _clock = null!;
     private bool _tracking;
@@ -165,6 +167,11 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
         Msg msg;
         while (GetMessageW(&msg, 0, 0, 0) > 0)
         {
+            if (_settingsWindow?.PreTranslate(&msg) == true)
+            {
+                continue;
+            }
+
             _ = TranslateMessage(&msg);
             _ = DispatchMessageW(&msg);
         }
@@ -430,6 +437,8 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
                 SaveSettings(); // a change made less than a second before exit is not lost
                 _fullscreen?.Dispose();
                 _fullscreen = null;
+                _settingsWindow?.Dispose();
+                _settingsWindow = null;
                 _ = KillTimer(hwnd, IntentTimerId);
                 _ = KillTimer(hwnd, ClockTimerId);
                 _ = WTSUnRegisterSessionNotification(hwnd);
@@ -823,8 +832,8 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
         var align = (GetSystemMetrics(SmMenuDropAlignment) != 0 ? TpmRightAlign : 0) | TpmBottomAlign;
         // "Show island now" exists only while a full-screen app suppresses the island; checked while it is shown anyway.
         (int, string?, bool)[] items = State.Suppressed
-            ? [(TrayOpen, "Open Halo", false), (TrayCollapse, "Collapse Halo", false), (TrayShowNow, "Show island now", State.ShowNow), (0, null, false), (TrayExit, "Exit Halo", false)]
-            : [(TrayOpen, "Open Halo", false), (TrayCollapse, "Collapse Halo", false), (0, null, false), (TrayExit, "Exit Halo", false)];
+            ? [(TrayOpen, "Open Halo", false), (TrayCollapse, "Collapse Halo", false), (TrayShowNow, "Show island now", State.ShowNow), (TraySettings, "Settings\u2026", false), (0, null, false), (TrayExit, "Exit Halo", false)]
+            : [(TrayOpen, "Open Halo", false), (TrayCollapse, "Collapse Halo", false), (TraySettings, "Settings\u2026", false), (0, null, false), (TrayExit, "Exit Halo", false)];
         var command = RunMenu(x, y, align, items, TrayOpen);
         switch (command)
         {
@@ -833,6 +842,10 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
                 break;
             case TrayCollapse:
                 Apply(IslandInput.Collapse, "tray");
+                break;
+            case TraySettings:
+                _settingsWindow = SettingsWindow.Open(this, _settingsWindow);
+                _log?.Write("settings.window", ("state", "open"));
                 break;
             case TrayShowNow:
                 Apply(State.ShowNow ? IslandInput.ShowNowCleared : IslandInput.ShowNowRequested, "tray");
