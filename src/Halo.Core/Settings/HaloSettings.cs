@@ -69,6 +69,9 @@ public sealed record HaloSettings
     /// <summary>Show due reminders and tasks in the island (F-F04/F-F05). The list itself is kept either way.</summary>
     public bool ShowReminders { get; init; } = true;
 
+    /// <summary>Shortcut that opens or closes the island (I-F05). Off until the user picks one.</summary>
+    public HotkeyChoice Hotkey { get; init; } = HotkeyChoice.Off;
+
     /// <summary>Serialises to the versioned JSON file format (indented, stable key order).</summary>
     public string ToJson()
     {
@@ -92,6 +95,7 @@ public sealed record HaloSettings
             w.WriteBoolean("showNetwork", ShowNetwork);
             w.WriteBoolean("showPreviews", ShowPreviews);
             w.WriteBoolean("showReminders", ShowReminders);
+            w.WriteString("hotkey", Hotkeys.Token(Hotkey));
             w.WriteEndObject();
         }
 
@@ -144,6 +148,22 @@ public sealed record HaloSettings
                 return fallback;
             }
 
+            HotkeyChoice Choice(string name, HotkeyChoice fallback)
+            {
+                if (!root.TryGetProperty(name, out var e))
+                {
+                    return fallback;
+                }
+
+                if (e.ValueKind == JsonValueKind.String && Hotkeys.Parse(e.GetString()) is { } choice)
+                {
+                    return choice;
+                }
+
+                list.Add(name);
+                return fallback;
+            }
+
             int Int(string name, int fallback, int min, int max)
             {
                 if (!root.TryGetProperty(name, out var e))
@@ -177,6 +197,7 @@ public sealed record HaloSettings
                 ShowNetwork = Bool("showNetwork", d.ShowNetwork),
                 ShowPreviews = Bool("showPreviews", d.ShowPreviews),
                 ShowReminders = Bool("showReminders", d.ShowReminders),
+                Hotkey = Choice("hotkey", d.Hotkey),
             };
 
             // Critical must stay below low; otherwise it falls back (to the default, or just under low).

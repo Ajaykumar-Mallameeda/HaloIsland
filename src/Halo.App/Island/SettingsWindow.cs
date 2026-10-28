@@ -30,6 +30,8 @@ internal sealed unsafe class SettingsWindow : IDisposable
     private const int IdNetwork = 113;
     private const int IdReminders = 114;
     private const int IdPreviews = 115;
+    private const int IdHotkey = 116;
+    private const int IdHotkeyStatus = 117;
     private const int IdClose = 2; // IDCANCEL: Esc and the Close button
     private const int IdDwellValue = 202;
     private const int IdGraceValue = 203;
@@ -130,7 +132,7 @@ internal sealed unsafe class SettingsWindow : IDisposable
             }
 
             var dpi = PrimaryWorkArea().Dpi;
-            var (w, h) = (Scale(440, dpi), Scale(544, dpi));
+            var (w, h) = (Scale(440, dpi), Scale(600, dpi));
             var (work, _) = PrimaryWorkArea();
             var x = work.Left + ((work.Right - work.Left - w) / 2);
             var y = work.Top + ((work.Bottom - work.Top - h) / 2);
@@ -185,12 +187,21 @@ internal sealed unsafe class SettingsWindow : IDisposable
         Add(IdReminders, "BUTTON", "Show due &reminders and tasks", BsAutoCheckBox | WsTabStop, 16, y, 400, 22);
         y += 30;
         Add(IdPreviews, "BUTTON", "Show &private text (task and reminder text, previews)", BsAutoCheckBox | WsTabStop, 16, y, 400, 22);
+        y += 34;
+        Add(0, "STATIC", "&Shortcut to open or close:", 0, 16, y + 4, 160, 20);
+        Add(IdHotkey, "COMBOBOX", string.Empty, WsTabStop | CbsDropDownList | WsVScroll, 180, y, 130, 120);
+        Add(IdHotkeyStatus, "STATIC", string.Empty, 0, 318, y + 4, 110, 20);
         y += 42;
         Add(IdDefaults, "BUTTON", "Restore &defaults", BsPushButton | WsTabStop, 16, y, 130, 28);
         Add(IdLogFolder, "BUTTON", "Open &log folder", BsPushButton | WsTabStop, 158, y, 130, 28);
         // Not a default button: the Enter that picked "Settings…" in the tray menu reaches this window as WM_CHAR,
         // and a default Close button would shut the window the moment it opened. Esc (IDCANCEL) still closes it.
         Add(IdClose, "BUTTON", "Close", BsPushButton | WsTabStop, 300, y, 110, 28);
+
+        foreach (var choice in Halo.Core.Settings.Hotkeys.All)
+        {
+            _ = SendMessageText(_controls[IdHotkey], CbAddString, 0, Halo.Core.Settings.Hotkeys.Label(choice));
+        }
 
         SetRange(IdDwell, HaloSettings.MinDwellMs, HaloSettings.MaxDwellMs, DwellStep);
         SetRange(IdGrace, HaloSettings.MinGraceMs, HaloSettings.MaxGraceMs, GraceStep);
@@ -232,6 +243,8 @@ internal sealed unsafe class SettingsWindow : IDisposable
             Check(IdNetwork, s.ShowNetwork);
             Check(IdReminders, s.ShowReminders);
             Check(IdPreviews, s.ShowPreviews);
+            _ = SendMessageW(_controls[IdHotkey], CbSetCurSel, (int)s.Hotkey, 0);
+            _ = SetWindowTextW(_controls[IdHotkeyStatus], s.Hotkey == HotkeyChoice.Off ? string.Empty : _owner.HotkeyStatus == "in_use" ? "In use by another app" : "Ready");
             _ = SendMessageW(_controls[IdDwell], TbmSetPos, 1, s.HoverDwellMs);
             _ = SendMessageW(_controls[IdGrace], TbmSetPos, 1, s.LeaveGraceMs);
             _ = EnableWindow(_controls[IdDwell], s.HoverToExpand);
@@ -277,6 +290,7 @@ internal sealed unsafe class SettingsWindow : IDisposable
             ShowNetwork = IsChecked(IdNetwork),
             ShowReminders = IsChecked(IdReminders),
             ShowPreviews = IsChecked(IdPreviews),
+            Hotkey = (HotkeyChoice)Math.Clamp((int)SendMessageW(_controls[IdHotkey], CbGetCurSel, 0, 0), 0, Halo.Core.Settings.Hotkeys.All.Count - 1),
         };
         _owner.UpdateSettings(s);
         Show(s);
@@ -308,6 +322,9 @@ internal sealed unsafe class SettingsWindow : IDisposable
                 switch (id)
                 {
                     case IdHover or IdFullscreen or IdMotion or IdStartExpanded or IdAnnounce or IdMedia or IdVolume or IdBattery or IdNetwork or IdReminders or IdPreviews:
+                        Commit();
+                        return 0;
+                    case IdHotkey when ((wParam >> 16) & 0xFFFF) == 1: // CBN_SELCHANGE
                         Commit();
                         return 0;
                     case IdDefaults:

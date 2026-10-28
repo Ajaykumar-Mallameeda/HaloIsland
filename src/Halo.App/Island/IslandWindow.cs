@@ -625,6 +625,10 @@ internal sealed unsafe partial class IslandWindow : IDisposable
                 ApplyRegion(union: false);
                 _log?.Write("transition.end", ("dir", State.IsExpanded ? "expand" : "collapse"));
                 return 0;
+            case WmHotkey when (int)wParam == HotkeyId:
+                // I-F05: the user's shortcut opens or closes the island, like the tray icon. It never takes focus.
+                Apply(IslandInput.Toggle, "hotkey");
+                return 0;
             case WmCommandFromInstance:
                 Apply(wParam == 2 ? IslandInput.Toggle : IslandInput.Expand, "instance");
                 return 0;
@@ -653,6 +657,7 @@ internal sealed unsafe partial class IslandWindow : IDisposable
                 // hooks, tray, UIA, and completion callbacks of animations still running.
                 StopActivityTimers();
                 _ = KillTimer(hwnd, ReminderTimerId);
+                ReleaseHotkey();
                 SaveState(); // a running countdown survives the exit (FR-TIM-02)
                 SaveTasks();
                 _tasksWindow?.Dispose();
@@ -981,6 +986,8 @@ internal sealed unsafe partial class IslandWindow : IDisposable
             CheckReminders("settings");
         }
 
+        ApplyHotkey(reason);
+
         if (_layout is not null && _layout.VolumeRow != s.ShowVolume)
         {
             // The volume row makes the expanded island taller.
@@ -1010,6 +1017,55 @@ internal sealed unsafe partial class IslandWindow : IDisposable
         }
 
         _log?.Write("settings.applied", ("reason", reason), ("hover", s.HoverToExpand ? 1 : 0), ("dwell_ms", s.HoverDwellMs), ("grace_ms", s.LeaveGraceMs), ("reduce_motion", s.ReduceMotion ? 1 : 0), ("fullscreen", s.HideInFullscreen ? 1 : 0));
+    }
+
+    private const int HotkeyId = 1;
+    private HotkeyChoice _hotkeyRegistered;
+    private bool _hotkeyApplied;
+
+    /// <summary>
+    /// The shortcut's state for the settings window: registered, off, or in use by another app (Windows refuses a
+    /// shortcut that is already registered, which is how a conflict is detected).
+    /// </summary>
+    internal string HotkeyStatus { get; private set; } = "Off";
+
+    /// <summary>Registers the chosen shortcut (only when it changed). RegisterHotKey: no keyboard hook, no keystrokes seen.</summary>
+    private void ApplyHotkey(string reason)
+    {
+        var wanted = _settings.Hotkey;
+        if (_hotkeyApplied && wanted == _hotkeyRegistered && (wanted == HotkeyChoice.Off || HotkeyStatus != "in_use"))
+        {
+            return;
+        }
+
+        _hotkeyApplied = true;
+        ReleaseHotkey();
+        if (Hotkeys.Keys(wanted) is not { } keys || _hwnd == 0)
+        {
+            HotkeyStatus = "Off";
+            _log?.Write("hotkey", ("choice", Hotkeys.Token(wanted)), ("registered", 0), ("reason", reason));
+            return;
+        }
+
+        var ok = RegisterHotKey(_hwnd, HotkeyId, keys.Modifiers, keys.Key);
+        var error = ok ? 0 : Marshal.GetLastPInvokeError();
+        _hotkeyRegistered = ok ? wanted : HotkeyChoice.Off;
+        HotkeyStatus = ok ? Hotkeys.Label(wanted) : "in_use";
+        _log?.Write("hotkey", ("choice", Hotkeys.Token(wanted)), ("registered", ok ? 1 : 0), ("error", error), ("reason", reason));
+        if (!ok)
+        {
+            _fileLog?.Write(LogLevel.Warning, "hotkey.unavailable", ("choice", Hotkeys.Token(wanted)), ("error", error));
+        }
+    }
+
+    private void ReleaseHotkey()
+    {
+        if (_hotkeyRegistered != HotkeyChoice.Off && _hwnd != 0)
+        {
+            _ = UnregisterHotKey(_hwnd, HotkeyId);
+        }
+
+        _hotkeyRegistered = HotkeyChoice.Off;
     }
 
     private void SaveSettings()

@@ -1165,6 +1165,26 @@ Starting point: `4f26bc9`, clean tree; baseline unit 319/319, island desktop 52/
 - **Not wired into the island yet:** without a token source there is nothing to show, and no placeholder
   settings were added.
 
+### I-F05 Keyboard shortcut — PASS
+
+- **Setting:** Settings › "Shortcut to open or close", **Off by default**. The choices are Ctrl+Alt+H,
+  Ctrl+Alt+Space and Ctrl+Shift+H. Each needs Ctrl, so no bare key is ever taken from typing.
+- **Mechanism:**
+  - `RegisterHotKey` with `MOD_NOREPEAT`. There is no keyboard hook, so Halo never sees other keystrokes;
+  - it is unregistered when changed and on exit.
+- **Behaviour:** the shortcut toggles the island through the same controller as the tray, and never takes focus.
+- **Conflict:** when another app already owns the shortcut, Windows refuses it (error 1409). Halo logs this,
+  shows "In use by another app" next to the setting, and does not retry in a loop. The tray icon stays the
+  fallback.
+- **Not built:** moving keyboard focus into the island (the rest of FR-ISL-07). The island is non-activating by
+  design (FR-ISL-06).
+- **Tests:**
+  - unit, +3: token round trip, modifiers, defaults and invalid values;
+  - desktop, +3:
+    - off by default;
+    - a real Ctrl+Alt+H chord sent with `SendInput` opens and closes the island, and focus is unchanged;
+    - the shortcut already held by the test process is reported with error 1409.
+
 ## Next recommended action
 
 1. **Owner decisions:** E1–E3 (§5). Add: whether to package Halo as MSIX, which unblocks notifications (O-F01),

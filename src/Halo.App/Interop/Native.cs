@@ -20,6 +20,7 @@ internal static unsafe partial class Native
     public const uint WmContextMenu = 0x007B;
     public const uint WmMouseLeave = 0x02A3;
     public const uint WmMouseWheel = 0x020A;
+    public const uint WmHotkey = 0x0312;
     public const nint PbtApmSuspend = 0x4;
     public const uint WmCaptureChanged = 0x0215;
     public const uint WmPowerBroadcast = 0x0218;
@@ -583,6 +584,14 @@ internal static unsafe partial class Native
 
     [LibraryImport("user32.dll")]
     public static partial nint SetFocus(nint hwnd);
+
+    [LibraryImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool RegisterHotKey(nint hwnd, int id, uint modifiers, uint key);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool UnregisterHotKey(nint hwnd, int id);
 
     /// <summary>The text of a window or control.</summary>
     public static string WindowText(nint hwnd)
