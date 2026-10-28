@@ -1358,14 +1358,61 @@ All of these use the shared vocabulary (B-F01/B-F02), and none adds a motion of 
   a documented interface, so nothing was built.
 - **Never used:** process-name heuristics or undocumented sources.
 
+### Expansion campaign gate — PASS (functional); Narrator by ear NOT RUN
+
+**Results on this machine (2026-10-29):**
+- locked restore passed;
+- clean Release build (`--no-incremental`): 0 warnings, 0 errors;
+- unit tests **462/462** (Core, App and spikes);
+- island desktop **79/79**;
+- spike desktop **5/5**;
+- no Halo process left afterwards.
+
+**Manual run** (temporary data folder):
+- the second launch expanded the running island and exited 0, with one process running;
+- `--exit` closed it, and the shell confirmed the tray icon was removed;
+- no process remained;
+- the log contains no content.
+
+**Smoke `APP-SMOKE-120-034653`** (valid; SMOKE only, not budget verdicts):
+
+| Measurement | Value |
+|---|---|
+| Start → first frame p50 | 266.0 ms |
+| Idle 90 s | 15.6 ms CPU, **1** attributed frame (the minute clock) |
+| Private / working set | 20.1 / 77.5 MB |
+| Transitions | 20/20 valid; 1 with one long frame; p95 8.9 ms; max 16.9 ms |
+| Exit p50 | 76.2 ms; 0 processes left |
+
+The idle result is now clean: the M3 run's 160 frames came from other activity on the screen. PB-03 is still owner
+decision E2.
+
+**Other checks:**
+- no secrets or binaries are tracked;
+- 0 broken relative links in the docs;
+- no remotes, and nothing was pushed;
+- the OneDrive copy is clean at `9f7d5fb`, untouched.
+
 ## Next recommended action
 
-1. **Owner decisions:** E1–E3 (§5). Add: whether to package Halo as MSIX, which unblocks notifications (O-F01),
-   Start with Windows and a signed install; and whether Caps Lock / input-language indicators may observe
-   keyboard state (O-F02).
-2. **Next engineering item:** fix the UIA event defect (M2-F05). Rebuild the island provider as a fragment root,
-   then check with Narrator. Today screen readers do not hear alerts spontaneously.
-3. **Measurements on a quiet desktop** (no editor or terminal output on screen): repeat the idle smoke, then
-   PB-04 with music playing and PB-07 as a frame time.
-4. Then the remaining Core features: timer and tasks (M4), Start with Windows, manual media-session switching
-   and seek.
+The expansion campaign's report is in [`EXPANSION_CAMPAIGN_REPORT.md`](EXPANSION_CAMPAIGN_REPORT.md).
+
+1. **A person listens with Narrator** (about 10 minutes):
+   - alerts, timer completion, reminders and Do Not Disturb summaries are announced;
+   - the open island's buttons and sliders can be reached.
+   UIA delivery is proven by tests; speech is not.
+2. **Owner decisions:**
+   - E1–E3 (§5);
+   - L-1, whether to package Halo as MSIX ([`PACKAGING_FEASIBILITY.md`](PACKAGING_FEASIBILITY.md));
+   - E-1, an Entra app registration and sign-in for Outlook mail and calendar;
+   - K-1, the camera-in-use indicator;
+   - O-F02, the keyboard indicators;
+   - whether `System.Management` may be added for the brightness indicator (J-F03).
+3. **Next engineering items:**
+   - Outlook token source (system browser + PKCE, Credential Manager) once E-1 is done, then wire
+     `MailWatcher`/`CalendarWatcher` into the island;
+   - Bluetooth audio connection pill (J-F04, no battery level);
+   - horizontal position offset (I-F04);
+   - drag-out from the shelf (OLE `IDataObject`).
+4. **Measurements on a quiet desktop:** idle smoke, PB-04 with music, PB-07 as a frame time, and PB-05 for the new
+   motions.

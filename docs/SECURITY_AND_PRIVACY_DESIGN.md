@@ -114,6 +114,25 @@ internet profile. The Wi-Fi network name (profile name), addresses, traffic, DNS
 read. Nothing is stored or sent; diagnostics hold state tokens only. `showBattery` and `showNetwork` turn each feed
 off.
 
+**As built, expansion campaign (2026-10-29):**
+
+- **Data files, all versioned JSON in the data folder, written atomically with a `.bak`:**
+  - `state.json`: countdown, focus session and quiet-mode schedule. No user text;
+  - `tasks.json`: the user's tasks and reminders. Their text is shown in the island only with "Show private text";
+  - `shelf.json`: items the user pinned. This is **text snippets as well as file paths**, which differs from §2 and
+    is recorded here. Pinning happens only on an explicit button press; no clipboard listener exists. Clear all
+    deletes the file and its backup.
+- **Logs:** they never contain task text, shelf content, file names, media app IDs or notification content; desktop
+  tests check this.
+- **Graph (Outlook) adapter:**
+  - delegated `User.Read Mail.ReadBasic Calendars.ReadBasic offline_access`;
+  - HTTPS GET to `graph.microsoft.com` only, 10 s timeout, 1 MB cap;
+  - links opened only over HTTPS to Outlook or Teams hosts.
+  It is **inactive**: no token source signs in, so the default build still makes no network connection (PB-13
+  unchanged). Tokens, when added, belong in Windows Credential Manager, never in files or logs (ADR-001 §8).
+- **Keyboard:** the shortcut uses `RegisterHotKey` only. No hook exists and no keystrokes are seen.
+- **Windows settings:** quiet mode is Halo's own. Windows' Do Not Disturb and Focus settings are never changed.
+
 ## 7. Licensing, intellectual property and reverse-engineering boundary
 
 | Topic | Position |

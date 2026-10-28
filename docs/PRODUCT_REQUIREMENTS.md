@@ -107,6 +107,26 @@ Requirements are unchanged. This table records what exists; evidence is in PROJE
 | FR-SYS-05…08 | Not built | Advanced; FR-SYS-06/07 deferred for privacy (PROJECT_STATUS §8, O-F02) |
 | FR-NTF-01 | Not built | Blocked: needs package identity (O-F01) |
 
+### 3.3b As built: expansion campaign (2026-10-29)
+
+Requirements are unchanged. Evidence for each row is in PROJECT_STATUS §9.
+
+| ID | State | Notes |
+|---|---|---|
+| FR-ISL-07 | Partly built | Opt-in shortcut (Off by default) toggles the island. Moving keyboard focus into the island is not built (non-activating by design) |
+| FR-ISL-08 | Built | Activity, now-playing and clock pages; page dots (24 DIP) and mouse wheel |
+| FR-ISL-13 / FR-A11Y-05 | Built | Shared motion system (MOTION_SYSTEM.md) with reduced-motion alternatives |
+| FR-MED-02 | Built **with seek** | Seek only when the session allows it |
+| FR-MED-03 | Built | Manual session switching |
+| FR-TIM-01/02/03 | Built | Countdown and focus sessions (Pomodoro preset); restart and sleep safe; completion alert in the island (no sound) |
+| FR-TSK-01/02 | Built | Tasks window; due reminders with snooze (10 min), done and dismiss; missed reminders shown at the next start |
+| FR-TSK-03 | Not built | Needs package identity (L-1) |
+| FR-APP-01 | Built except Start with Windows | Tray: Timer, Focus session, Do Not Disturb (the "pause alerts" requirement), Tasks, Shelf |
+| FR-A11Y-01/02 | Built | UIA tree with content and controls; notifications delivered to clients (Narrator by ear not run) |
+| FR-A11Y-04 | Partly built | High contrast uses system colours. A manual review of all four HC themes was not run |
+| FR-SHF-01 | Built except drag | Explicit pin from the clipboard; references only; missing flagged; never opens anything |
+| FR-NTF-01 | Not built | BLOCKED (package identity) |
+
 ### 3.4 Timer (FR-TIM) and tasks (FR-TSK)
 
 | ID | Requirement | APIs | Perm. | Deps | Failure modes → behaviour | Tests |
