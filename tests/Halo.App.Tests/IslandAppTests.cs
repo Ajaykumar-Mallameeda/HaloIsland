@@ -736,6 +736,30 @@ public sealed partial class IslandAppTests
     [DllImport("user32.dll")]
     private static extern uint GetWindowThreadProcessId(nint hwnd, out uint processId);
 
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern nint FindWindowExW(nint parent, nint after, string className, string? windowName);
+
+    /// <summary>The island window owned by a process (waits up to 5 s for it).</summary>
+    private static nint OwnIslandWindow(int pid)
+    {
+        var sw = Stopwatch.StartNew();
+        while (sw.ElapsedMilliseconds < 5000)
+        {
+            for (var h = FindWindowExW(0, 0, "ProjectHalo.Island", null); h != 0; h = FindWindowExW(0, h, "ProjectHalo.Island", null))
+            {
+                _ = GetWindowThreadProcessId(h, out var owner);
+                if (owner == pid)
+                {
+                    return h;
+                }
+            }
+
+            Thread.Sleep(20);
+        }
+
+        return 0;
+    }
+
     [DllImport("user32.dll")]
     private static extern bool GetCursorPos(out Point point);
 
@@ -877,7 +901,9 @@ public sealed partial class IslandAppTests
             }
 
             island.WaitFor("ready");
-            island.Hwnd = FindWindowW("ProjectHalo.Island", null);
+            // The island window of *this* process: a previous instance may still be closing (intermittent seen once,
+            // PostMessage to a handle that had just been destroyed).
+            island.Hwnd = OwnIslandWindow(island.Pid);
             Assert.NotEqual(0, island.Hwnd);
             return island;
         }

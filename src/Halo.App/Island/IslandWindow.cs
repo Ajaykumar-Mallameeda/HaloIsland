@@ -85,6 +85,7 @@ internal sealed unsafe partial class IslandWindow : IDisposable
     private const int TrayShowNow = 14;
     private const int TraySettings = 15;
     private const int TrayTasks = 16;
+    private const int TrayShelf = 17;
 
     private static readonly TimeSpan ClockSlack = TimeSpan.FromMilliseconds(40);
 
@@ -215,6 +216,7 @@ internal sealed unsafe partial class IslandWindow : IDisposable
 
         InitActivities();
         InitReminders();
+        InitShelf();
         _ = ShowWindow(_hwnd, SwShowNoActivate);
 
         // Completes once the first frame of the visual tree has been committed to DWM.
@@ -228,7 +230,7 @@ internal sealed unsafe partial class IslandWindow : IDisposable
         Msg msg;
         while (GetMessageW(&msg, 0, 0, 0) > 0)
         {
-            if (_settingsWindow?.PreTranslate(&msg) == true || _tasksWindow?.PreTranslate(&msg) == true)
+            if (_settingsWindow?.PreTranslate(&msg) == true || _tasksWindow?.PreTranslate(&msg) == true || _shelfWindow?.PreTranslate(&msg) == true)
             {
                 continue;
             }
@@ -682,6 +684,8 @@ internal sealed unsafe partial class IslandWindow : IDisposable
                 SaveTasks();
                 _tasksWindow?.Dispose();
                 _tasksWindow = null;
+                _shelfWindow?.Dispose();
+                _shelfWindow = null;
                 _controller.Shutdown();
                 _motion.Shutdown();
                 _ = KillTimer(hwnd, SaveTimerId);
@@ -1677,6 +1681,7 @@ internal sealed unsafe partial class IslandWindow : IDisposable
 
         items.Add(new MenuEntry(TraySettings, "Settings\u2026"));
         items.Add(new MenuEntry(TrayTasks, "Tasks and reminders\u2026"));
+        items.Add(new MenuEntry(TrayShelf, "Shelf\u2026"));
         items.Add(new MenuEntry(0, "Timer", Children: TimerMenu()));
         items.Add(new MenuEntry(0, "Focus session", Children: FocusMenu()));
         items.Add(new MenuEntry(0, "Do Not Disturb", Children: QuietMenu()));
@@ -1702,6 +1707,9 @@ internal sealed unsafe partial class IslandWindow : IDisposable
                 break;
             case TrayTasks:
                 OpenTasksWindow();
+                break;
+            case TrayShelf:
+                OpenShelfWindow();
                 break;
             case TrayShowNow:
                 Apply(State.ShowNow ? IslandInput.ShowNowCleared : IslandInput.ShowNowRequested, "tray");

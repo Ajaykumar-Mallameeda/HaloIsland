@@ -1274,6 +1274,90 @@ All of these use the shared vocabulary (B-F01/B-F02), and none adds a motion of 
 - **Not measured:** PB-05 for the new motions. They run in DWM, last 90–260 ms and are finite, but no frame
   evidence was collected.
 
+### H-F01 Clipboard and file shelf research — PASS
+
+- **APIs:**
+  - the standard Win32 clipboard formats are enough: `CF_UNICODETEXT` for text, and `CF_HDROP` with `DROPFILES`
+    for file lists;
+  - watching the clipboard would need `AddClipboardFormatListener`. Halo does **not** register one, so nothing is
+    captured in the background;
+  - dragging out of the shelf would need a full OLE `IDataObject` drag source. It was not built; Copy puts a file
+    drop list on the clipboard, so Paste in File Explorer gives the same result.
+
+### H-F02 Local shelf — PASS (drag-out not built)
+
+- **Pinning:** tray › "Shelf…" opens a native window. **"Pin copied text or files"** reads the clipboard once,
+  only when pressed.
+- **Actions:**
+  - Copy puts the text, or the file as a drop list, back on the clipboard;
+  - Show in folder runs `explorer.exe /select,` and never opens or runs the file;
+  - Remove;
+  - **Clear all** deletes `shelf.json` and its backup.
+- **Storage:**
+  - file items are path references; files are never copied, moved or deleted;
+  - a moved or deleted file shows "missing", and checking never recreates it;
+  - limits: 30 items, with the oldest dropped; text up to 10 000 characters;
+  - Unicode is kept and control characters are dropped;
+  - the same item pinned again moves to the top;
+  - `shelf.json` uses the atomic store and stays on this PC;
+  - diagnostics hold the kind and counts only, never content or paths.
+- **Tests:**
+  - unit +5 (`ShelfTests`): order and duplicates, long and Unicode text, the bound and clear, missing files, and
+    persistence that skips invalid or relative entries;
+  - desktop +1, on the **real clipboard**:
+    - copying alone captures nothing, and no file is written;
+    - pin text, then Copy puts it back;
+    - pin a file; after it is deleted it shows as missing and is not recreated;
+    - Clear all removes `shelf.json`;
+    - the log and the diagnostics contain neither the text nor the file name.
+- **Harness fix (audit trail):**
+  - **symptom:** `TheTasksWindowAddsAndCompletesTasks` failed once at `PostMessageW` to the island, after a
+    tray-menu test. It passed in the next 6 runs;
+  - **likely cause:** `IslandProcess.Start` took the first window of Halo's class, which can belong to a previous
+    instance that is still closing;
+  - **fix:** the harness now takes the window owned by the new process ID. No assertion changed.
+
+### I-F03 Per-activity customisation — PARTIAL
+
+- **Built:**
+  - each source can be turned on or off: media, volume, battery, network, reminders;
+  - preview visibility (`showPreviews`);
+  - pill eligibility (I-F02);
+  - quiet-mode and full-screen eligibility, which are fixed per source in code (G-F03, D-F03).
+- **Not built:** user-editable display duration and priority per activity type. The defaults are those of ADR-001
+  §6.1 and D-F01. There is one priority table, and exposing it as free settings would let users bypass the
+  quiet-mode and full-screen rules, which the brief forbids.
+
+### I-F04 Position and display choice — NOT BUILT (multi-monitor BLOCKED, D7)
+
+- The island stays centred on the primary display's work area (FR-ISL-01).
+- `IslandLayout.Compute` already takes any work area, so a display choice is a small change once a second monitor
+  is available to verify it on.
+- A horizontal offset was **not** added in this campaign.
+
+### J-F03 Brightness indicator — NOT BUILT
+
+- The supported route for internal panels is WMI (`WmiMonitorBrightness` / `WmiMonitorBrightnessEvent`).
+- From .NET 10 this needs either the `System.Management` package, a new dependency, or hand-written WMI COM interop.
+  Neither was added without approval.
+- External monitors expose no supported brightness API (DDC/CI is outside the brief).
+
+### J-F04 Bluetooth headphone status — NOT BUILT
+
+- Connection state could come from the audio endpoint's documented device properties.
+- **Battery level is not exposed** by a documented API for classic Bluetooth audio devices, so it would have to be
+  omitted. It is never inferred.
+- Not started for lack of time; the volume feature already follows the default output device when it changes.
+
+### K / C-F08 Camera and microphone indicators — camera: documented API, NOT BUILT (owner decision K-1); microphone: BLOCKED
+
+- **Camera:** Media Foundation's sensor activity monitor (`MFCreateSensorActivityMonitor`) is documented and
+  reports which processes stream a camera (RESEARCH S8). It reveals other apps' activity, so it stays off until
+  the owner accepts that disclosure. Testing it would need a camera actually streaming, and Halo never starts one.
+- **Microphone:** no documented API was found. The registry keys that tools read (`CapabilityAccessManager`) are not
+  a documented interface, so nothing was built.
+- **Never used:** process-name heuristics or undocumented sources.
+
 ## Next recommended action
 
 1. **Owner decisions:** E1–E3 (§5). Add: whether to package Halo as MSIX, which unblocks notifications (O-F01),

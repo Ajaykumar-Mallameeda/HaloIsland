@@ -179,9 +179,9 @@ public sealed partial class IslandAppTests
     {
         using var island = IslandProcess.Start();
         island.WaitFor("ready");
-        // Open, Collapse, Settings…, Tasks and reminders…, Timer → Right opens the submenu → Enter on "Start 1 minute".
+        // Open, Collapse, Settings…, Tasks and reminders…, Shelf…, Timer → Right opens the submenu → Enter on "Start 1 minute".
         OpenTrayMenuDirect(island);
-        PressKeys(0x28, 0x28, 0x28, 0x28, 0x28, 0x27, 0x0D);
+        PressKeys(0x28, 0x28, 0x28, 0x28, 0x28, 0x28, 0x27, 0x0D);
         var started = island.WaitFor("timer");
         Assert.Equal((60, "tray"), (started["seconds"]!.GetValue<int>(), started["source"]!.GetValue<string>()));
     }
