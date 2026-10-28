@@ -104,6 +104,10 @@ is revisited if notification content is ever persisted (it is not, by design).
 - Settings › "Show what is playing" (`showMedia`) turns the integration off completely. The session manager is
   released and no events are received.
 
+**As built, volume (M3-F03, 2026-10-29):** Halo reads and sets only the default output device's master volume and
+mute. Device IDs and names are not logged or stored; diagnostics carry percent, mute and binding status. Nothing
+about audio content or other apps' sessions is read. `showVolume` off releases Core Audio entirely.
+
 ## 7. Licensing, intellectual property and reverse-engineering boundary
 
 | Topic | Position |

@@ -41,7 +41,8 @@ public readonly record struct RoundedBox(double Left, double Top, double Width, 
 /// centred under the top edge of the work area; the visible shape animates inside it. All values are physical
 /// pixels; design values are in DIP and scaled by <c>dpi / 96</c>.
 /// </summary>
-public sealed record IslandLayout(PixelRect Canvas, RoundedBox Compact, RoundedBox Expanded, RoundedBox Alert, double Scale)
+/// <param name="VolumeRow">The expanded shape has the volume row at the bottom (M3-F03), which makes it taller.</param>
+public sealed record IslandLayout(PixelRect Canvas, RoundedBox Compact, RoundedBox Expanded, RoundedBox Alert, double Scale, bool VolumeRow = false)
 {
     public const double TopGapDip = 6;
     public const double CompactWidthDip = 236;
@@ -57,12 +58,13 @@ public sealed record IslandLayout(PixelRect Canvas, RoundedBox Compact, RoundedB
     /// <summary>Spare room around the expanded shape so the pressed-state scale never clips.</summary>
     public const double CanvasMarginDip = 8;
 
-    public static IslandLayout Compute(PixelRect workArea, int dpi)
+    public static IslandLayout Compute(PixelRect workArea, int dpi, bool volumeRow = false)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(dpi, 48);
         var scale = dpi / 96.0;
+        var expandedHeight = ExpandedHeightDip + (volumeRow ? Audio.VolumeRow.HeightDip : 0);
         var width = Px(ExpandedWidthDip + (2 * CanvasMarginDip), scale);
-        var height = Px(TopGapDip + ExpandedHeightDip + CanvasMarginDip, scale);
+        var height = Px(TopGapDip + expandedHeight + CanvasMarginDip, scale);
         if (width > workArea.Width || height > workArea.Height)
         {
             throw new ArgumentException("The work area is smaller than the island canvas.", nameof(workArea));
@@ -72,9 +74,10 @@ public sealed record IslandLayout(PixelRect Canvas, RoundedBox Compact, RoundedB
         return new IslandLayout(
             canvas,
             Shape(width, CompactWidthDip, CompactHeightDip, CompactHeightDip, scale),
-            Shape(width, ExpandedWidthDip, ExpandedHeightDip, ExpandedRadiusDip, scale),
+            Shape(width, ExpandedWidthDip, expandedHeight, ExpandedRadiusDip, scale),
             Shape(width, AlertWidthDip, AlertHeightDip, AlertHeightDip, scale),
-            scale);
+            scale,
+            volumeRow);
     }
 
     public RoundedBox ShapeFor(IslandPresentation presentation) => presentation switch

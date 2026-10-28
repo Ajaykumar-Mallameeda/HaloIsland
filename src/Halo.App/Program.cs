@@ -72,11 +72,12 @@ internal static class Program
         return diagnostics && i >= 0 && i + 1 < args.Length ? args[i + 1] : SettingsStore.DefaultDirectory();
     }
 
-    /// <summary>Desktop-test fault injection: <c>HALO_TEST_FAULT=tray|startup</c>, read only with --diagnostics.</summary>
+    /// <summary>Desktop-test fault injection: <c>HALO_TEST_FAULT=tray|startup|audio</c>, read only with --diagnostics.</summary>
     private static IslandFault FaultFromEnvironment() => Environment.GetEnvironmentVariable("HALO_TEST_FAULT") switch
     {
         "tray" => IslandFault.Tray,
         "startup" => IslandFault.Startup,
+        "audio" => IslandFault.NoAudio,
         _ => IslandFault.None,
     };
 }

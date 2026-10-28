@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using Halo.App.Interop;
+using Halo.Core.Audio;
 using Halo.Core.Clock;
 using Halo.Core.Diagnostics;
 using Halo.Core.Island;
@@ -37,6 +38,10 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
     private const nuint SaveTimerId = 5;
     private const nuint MediaDebounceTimerId = 6;
     private const nuint MediaTickTimerId = 7;
+    private const nuint VolumeDeviceTimerId = 8;
+
+    /// <summary>Device notifications arrive in bursts (unplug: state, removed, default changed): one re-bind per burst.</summary>
+    private const uint VolumeDeviceDebounceMs = 200;
 
     /// <summary>Media events closer together than this become one refresh (no flicker on rapid metadata changes).</summary>
     private const uint MediaDebounceMs = 150;
@@ -86,6 +91,11 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
     private bool _mediaUnavailableLogged;
     private MediaCommand? _pressedMedia;
     private string? _pressedMediaSession;
+    private VolumeWatcher? _volume;
+    private bool _volumeUnavailableLogged;
+    private bool _volumeDragging;
+    private bool _volumeMutePressed;
+    private int _volumeSetPercent = -1;
     private IslandLayout _layout = null!;
     private ClockReading _clock = null!;
     private bool _tracking;
@@ -133,7 +143,9 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
         ? $"Halo, {m.AccessibleSummary}, {_clock.TimeWithDesignator}, {_clock.LongDate}"
         : $"Halo, {_clock.TimeWithDesignator}, {_clock.LongDate}";
 
-    public string? AccessibleDescription => State.Alert is { } alert ? alert.Content.Text : State.IsExpanded ? _clock.DayProgressText : null;
+    public string? AccessibleDescription => State.Alert is { } alert
+        ? alert.Content.Spoken
+        : State.IsExpanded ? (_volume?.Current is { } v ? $"{_clock.DayProgressText}, {v.Spoken}" : _clock.DayProgressText) : null;
 
     private IslandState State => _controller.State;
 
@@ -318,6 +330,9 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
     {
         switch (msg)
         {
+            case WmMouseMove when _volumeDragging:
+                SetVolumeFromPointer(LowWord(lParam));
+                return 0;
             case WmMouseMove:
                 if (!_tracking)
                 {
@@ -352,6 +367,36 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
                     }
                 }
 
+                return 0;
+            case WmLButtonDown when VolumePartAt(LowWord(lParam), HighWord(lParam)) is { } part:
+                // The volume row acts on the endpoint and, like the media buttons, never collapses the island.
+                _ = SetCapture(hwnd);
+                _volumeSetPercent = -1;
+                if (part == VolumePart.Mute)
+                {
+                    _volumeMutePressed = true;
+                }
+                else
+                {
+                    _volumeDragging = true;
+                    SetVolumeFromPointer(LowWord(lParam));
+                }
+
+                return 0;
+            case WmLButtonUp when _volumeDragging || _volumeMutePressed:
+                var toggleMute = _volumeMutePressed && VolumePartAt(LowWord(lParam), HighWord(lParam)) == VolumePart.Mute;
+                (_volumeDragging, _volumeMutePressed) = (false, false);
+                _ = ReleaseCapture();
+                if (toggleMute && _volume?.Current is { } now)
+                {
+                    var muted = _volume.SetMuted(!now.Muted);
+                    _log?.Write("volume.command", ("command", now.Muted ? "unmute" : "mute"), ("result", muted ? "accepted" : "failed"));
+                }
+
+                SyncPointer(); // the drag may have ended outside the island
+                return 0;
+            case WmCaptureChanged when _volumeDragging || _volumeMutePressed:
+                (_volumeDragging, _volumeMutePressed) = (false, false);
                 return 0;
             case WmLButtonDown when MediaButtonAt(LowWord(lParam), HighWord(lParam)) is { } command:
                 // A transport button: it acts on the session and does not collapse or toggle the island.
@@ -414,6 +459,21 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
                 return 0;
             case MediaWatcher.SnapshotMessage:
                 ApplyMedia(_media?.Latest);
+                return 0;
+            case VolumeWatcher.ChangedMessage:
+                OnVolumeChanged();
+                return 0;
+            case VolumeWatcher.DeviceMessage:
+                _ = SetTimer(hwnd, VolumeDeviceTimerId, VolumeDeviceDebounceMs, 0);
+                return 0;
+            case WmTimer when (nuint)wParam == VolumeDeviceTimerId:
+                _ = KillTimer(hwnd, VolumeDeviceTimerId);
+                if (_volume is not null)
+                {
+                    _volume.Rebind();
+                    ShowVolumeDevice("device_changed");
+                }
+
                 return 0;
             case WmTimer when (nuint)wParam == MediaTickTimerId:
                 _visuals?.UpdateMediaProgress(DateTimeOffset.Now);
@@ -500,6 +560,9 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
                 _ = KillTimer(hwnd, MediaTickTimerId);
                 _media?.Dispose();
                 _media = null;
+                _ = KillTimer(hwnd, VolumeDeviceTimerId);
+                _volume?.Dispose();
+                _volume = null;
                 _settingsWindow = null;
                 _ = KillTimer(hwnd, IntentTimerId);
                 _ = KillTimer(hwnd, ClockTimerId);
@@ -555,7 +618,7 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
             LogAlert(transition, source);
             if (state.Alert is { } shown && _settings.AnnounceAlerts)
             {
-                var hr = _automation?.Announce(shown.Content.Text, $"Halo.Alert.{AlertToken(shown.Kind)}", shown.Priority == AlertPriority.Critical);
+                var hr = _automation?.Announce(shown.Content.Spoken, $"Halo.Alert.{AlertToken(shown.Kind)}", shown.Priority == AlertPriority.Critical);
                 _log?.Write("announce", ("listening", hr is null ? 0 : 1), ("hresult", hr ?? 0));
             }
         }
@@ -669,7 +732,7 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
     private void Place(string reason)
     {
         var (work, dpi) = PrimaryWorkArea();
-        var layout = IslandLayout.Compute(new PixelRect(work.Left, work.Top, work.Right - work.Left, work.Bottom - work.Top), (int)dpi);
+        var layout = IslandLayout.Compute(new PixelRect(work.Left, work.Top, work.Right - work.Left, work.Bottom - work.Top), (int)dpi, _settings.ShowVolume);
         if (layout == _layout)
         {
             _log?.Write("placement.unchanged", ("reason", reason));
@@ -714,6 +777,32 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
             _media.Dispose();
             _media = null;
             ApplyMedia(null);
+        }
+
+        if (s.ShowVolume && _volume is null && _hwnd != 0)
+        {
+            _volume = new VolumeWatcher(_hwnd, noDevice: _fault == IslandFault.NoAudio);
+            if (!_volume.Start() && !_volumeUnavailableLogged)
+            {
+                _volumeUnavailableLogged = true;
+                _fileLog?.Write(LogLevel.Warning, "volume.unavailable", ("hresult", _volume.LastHResult));
+            }
+
+            ShowVolumeDevice(reason);
+        }
+        else if (!s.ShowVolume && _volume is not null)
+        {
+            _ = KillTimer(_hwnd, VolumeDeviceTimerId);
+            _volume.Dispose();
+            _volume = null;
+            _visuals?.ShowVolume(null);
+            _log?.Write("volume.device", ("status", "off"), ("reason", reason), ("hresult", 0));
+        }
+
+        if (_layout is not null && _layout.VolumeRow != s.ShowVolume)
+        {
+            // The volume row makes the expanded island taller.
+            Place("settings");
         }
 
         if (_fullscreen is not null)
@@ -859,6 +948,72 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
         {
             _ = KillTimer(_hwnd, MediaTickTimerId);
         }
+    }
+
+    /// <summary>Shows the bound device's volume (or "No audio output") and logs the binding, never the device's name or ID.</summary>
+    private void ShowVolumeDevice(string reason)
+    {
+        if (_volume is null)
+        {
+            return;
+        }
+
+        _visuals?.ShowVolume(_volume.Current);
+        _log?.Write("volume.device", ("status", _volume.HasDevice ? "bound" : "none"), ("reason", reason), ("hresult", _volume.LastHResult));
+        if (_volume.Current is { } v)
+        {
+            _log?.Write("volume", ("percent", v.Percent), ("muted", v.Muted ? 1 : 0), ("source", "bind"));
+        }
+    }
+
+    /// <summary>
+    /// A volume change from any source (FR-SYS-01). The row always follows it. The pill appears only for changes made
+    /// elsewhere (keys, flyout, mixer, apps) and only while the island is not open, because the open island already
+    /// shows the slider. The controller decides when the pill may appear (full screen, pressed, other alerts).
+    /// </summary>
+    private void OnVolumeChanged()
+    {
+        if (_volume?.TakeChange() is not { } change)
+        {
+            return;
+        }
+
+        var (reading, fromHalo) = change;
+        var nameBefore = AccessibleName;
+        _visuals?.ShowVolume(reading);
+        _log?.Write("volume", ("percent", reading.Percent), ("muted", reading.Muted ? 1 : 0), ("source", fromHalo ? "halo" : "external"));
+        if (!fromHalo && !State.IsExpanded)
+        {
+            RaiseAlert(VolumeAlert.For(reading), "volume");
+        }
+        else if (State.IsExpanded)
+        {
+            _automation?.RaiseChanged(true, true, nameBefore, AccessibleName);
+        }
+    }
+
+    /// <summary>The volume-row part under a client point while the open island shows a bound device.</summary>
+    private VolumePart? VolumePartAt(int x, int y) =>
+        State.IsExpanded && State.Visible && _volume?.HasDevice == true ? VolumeRow.For(_layout)?.HitTest(x, y) : null;
+
+    /// <summary>Slider drag: sets the endpoint volume when the whole percent under the pointer changes.</summary>
+    private void SetVolumeFromPointer(int x)
+    {
+        if (VolumeRow.For(_layout) is not { } row || _volume is null)
+        {
+            return;
+        }
+
+        var level = row.LevelAt(x);
+        var percent = (int)Math.Round(level * 100);
+        if (percent == _volumeSetPercent)
+        {
+            return;
+        }
+
+        _volumeSetPercent = percent;
+        var ok = _volume.SetLevel(level);
+        _log?.Write("volume.command", ("command", "set"), ("percent", percent), ("result", ok ? "accepted" : "failed"));
     }
 
     /// <summary>Requests a transient alert through the controller (the single arbitration path).</summary>
@@ -1158,6 +1313,9 @@ internal enum IslandFault
 
     /// <summary>Fail after the window, visuals and tray icon exist, before the message loop.</summary>
     Startup,
+
+    /// <summary>Behave as if Windows reports no audio output device.</summary>
+    NoAudio,
 }
 
 /// <summary>

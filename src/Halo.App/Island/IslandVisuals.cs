@@ -1,5 +1,6 @@
 using System.Numerics;
 using Halo.App.Interop;
+using Halo.Core.Audio;
 using Halo.Core.Clock;
 using Halo.Core.Island;
 using Halo.Core.Media;
@@ -85,6 +86,17 @@ internal sealed class IslandVisuals : IDisposable
     private MediaSnapshot? _media;
     private int _artShown = -1;
 
+    // Volume row (M3-F03): mute button, slider and value at the bottom of the expanded island.
+    private readonly ContainerVisual _volumeGroup;
+    private readonly TextLine _volumeGlyph;
+    private readonly TextLine _volumeValue;
+    private readonly TextLine _volumeNone;
+    private readonly SpriteVisual _volumeTrack;
+    private readonly SpriteVisual _volumeFill;
+    private readonly CompositionColorBrush _volumeFillBrush;
+    private readonly SpriteVisual _volumeThumb;
+    private VolumeReading? _volume;
+
     public IslandVisuals(Compositor compositor, CompositionTarget target, TextRenderer text, IslandLayout layout)
     {
         ArgumentNullException.ThrowIfNull(target);
@@ -158,6 +170,22 @@ internal sealed class IslandVisuals : IDisposable
         _buttonNext = new TextLine(this, _mediaGroup);
         _compactMediaGlyph = new TextLine(this, _compactContent);
         _compactMediaTitle = new TextLine(this, _compactContent);
+
+        _volumeGroup = compositor.CreateContainerVisual();
+        _expandedContent.Children.InsertAtTop(_volumeGroup);
+        _volumeGlyph = new TextLine(this, _volumeGroup);
+        _volumeValue = new TextLine(this, _volumeGroup);
+        _volumeNone = new TextLine(this, _volumeGroup);
+        _volumeTrack = compositor.CreateSpriteVisual();
+        _volumeTrack.Brush = compositor.CreateColorBrush(Track);
+        _volumeFillBrush = compositor.CreateColorBrush(Fill);
+        _volumeFill = compositor.CreateSpriteVisual();
+        _volumeFill.Brush = _volumeFillBrush;
+        _volumeThumb = compositor.CreateSpriteVisual();
+        _volumeThumb.Brush = compositor.CreateColorBrush(Primary);
+        _volumeGroup.Children.InsertAtTop(_volumeTrack);
+        _volumeGroup.Children.InsertAtTop(_volumeFill);
+        _volumeGroup.Children.InsertAtTop(_volumeThumb);
 
         _alertGlyph = new TextLine(this, _alertContent);
         _alertWide = new TextLine(this, _alertContent);
@@ -252,6 +280,8 @@ internal sealed class IslandVisuals : IDisposable
         _compactMediaGlyph.Place(c.Left + layout.Dip(14), c.Top, layout.Dip(18), c.Height, Format(IconFont, 11, Regular, TextAlign.Center), Secondary);
         _compactMediaTitle.Place(c.Left + layout.Dip(34), c.Top, layout.Dip(80), c.Height, Format(TextFont, 12.5, Semibold, TextAlign.Leading, trim: true), Secondary);
 
+        PlaceVolume(layout);
+
         var a = layout.Alert;
         _alertGlyph.Place(a.Left + layout.Dip(14), a.Top, layout.Dip(26), a.Height, Format(IconFont, 16, Regular, TextAlign.Center), Primary);
         _alertWide.Place(a.Left + layout.Dip(46), a.Top, layout.Dip(236), a.Height, Format(TextFont, 14, Semibold, TextAlign.Leading), Primary);
@@ -293,6 +323,13 @@ internal sealed class IslandVisuals : IDisposable
         _mediaFill.Size = new Vector2(Math.Max(_mediaTrack.Size.Y, Snap(_mediaTrack.Size.X * fraction)), _mediaTrack.Size.Y);
         RoundEnds(_mediaFill);
         _ = _mediaTime.Show(timeline.LabelAt(now, _media.IsPlaying));
+    }
+
+    /// <summary>Shows the endpoint volume in the expanded row (null = no output device).</summary>
+    public void ShowVolume(VolumeReading? reading)
+    {
+        _volume = reading;
+        _ = DrawVolume();
     }
 
     /// <summary>Shows the content of a transient alert (null clears it). Only changed lines are redrawn.</summary>
@@ -395,7 +432,56 @@ internal sealed class IslandVisuals : IDisposable
     }
 
     private IEnumerable<TextLine> Lines() => [_compactDate, _compactTime, _bigTime, _longDate, _wordmark, _progressLabel, _alertGlyph, _alertWide, _alertNarrow, _alertValue,
-        _artPlaceholder, _mediaTitle, _mediaArtist, _mediaTime, _mediaClock, _compactMediaGlyph, _compactMediaTitle, _buttonPrevious, _buttonPlayPause, _buttonNext];
+        _artPlaceholder, _mediaTitle, _mediaArtist, _mediaTime, _mediaClock, _compactMediaGlyph, _compactMediaTitle, _buttonPrevious, _buttonPlayPause, _buttonNext,
+        _volumeGlyph, _volumeValue, _volumeNone];
+
+    private void PlaceVolume(IslandLayout layout)
+    {
+        var row = VolumeRow.For(layout);
+        _volumeGroup.IsVisible = row is not null;
+        if (row is null)
+        {
+            return;
+        }
+
+        var size = row.MuteSize;
+        _volumeGlyph.Place(row.MuteX - (size / 2), row.MuteY - (size / 2), size, size, Format(IconFont, 15, Regular, TextAlign.Center), Primary);
+        var trackHeight = Snap(layout.Dip(4));
+        _volumeTrack.Offset = new Vector3(Snap(row.TrackLeft), Snap(row.TrackY - (trackHeight / 2)), 0);
+        _volumeTrack.Size = new Vector2(Snap(row.TrackWidth), trackHeight);
+        _volumeFill.Offset = _volumeTrack.Offset;
+        RoundEnds(_volumeTrack);
+        var thumb = Snap(layout.Dip(12));
+        _volumeThumb.Size = new Vector2(thumb, thumb);
+        RoundCorners(_volumeThumb, thumb / 2);
+        var textHeight = layout.Dip(20);
+        _volumeValue.Place(row.ValueLeft, row.TrackY - (textHeight / 2), row.ValueWidth, textHeight, Format(TextFont, 12, Semibold, TextAlign.Trailing), Secondary);
+        _volumeNone.Place(row.TrackLeft, row.TrackY - (textHeight / 2), row.TrackWidth, textHeight, Format(TextFont, 12.5, Regular, TextAlign.Leading), Tertiary);
+    }
+
+    /// <summary>Volume row text and bar; true unless the GPU device was lost.</summary>
+    private bool DrawVolume()
+    {
+        var v = _volume;
+        var ok = _volumeGlyph.Show(v?.Glyph ?? "");
+        ok &= _volumeValue.Show(v is { } r ? r.Percent.ToString(System.Globalization.CultureInfo.CurrentCulture) : string.Empty);
+        ok &= _volumeNone.Show(v is null ? "No audio output" : string.Empty);
+        _volumeTrack.IsVisible = v is not null;
+        _volumeFill.IsVisible = v is not null;
+        _volumeThumb.IsVisible = v is not null;
+        if (v is { } reading)
+        {
+            // Muted: the bar keeps the level but dims, as in Windows' own flyout.
+            _volumeFillBrush.Color = reading.Muted ? Tertiary : Fill;
+            var width = _volumeTrack.Size.X * reading.Percent / 100f;
+            _volumeFill.Size = new Vector2(Math.Max(_volumeTrack.Size.Y, Snap(width)), _volumeTrack.Size.Y);
+            RoundEnds(_volumeFill);
+            var t = _volumeThumb.Size.X;
+            _volumeThumb.Offset = new Vector3(Snap(_volumeTrack.Offset.X + width - (t / 2)), Snap(_volumeTrack.Offset.Y + (_volumeTrack.Size.Y / 2) - (t / 2)), 0);
+        }
+
+        return ok;
+    }
 
     private void RoundCorners(SpriteVisual visual, float radius)
     {
@@ -482,6 +568,7 @@ internal sealed class IslandVisuals : IDisposable
 
         ok &= _wordmark.Show("Halo");
         ok &= DrawMedia();
+        ok &= DrawVolume();
         if (!ok)
         {
             // The GPU device was lost (driver update, adapter switch): replace it and draw everything again once.
@@ -500,6 +587,7 @@ internal sealed class IslandVisuals : IDisposable
             _ = _wordmark.Show("Halo");
             _artShown = -1;
             _ = DrawMedia();
+            _ = DrawVolume();
         }
     }
 

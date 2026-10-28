@@ -41,6 +41,9 @@ public sealed record HaloSettings
     /// <summary>Show what is playing (media sessions, FR-MED-01). Off: Halo does not open the media session manager.</summary>
     public bool ShowMedia { get; init; } = true;
 
+    /// <summary>Volume pill on changes and the volume row in the expanded island (FR-SYS-01, M3-F03).</summary>
+    public bool ShowVolume { get; init; } = true;
+
     /// <summary>Serialises to the versioned JSON file format (indented, stable key order).</summary>
     public string ToJson()
     {
@@ -57,6 +60,7 @@ public sealed record HaloSettings
             w.WriteBoolean("hideInFullscreen", HideInFullscreen);
             w.WriteBoolean("announceAlerts", AnnounceAlerts);
             w.WriteBoolean("showMedia", ShowMedia);
+            w.WriteBoolean("showVolume", ShowVolume);
             w.WriteEndObject();
         }
 
@@ -135,6 +139,7 @@ public sealed record HaloSettings
                 HideInFullscreen = Bool("hideInFullscreen", d.HideInFullscreen),
                 AnnounceAlerts = Bool("announceAlerts", d.AnnounceAlerts),
                 ShowMedia = Bool("showMedia", d.ShowMedia),
+                ShowVolume = Bool("showVolume", d.ShowVolume),
             };
             return true;
         }

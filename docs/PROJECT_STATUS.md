@@ -564,7 +564,70 @@ Smoke run `APP-SMOKE-120-195953` (valid, 120 Hz), SMOKE and not a verdict:
   click lands on empty panel space, which collapses the island by design, so the test now waits for the
   collapse and expands again.
 - **Results:** media desktop tests 3/3 in 3 consecutive runs; unit 250/250; island desktop 37/37.
-- **Commit:** MEDIA_COMMIT_PENDING.
+- **Commit:** `0503baf` (M3-F01 and M3-F02 together).
+
+### M3-F03 Volume pill and volume row — PASS
+
+- **Requirements:** FR-SYS-01 (volume and mute pill for any change source, coalesced, no device → no pill), the
+  M3-F03 contract (adjust the volume in the expanded panel), FR-ISL-06 (no focus change), FR-A11Y-07 (target size).
+- **API:** Core Audio through classic COM interop (`Interop/CoreAudio.cs`). No new package.
+  - Endpoint: the **default console render device**, the device the volume keys and the taskbar flyout control;
+  - `IAudioEndpointVolumeCallback` for changes;
+  - `IMMNotificationClient` for default-device changes, removals and state changes.
+- **Events, no polling:**
+  - the volume callback runs on an audio thread. It keeps the newest reading and posts one message until the UI
+    thread has taken it, so a burst becomes one update;
+  - device notifications are debounced (200 ms) into one re-bind;
+  - Halo's own changes carry a private event context, so they update the slider but never raise the pill.
+- **User-visible:**
+  - **pill:** a change made elsewhere while the island is collapsed shows the 300 DIP alert pill: speaker glyph
+    (mute or 0–3 waves), "Volume" or "Muted", a level bar and the percent. It lasts 1.5 s from the last change.
+    Every volume change uses one alert key, so a burst updates one pill. Priority Normal; never shown over full
+    screen; dropped if it could not be shown within 1 s (for example while the island was open);
+  - **volume row:** the expanded island gains a 40 DIP row: a mute button (32 DIP), a slider (28 DIP hit band; a
+    click jumps, a drag follows the pointer in whole percent) and the value. Moving the slider while muted unmutes,
+    as Windows' own slider does. Muted shows a dimmed bar. Without a device the row says "No audio output" and has
+    no controls;
+  - while the island is open, the slider follows external changes and no pill is raised;
+  - screen readers: the pill is announced as "Volume 64 percent" or "Volume muted, 64 percent" (new
+    `AlertContent.Accessible`), and the open island's description ends with the same text.
+- **Setting:** "Show volume changes and the volume slider" (`showVolume`, default on). Off releases Core Audio and
+  gives back the original 172 DIP expanded height (`IslandLayout.VolumeRow`).
+- **Failure and recovery:** if Core Audio is unavailable, the island logs `volume.unavailable` (warning) once and
+  carries on. A failed set call (the device went away) triggers a re-bind. With no default device, the island
+  shows the "No audio output" state. Device IDs and names are never logged; diagnostics carry percent, mute,
+  source (`external`, `halo`, `bind`) and binding status only.
+- **Files:** `Halo.Core/Audio/Volume.cs`, `Halo.Core/Island/IslandAlert.cs` (`Accessible`, `Spoken`),
+  `IslandLayout.cs` (volume row), `Halo.App/Interop/CoreAudio.cs`, `Island/VolumeWatcher.cs`, `IslandVisuals.cs`,
+  `IslandWindow.cs`, `SettingsWindow.cs`, `HaloSettings.cs`, `Program.cs` (`HALO_TEST_FAULT=audio`).
+- **Unit tests (23 new, `VolumeTests`):** percent rounding and clamping (including NaN); glyph thresholds; spoken
+  text; the pill's key, priority and full-screen rule; a burst of 20 changes gives one pill and one expiry; a pill
+  that waited more than 1 s is dropped; no row means the old layout; the row inside the shape at 100/125/150/200 %
+  and below the media buttons; ≥ 24 DIP targets; hit tests, including the gap and the value; level from the
+  pointer, clamped past both ends. Settings tests cover the new key. Unit 273/273.
+- **Desktop tests (4 new, real default endpoint):** the test opens the endpoint with its own event context. It
+  moves the level only 2–8 % from where it was and restores the original level and mute state on dispose, even
+  after a failure.
+  - **External change:** the pill appears, the island stays collapsed, mute and unmute update the same pill, the
+    pill expires, and focus never moves;
+  - **Row:** a click on the track sets the endpoint to the level under the pointer; a real drag sets a second
+    level; the mute button toggles both ways; no pill; the island stays pinned; UIA description has the volume;
+    focus unchanged;
+  - **Device change and no device:** a burst of device messages gives exactly one re-bind, and later changes
+    still arrive. With `HALO_TEST_FAULT=audio` there are no volume events and no pill, and a click where the
+    slider would be leaves the endpoint unchanged;
+  - **Setting off:** original canvas height, no endpoint opened, no pill.
+  Volume tests 4/4 in 3 consecutive runs; island desktop 41/41. Afterwards the system volume was confirmed back at
+  its starting level (28 %, not muted).
+- **Smoke measurement (not a PB verdict):** external change → `alert shown` diagnostic, 5.3–6.1 ms across 3 runs
+  (`HALO_TEST_METRICS`). This is the time to the island's state change, not to a presented frame, so the < 100 ms
+  response budget is **not** claimed as measured.
+- **Runtime check:** screenshots of the expanded island with the volume row (28 %) and of the volume pill, checked
+  by eye.
+- **Not verified:** a real device switch or unplug (it would disturb the owner's audio; the re-bind path was driven
+  by the device message instead); hardware volume keys (the test changes the endpoint the same way an app does);
+  per-app volume (out of scope).
+- **Commit:** see the next entry.
 
 ## Next recommended action
 

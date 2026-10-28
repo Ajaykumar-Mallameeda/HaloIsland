@@ -544,13 +544,14 @@ public sealed partial class IslandAppTests
         Assert.True(Math.Abs(p.X - s_lastMove.X) <= 1 && Math.Abs(p.Y - s_lastMove.Y) <= 1, $"the pointer was moved during the test (expected {s_lastMove.X},{s_lastMove.Y}, found {p.X},{p.Y}); rerun without touching the mouse");
     }
 
-    private static IslandLayout ExpectedLayout()
+    /// <param name="volumeRow">The default settings show the volume row (M3-F03), which makes the expanded shape taller.</param>
+    private static IslandLayout ExpectedLayout(bool volumeRow = true)
     {
         var monitor = MonitorFromPoint(default, 1);
         var info = new MonitorInfo { Size = (uint)Marshal.SizeOf<MonitorInfo>() };
         Assert.True(GetMonitorInfoW(monitor, ref info));
         Assert.Equal(0, GetDpiForMonitor(monitor, 0, out var dpi, out _));
-        return IslandLayout.Compute(new PixelRect(info.Work.Left, info.Work.Top, info.Work.Right - info.Work.Left, info.Work.Bottom - info.Work.Top), (int)dpi);
+        return IslandLayout.Compute(new PixelRect(info.Work.Left, info.Work.Top, info.Work.Right - info.Work.Left, info.Work.Bottom - info.Work.Top), (int)dpi, volumeRow);
     }
 
     private static void AssertRegion(nint hwnd, RoundedBox expected)

@@ -27,6 +27,12 @@ public enum AlertKind
 /// <param name="Value">Short text at the end of the bar (for example "64"), or empty.</param>
 public sealed record AlertContent(string Glyph, string Text, double? Level = null, string Value = "")
 {
+    /// <summary>What a screen reader hears instead of <see cref="Text"/> (for example "Volume 64 percent"), or null.</summary>
+    public string? Accessible { get; init; }
+
+    /// <summary>The text announced and exposed to UI Automation. Never logged.</summary>
+    public string Spoken => Accessible ?? Text;
+
     public double? ClampedLevel => Level is { } l ? Math.Clamp(double.IsFinite(l) ? l : 0, 0, 1) : null;
 }
 
