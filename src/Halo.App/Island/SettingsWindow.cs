@@ -32,6 +32,12 @@ internal sealed unsafe class SettingsWindow : IDisposable
     private const int IdPreviews = 115;
     private const int IdHotkey = 116;
     private const int IdHotkeyStatus = 117;
+    private const int IdTheme = 118;
+    private const int IdAccent = 119;
+    private const int IdPillActivity = 120;
+    private const int IdPillMedia = 121;
+    private const int IdPillDate = 122;
+    private const int IdPillBattery = 123;
     private const int IdClose = 2; // IDCANCEL: Esc and the Close button
     private const int IdDwellValue = 202;
     private const int IdGraceValue = 203;
@@ -132,7 +138,7 @@ internal sealed unsafe class SettingsWindow : IDisposable
             }
 
             var dpi = PrimaryWorkArea().Dpi;
-            var (w, h) = (Scale(440, dpi), Scale(600, dpi));
+            var (w, h) = (Scale(800, dpi), Scale(600, dpi));
             var (work, _) = PrimaryWorkArea();
             var x = work.Left + ((work.Right - work.Left - w) / 2);
             var y = work.Top + ((work.Bottom - work.Top - h) / 2);
@@ -198,6 +204,27 @@ internal sealed unsafe class SettingsWindow : IDisposable
         // and a default Close button would shut the window the moment it opened. Esc (IDCANCEL) still closes it.
         Add(IdClose, "BUTTON", "Close", BsPushButton | WsTabStop, 300, y, 110, 28);
 
+        // Right column: appearance (I-F01) and what the compact pill shows (I-F02).
+        var r = 16;
+        Add(0, "STATIC", "&Theme:", 0, 450, r + 4, 80, 20);
+        Add(IdTheme, "COMBOBOX", string.Empty, WsTabStop | CbsDropDownList | WsVScroll, 540, r, 200, 120);
+        r += 36;
+        Add(IdAccent, "BUTTON", "Use the &accent colour for progress bars", BsAutoCheckBox | WsTabStop, 450, r, 320, 22);
+        r += 40;
+        Add(0, "STATIC", "The compact pill shows, left of the time:", 0, 450, r, 320, 20);
+        r += 26;
+        Add(IdPillActivity, "BUTTON", "Timers, reminders and other acti&vities", BsAutoCheckBox | WsTabStop, 466, r, 300, 22);
+        r += 30;
+        Add(IdPillMedia, "BUTTON", "What is pla&ying", BsAutoCheckBox | WsTabStop, 466, r, 300, 22);
+        r += 30;
+        Add(IdPillDate, "BUTTON", "The dat&e", BsAutoCheckBox | WsTabStop, 466, r, 300, 22);
+        r += 30;
+        Add(IdPillBattery, "BUTTON", "Battery &percent beside the time", BsAutoCheckBox | WsTabStop, 450, r, 320, 22);
+        foreach (var label in new[] { "Dark", "Light", "Match Windows" })
+        {
+            _ = SendMessageText(_controls[IdTheme], CbAddString, 0, label);
+        }
+
         foreach (var choice in Halo.Core.Settings.Hotkeys.All)
         {
             _ = SendMessageText(_controls[IdHotkey], CbAddString, 0, Halo.Core.Settings.Hotkeys.Label(choice));
@@ -244,6 +271,12 @@ internal sealed unsafe class SettingsWindow : IDisposable
             Check(IdReminders, s.ShowReminders);
             Check(IdPreviews, s.ShowPreviews);
             _ = SendMessageW(_controls[IdHotkey], CbSetCurSel, (int)s.Hotkey, 0);
+            _ = SendMessageW(_controls[IdTheme], CbSetCurSel, (int)s.Theme, 0);
+            Check(IdAccent, s.AccentBars);
+            Check(IdPillActivity, s.PillShowsActivity);
+            Check(IdPillMedia, s.PillShowsMedia);
+            Check(IdPillDate, s.PillShowsDate);
+            Check(IdPillBattery, s.PillShowsBattery);
             _ = SetWindowTextW(_controls[IdHotkeyStatus], s.Hotkey == HotkeyChoice.Off ? string.Empty : _owner.HotkeyStatus == "in_use" ? "In use by another app" : "Ready");
             _ = SendMessageW(_controls[IdDwell], TbmSetPos, 1, s.HoverDwellMs);
             _ = SendMessageW(_controls[IdGrace], TbmSetPos, 1, s.LeaveGraceMs);
@@ -291,6 +324,12 @@ internal sealed unsafe class SettingsWindow : IDisposable
             ShowReminders = IsChecked(IdReminders),
             ShowPreviews = IsChecked(IdPreviews),
             Hotkey = (HotkeyChoice)Math.Clamp((int)SendMessageW(_controls[IdHotkey], CbGetCurSel, 0, 0), 0, Halo.Core.Settings.Hotkeys.All.Count - 1),
+            Theme = (Halo.Core.Theming.ThemeMode)Math.Clamp((int)SendMessageW(_controls[IdTheme], CbGetCurSel, 0, 0), 0, 2),
+            AccentBars = IsChecked(IdAccent),
+            PillShowsActivity = IsChecked(IdPillActivity),
+            PillShowsMedia = IsChecked(IdPillMedia),
+            PillShowsDate = IsChecked(IdPillDate),
+            PillShowsBattery = IsChecked(IdPillBattery),
         };
         _owner.UpdateSettings(s);
         Show(s);
@@ -324,7 +363,10 @@ internal sealed unsafe class SettingsWindow : IDisposable
                     case IdHover or IdFullscreen or IdMotion or IdStartExpanded or IdAnnounce or IdMedia or IdVolume or IdBattery or IdNetwork or IdReminders or IdPreviews:
                         Commit();
                         return 0;
-                    case IdHotkey when ((wParam >> 16) & 0xFFFF) == 1: // CBN_SELCHANGE
+                    case IdAccent or IdPillActivity or IdPillMedia or IdPillDate or IdPillBattery:
+                        Commit();
+                        return 0;
+                    case IdHotkey or IdTheme when ((wParam >> 16) & 0xFFFF) == 1: // CBN_SELCHANGE
                         Commit();
                         return 0;
                     case IdDefaults:

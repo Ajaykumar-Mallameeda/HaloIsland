@@ -1218,6 +1218,44 @@ Starting point: `4f26bc9`, clean tree; baseline unit 319/319, island desktop 52/
     accepted, and the player's own position moved to the middle of the file (the test did **not** take its
     "not seekable" skip path).
 
+### I-F01 Theme system — PASS
+
+- **Model:** `Halo.Core/Theming/IslandPalette` gives every colour a role: fill, hover, edge, three text levels,
+  track and bar.
+- **Themes:**
+  - **Dark**, the original look and the default;
+  - **Light**;
+  - **Match Windows**, which follows the app mode through `UISettings`, the documented Win32 approach, and updates
+    live on `ImmersiveColorSet`;
+  - an optional **accent colour for bars**, adjusted until it stands out from the fill by 3:1;
+  - **high contrast** overrides everything with the system colours from `GetSysColor` and updates live.
+- **Contrast:** every text colour meets **4.5:1** against both the fill and the hover fill. This is tested.
+- **Renderer:** brushes are registered by role. A theme change recolours them and redraws each text line once,
+  with no animation.
+- **Unchanged:** dimensions and corner radii stay at the safe values of MOTION_SYSTEM.md (no free-form sizes), and
+  the animation preference is the existing reduce-motion setting.
+
+### I-F02 Compact-pill content — PASS
+
+- **Options:** Settings › "The compact pill shows": activities, what is playing, the date, and battery percent
+  beside the time.
+- **One left slot:** the first enabled item that exists wins, in a fixed priority (activity > media > date). The
+  pill never rotates or reorders by itself.
+- **Battery percent** appears only on machines with a battery.
+- **Hiding something from the pill hides it there only.** The expanded island and UIA still show it: a running
+  timer hidden from the pill is still in the island's UIA name.
+- **Settings window:** now has a right-hand "Appearance" column, 800 × 600 DIP, so it does not grow taller than
+  small screens. It has 16 check boxes, 3 combo boxes and 2 sliders.
+
+**Tests (I-F01/I-F02):**
+- unit, +17: palette selection, contrast in both themes, accent visibility, high contrast, the WCAG maths
+  (#777 on white = 4.48), pill priority, settings round trip and bad values;
+- unit total 457/457;
+- desktop, +3:
+  - the light theme captures as a light pill with dark text;
+  - dark is the default;
+  - with the date and activities hidden from the pill, its left half stays empty while a timer runs.
+
 ## Next recommended action
 
 1. **Owner decisions:** E1–E3 (§5). Add: whether to package Halo as MSIX, which unblocks notifications (O-F01),

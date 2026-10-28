@@ -6,6 +6,7 @@ using Halo.Core.Clock;
 using Halo.Core.Island;
 using Halo.Core.Media;
 using Halo.Core.Motion;
+using Halo.Core.Theming;
 using Windows.UI;
 using Windows.UI.Composition;
 
@@ -26,15 +27,35 @@ internal sealed class IslandVisuals : IDisposable
     private const int Regular = 400;
     private const int Semibold = 600;
 
-    private static readonly Color Black = Color.FromArgb(255, 0, 0, 0);
-    private static readonly Color HoverFill = Color.FromArgb(255, 22, 22, 24);
-    private static readonly Color Edge = Color.FromArgb(40, 255, 255, 255);
-    private static readonly Color HoverEdge = Color.FromArgb(72, 255, 255, 255);
-    private static readonly Color Primary = Color.FromArgb(255, 255, 255, 255);
-    private static readonly Color Secondary = Color.FromArgb(184, 255, 255, 255);
-    private static readonly Color Tertiary = Color.FromArgb(140, 255, 255, 255);
-    private static readonly Color Track = Color.FromArgb(46, 255, 255, 255);
-    private static readonly Color Fill = Color.FromArgb(230, 255, 255, 255);
+    // Colours come from the theme palette (I-F01); the names are the roles they play.
+    private readonly Dictionary<BrushRole, List<CompositionColorBrush>> _roleBrushes = [];
+    private IslandPalette _palette = IslandPalette.Dark;
+    private IslandState _lastState = IslandState.Initial;
+
+    private enum BrushRole
+    {
+        Track,
+        Bar,
+        Primary,
+    }
+
+    private Color Black => ToColor(_palette.Fill);
+
+    private Color HoverFill => ToColor(_palette.HoverFill);
+
+    private Color Edge => ToColor(_palette.Edge);
+
+    private Color HoverEdge => ToColor(_palette.HoverEdge);
+
+    private Color Primary => ToColor(_palette.Primary);
+
+    private Color Secondary => ToColor(_palette.Secondary);
+
+    private Color Tertiary => ToColor(_palette.Tertiary);
+
+    private Color Track => ToColor(_palette.Track);
+
+    private Color Fill => ToColor(_palette.Bar);
 
     private readonly Compositor _compositor;
     private readonly TextRenderer _text;
@@ -116,6 +137,8 @@ internal sealed class IslandVisuals : IDisposable
     private readonly SpriteVisual[] _dots;
     private readonly CompositionColorBrush[] _dotBrushes;
     private IslandActivity? _activity;
+    private PillContent _pill = PillContent.Default;
+    private string _pillBattery = string.Empty;
     private int _activityOthers;
     private bool _showPrivate;
     private IslandPage _page = IslandPage.Clock;
@@ -172,14 +195,14 @@ internal sealed class IslandVisuals : IDisposable
         _statusGlyphs = new TextLine(this, _clockGroup);
         _statusText = new TextLine(this, _clockGroup);
         _progressTrack = compositor.CreateSpriteVisual();
-        _progressTrack.Brush = compositor.CreateColorBrush(Track);
+        _progressTrack.Brush = RoleBrush(compositor, BrushRole.Track);
         _progressFill = compositor.CreateSpriteVisual();
-        _progressFill.Brush = compositor.CreateColorBrush(Fill);
+        _progressFill.Brush = RoleBrush(compositor, BrushRole.Bar);
         _clockGroup.Children.InsertAtTop(_progressTrack);
         _clockGroup.Children.InsertAtTop(_progressFill);
 
         _artBackground = compositor.CreateSpriteVisual();
-        _artBackground.Brush = compositor.CreateColorBrush(Track);
+        _artBackground.Brush = RoleBrush(compositor, BrushRole.Track);
         _mediaGroup.Children.InsertAtTop(_artBackground);
         _artPlaceholder = new TextLine(this, _mediaGroup);
         _art = compositor.CreateSpriteVisual();
@@ -192,9 +215,9 @@ internal sealed class IslandVisuals : IDisposable
         _mediaTime = new TextLine(this, _mediaGroup);
         _mediaClock = new TextLine(this, _mediaGroup);
         _mediaTrack = compositor.CreateSpriteVisual();
-        _mediaTrack.Brush = compositor.CreateColorBrush(Track);
+        _mediaTrack.Brush = RoleBrush(compositor, BrushRole.Track);
         _mediaFill = compositor.CreateSpriteVisual();
-        _mediaFill.Brush = compositor.CreateColorBrush(Fill);
+        _mediaFill.Brush = RoleBrush(compositor, BrushRole.Bar);
         _mediaGroup.Children.InsertAtTop(_mediaTrack);
         _mediaGroup.Children.InsertAtTop(_mediaFill);
         _buttonPrevious = new TextLine(this, _mediaGroup);
@@ -209,9 +232,9 @@ internal sealed class IslandVisuals : IDisposable
         _compactActivityGlyph = new TextLine(this, _compactActivity);
         _compactActivityText = new TextLine(this, _compactActivity);
         _compactLevelTrack = compositor.CreateSpriteVisual();
-        _compactLevelTrack.Brush = compositor.CreateColorBrush(Track);
+        _compactLevelTrack.Brush = RoleBrush(compositor, BrushRole.Track);
         _compactLevelFill = compositor.CreateSpriteVisual();
-        _compactLevelFill.Brush = compositor.CreateColorBrush(Fill);
+        _compactLevelFill.Brush = RoleBrush(compositor, BrushRole.Bar);
         _compactActivity.Children.InsertAtTop(_compactLevelTrack);
         _compactActivity.Children.InsertAtTop(_compactLevelFill);
 
@@ -222,9 +245,9 @@ internal sealed class IslandVisuals : IDisposable
         _activityTitle = new TextLine(this, _activityGroup);
         _activitySubtitle = new TextLine(this, _activityGroup);
         _activityTrack = compositor.CreateSpriteVisual();
-        _activityTrack.Brush = compositor.CreateColorBrush(Track);
+        _activityTrack.Brush = RoleBrush(compositor, BrushRole.Track);
         _activityFill = compositor.CreateSpriteVisual();
-        _activityFill.Brush = compositor.CreateColorBrush(Fill);
+        _activityFill.Brush = RoleBrush(compositor, BrushRole.Bar);
         _activityGroup.Children.InsertAtTop(_activityTrack);
         _activityGroup.Children.InsertAtTop(_activityFill);
         _activityButtons = [new TextLine(this, _activityGroup), new TextLine(this, _activityGroup), new TextLine(this, _activityGroup)];
@@ -245,12 +268,12 @@ internal sealed class IslandVisuals : IDisposable
         _volumeValue = new TextLine(this, _volumeGroup);
         _volumeNone = new TextLine(this, _volumeGroup);
         _volumeTrack = compositor.CreateSpriteVisual();
-        _volumeTrack.Brush = compositor.CreateColorBrush(Track);
-        _volumeFillBrush = compositor.CreateColorBrush(Fill);
+        _volumeTrack.Brush = RoleBrush(compositor, BrushRole.Track);
+        _volumeFillBrush = RoleBrush(compositor, BrushRole.Bar);
         _volumeFill = compositor.CreateSpriteVisual();
         _volumeFill.Brush = _volumeFillBrush;
         _volumeThumb = compositor.CreateSpriteVisual();
-        _volumeThumb.Brush = compositor.CreateColorBrush(Primary);
+        _volumeThumb.Brush = RoleBrush(compositor, BrushRole.Primary);
         _volumeGroup.Children.InsertAtTop(_volumeTrack);
         _volumeGroup.Children.InsertAtTop(_volumeFill);
         _volumeGroup.Children.InsertAtTop(_volumeThumb);
@@ -260,9 +283,9 @@ internal sealed class IslandVisuals : IDisposable
         _alertNarrow = new TextLine(this, _alertContent);
         _alertValue = new TextLine(this, _alertContent);
         _alertTrack = compositor.CreateSpriteVisual();
-        _alertTrack.Brush = compositor.CreateColorBrush(Track);
+        _alertTrack.Brush = RoleBrush(compositor, BrushRole.Track);
         _alertFill = compositor.CreateSpriteVisual();
-        _alertFill.Brush = compositor.CreateColorBrush(Fill);
+        _alertFill.Brush = RoleBrush(compositor, BrushRole.Bar);
         _alertContent.Children.InsertAtTop(_alertTrack);
         _alertContent.Children.InsertAtTop(_alertFill);
 
@@ -277,6 +300,7 @@ internal sealed class IslandVisuals : IDisposable
     public void ApplyLayout(IslandLayout layout, IslandState state)
     {
         _layout = layout;
+        _lastState = state;
         var canvas = new Vector2(layout.Canvas.Width, layout.Canvas.Height);
         _root.Size = canvas;
         _island.Size = canvas;
@@ -422,6 +446,21 @@ internal sealed class IslandVisuals : IDisposable
             a.Duration = spec.Duration;
             _expandedContent.StartAnimation("Opacity", a);
         }
+    }
+
+    /// <summary>
+    /// What the compact pill shows (I-F02): its left slot takes the first enabled of activity, media and date that
+    /// exists; <paramref name="battery"/> ("82%") goes beside the time when the user asked for it.
+    /// </summary>
+    public void ShowPillOptions(PillContent pill, string battery)
+    {
+        if (pill == _pill && string.Equals(battery, _pillBattery, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        (_pill, _pillBattery) = (pill, battery);
+        DrawText();
     }
 
     /// <summary>Emphasis (MOTION_SYSTEM.md): one gentle brightness step on the activity, never a flash.</summary>
@@ -587,6 +626,48 @@ internal sealed class IslandVisuals : IDisposable
         DrawAlert();
     }
 
+    /// <summary>
+    /// Switches the theme (I-F01): every brush and text colour follows the new palette, and every text line is
+    /// redrawn once. Nothing animates.
+    /// </summary>
+    public void ApplyPalette(IslandPalette palette, IslandState state)
+    {
+        if (palette == _palette)
+        {
+            return;
+        }
+
+        _palette = palette;
+        foreach (var (role, brushes) in _roleBrushes)
+        {
+            var color = role switch { BrushRole.Track => Track, BrushRole.Primary => Primary, _ => Fill };
+            foreach (var brush in brushes)
+            {
+                brush.Color = color;
+            }
+        }
+
+        ApplyLayout(_layout, state);
+        _ = DrawVolume(); // the muted fill colour depends on the palette
+    }
+
+    /// <summary>The palette in use (for tests and the settings window).</summary>
+    public IslandPalette Palette => _palette;
+
+    private static Color ToColor(Rgba c) => Color.FromArgb(c.A, c.R, c.G, c.B);
+
+    private CompositionColorBrush RoleBrush(Compositor compositor, BrushRole role)
+    {
+        var brush = compositor.CreateColorBrush(role switch { BrushRole.Track => Track, BrushRole.Primary => Primary, _ => Fill });
+        if (!_roleBrushes.TryGetValue(role, out var list))
+        {
+            _roleBrushes[role] = list = [];
+        }
+
+        list.Add(brush);
+        return brush;
+    }
+
     public void Dispose()
     {
         foreach (var line in Lines())
@@ -711,8 +792,10 @@ internal sealed class IslandVisuals : IDisposable
     private bool DrawActivity()
     {
         var a = _activity;
-        var ok = _compactActivityGlyph.Show(a?.Glyph ?? string.Empty);
-        var compact = a is null ? string.Empty : a.CompactFor(_showPrivate) + (_activityOthers > 0 ? $"  +{_activityOthers}" : string.Empty);
+        var inPill = a is not null && _pill.Slot(true, _media is not null) == PillSlot.Activity;
+        _compactActivity.IsVisible = inPill;
+        var ok = _compactActivityGlyph.Show(inPill ? a!.Glyph : string.Empty);
+        var compact = !inPill ? string.Empty : a!.CompactFor(_showPrivate) + (_activityOthers > 0 ? $"  +{_activityOthers}" : string.Empty);
         ok &= _compactActivityText.Show(compact);
         ok &= _activityGlyph.Show(a?.Glyph ?? string.Empty);
         ok &= _activityTitle.Show(a is null ? string.Empty : a.Privacy == ActivityPrivacy.Private && !_showPrivate ? a.RedactedText : a.Title);
@@ -773,7 +856,7 @@ internal sealed class IslandVisuals : IDisposable
         var m = _media;
         var ok = true;
         // The compact slot shows one thing: the primary activity, else what is playing, else the date.
-        var compactMedia = m is not null && _activity is null;
+        var compactMedia = m is not null && _pill.Slot(_activity is not null, true) == PillSlot.Media;
         ok &= _compactMediaGlyph.Show(!compactMedia ? string.Empty : m!.IsPlaying ? "\uE768" : "\uE769");
         ok &= _compactMediaTitle.Show(!compactMedia ? string.Empty : m!.Title.Length > 0 ? m.Title : m.Headline);
         ok &= _mediaTitle.Show(m is null ? string.Empty : m.Title.Length > 0 ? m.Title : "Unknown title");
@@ -851,8 +934,9 @@ internal sealed class IslandVisuals : IDisposable
         var ok = true;
         if (_clock is { } clock)
         {
-            ok &= _compactDate.Show(_media is null && _activity is null ? clock.ShortDate : string.Empty);
-            ok &= _compactTime.Show(clock.TimeWithDesignator, clock.Designator.Length);
+            var slot = _pill.Slot(_activity is not null, _media is not null);
+            ok &= _compactDate.Show(slot == PillSlot.Date ? clock.ShortDate : string.Empty);
+            ok &= _compactTime.Show(_pillBattery.Length > 0 ? $"{_pillBattery}  \u00b7  {clock.TimeWithDesignator}" : clock.TimeWithDesignator, clock.Designator.Length);
             ok &= _bigTime.Show(clock.TimeWithDesignator, clock.Designator.Length);
             ok &= _longDate.Show(clock.LongDate);
             ok &= _progressLabel.Show(clock.DayProgressText);

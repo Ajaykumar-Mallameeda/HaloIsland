@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using Halo.Core.Theming;
 
 namespace Halo.Core.Settings;
 
@@ -72,6 +73,25 @@ public sealed record HaloSettings
     /// <summary>Shortcut that opens or closes the island (I-F05). Off until the user picks one.</summary>
     public HotkeyChoice Hotkey { get; init; } = HotkeyChoice.Off;
 
+    /// <summary>Island theme (I-F01): dark (the original look), light, or following Windows.</summary>
+    public ThemeMode Theme { get; init; } = ThemeMode.Dark;
+
+    /// <summary>Use Windows' accent colour for progress and level bars (I-F01). Off keeps the monochrome island.</summary>
+    public bool AccentBars { get; init; }
+
+    /// <summary>
+    /// What the compact pill may show on its left (I-F02), in a fixed priority: the primary activity, else what is
+    /// playing, else the date. The first enabled one that exists is shown; nothing rotates.
+    /// </summary>
+    public bool PillShowsActivity { get; init; } = true;
+
+    public bool PillShowsMedia { get; init; } = true;
+
+    public bool PillShowsDate { get; init; } = true;
+
+    /// <summary>Battery percent beside the time in the pill (machines with a battery only).</summary>
+    public bool PillShowsBattery { get; init; }
+
     /// <summary>Serialises to the versioned JSON file format (indented, stable key order).</summary>
     public string ToJson()
     {
@@ -96,6 +116,12 @@ public sealed record HaloSettings
             w.WriteBoolean("showPreviews", ShowPreviews);
             w.WriteBoolean("showReminders", ShowReminders);
             w.WriteString("hotkey", Hotkeys.Token(Hotkey));
+            w.WriteString("theme", Theme.ToString().ToLowerInvariant());
+            w.WriteBoolean("accentBars", AccentBars);
+            w.WriteBoolean("pillShowsActivity", PillShowsActivity);
+            w.WriteBoolean("pillShowsMedia", PillShowsMedia);
+            w.WriteBoolean("pillShowsDate", PillShowsDate);
+            w.WriteBoolean("pillShowsBattery", PillShowsBattery);
             w.WriteEndObject();
         }
 
@@ -142,6 +168,23 @@ public sealed record HaloSettings
                 if (e.ValueKind is JsonValueKind.True or JsonValueKind.False)
                 {
                     return e.GetBoolean();
+                }
+
+                list.Add(name);
+                return fallback;
+            }
+
+            ThemeMode ThemeChoice(string name, ThemeMode fallback)
+            {
+                if (!root.TryGetProperty(name, out var e))
+                {
+                    return fallback;
+                }
+
+                if (e.ValueKind == JsonValueKind.String && Enum.TryParse<ThemeMode>(e.GetString(), ignoreCase: true, out var mode) && Enum.IsDefined(mode)
+                    && !int.TryParse(e.GetString(), out _))
+                {
+                    return mode;
                 }
 
                 list.Add(name);
@@ -198,6 +241,12 @@ public sealed record HaloSettings
                 ShowPreviews = Bool("showPreviews", d.ShowPreviews),
                 ShowReminders = Bool("showReminders", d.ShowReminders),
                 Hotkey = Choice("hotkey", d.Hotkey),
+                Theme = ThemeChoice("theme", d.Theme),
+                AccentBars = Bool("accentBars", d.AccentBars),
+                PillShowsActivity = Bool("pillShowsActivity", d.PillShowsActivity),
+                PillShowsMedia = Bool("pillShowsMedia", d.PillShowsMedia),
+                PillShowsDate = Bool("pillShowsDate", d.PillShowsDate),
+                PillShowsBattery = Bool("pillShowsBattery", d.PillShowsBattery),
             };
 
             // Critical must stay below low; otherwise it falls back (to the default, or just under low).

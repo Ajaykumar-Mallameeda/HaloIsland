@@ -586,6 +586,10 @@ internal sealed unsafe partial class IslandWindow : IDisposable
             case WmPowerBroadcast when wParam == PbtApmSuspend:
                 OnSuspend();
                 return 1;
+            case WmSettingChange when IsColorSetChange(lParam) || wParam == (nint)SpiSetHighContrast:
+                // Windows' light/dark mode, accent colour or high contrast changed (I-F01).
+                ApplyTheme("system");
+                return null;
             case WmSettingChange when IsIntlChange(lParam):
                 // Regional format changed (12/24 h, date order): drop the cached culture data.
                 CultureInfo.CurrentCulture.ClearCachedData();
@@ -827,6 +831,9 @@ internal sealed unsafe partial class IslandWindow : IDisposable
         ArmClock();
     }
 
+    private static bool IsColorSetChange(nint lParam) =>
+        lParam != 0 && new string((char*)lParam).Equals("ImmersiveColorSet", StringComparison.Ordinal);
+
     private static bool IsIntlChange(nint lParam) =>
         lParam != 0 && new string((char*)lParam).Equals("intl", StringComparison.Ordinal);
 
@@ -1003,6 +1010,8 @@ internal sealed unsafe partial class IslandWindow : IDisposable
         }
 
         ApplyHotkey(reason);
+        ApplyTheme(reason);
+        UpdateStatus(); // pill content options (I-F02)
 
         if (_layout is not null && _layout.VolumeRow != s.ShowVolume)
         {
@@ -1082,6 +1091,72 @@ internal sealed unsafe partial class IslandWindow : IDisposable
         }
 
         _hotkeyRegistered = HotkeyChoice.Off;
+    }
+
+    private Halo.Core.Theming.IslandPalette? _palette;
+
+    private Halo.Core.Theming.PillContent PillOptions() => new(_settings.PillShowsActivity, _settings.PillShowsMedia, _settings.PillShowsDate);
+
+    /// <summary>
+    /// Picks the palette from the settings and Windows' state (I-F01): high contrast first (system colours), then the
+    /// chosen theme or Windows' app mode, then the accent for bars. Read through UISettings, the documented way for
+    /// Win32 apps to follow the system theme.
+    /// </summary>
+    private void ApplyTheme(string reason)
+    {
+        if (_visuals is null)
+        {
+            return;
+        }
+
+        var highContrast = HighContrastColors();
+        var (systemLight, accent) = SystemColors();
+        var palette = Halo.Core.Theming.IslandPalette.For(_settings.Theme, systemLight, _settings.AccentBars ? accent : null, highContrast);
+        if (palette == _palette)
+        {
+            return;
+        }
+
+        _palette = palette;
+        _visuals.ApplyPalette(palette, State);
+        ApplyPage(animate: false);
+        UpdateStatus();
+        _visuals.ShowActivity(_board.Primary, _board.OthersCount, ShowPrivate, reducedMotion: true);
+        _log?.Write("theme", ("mode", _settings.Theme.ToString().ToLowerInvariant()), ("light", palette.Fill.Luminance > 0.5 ? 1 : 0), ("accent", _settings.AccentBars ? 1 : 0), ("high_contrast", highContrast is null ? 0 : 1), ("reason", reason));
+    }
+
+    private static (bool Light, Halo.Core.Theming.Rgba? Accent) SystemColors()
+    {
+        try
+        {
+            var ui = new Windows.UI.ViewManagement.UISettings();
+            var fg = ui.GetColorValue(Windows.UI.ViewManagement.UIColorType.Foreground);
+            var accent = ui.GetColorValue(Windows.UI.ViewManagement.UIColorType.Accent);
+            // A dark foreground means Windows' app mode is light.
+            var light = ((5 * fg.G) + (2 * fg.R) + fg.B) < (8 * 128);
+            return (light, Halo.Core.Theming.Rgba.Opaque(accent.R, accent.G, accent.B));
+        }
+        catch (Exception ex) when (ex is COMException or InvalidOperationException)
+        {
+            return (false, null);
+        }
+    }
+
+    private static Halo.Core.Theming.HighContrastColors? HighContrastColors()
+    {
+        var hc = new HighContrast { Size = (uint)sizeof(HighContrast) };
+        if (!SystemParametersInfoHighContrast(SpiGetHighContrast, hc.Size, &hc, 0) || (hc.Flags & 0x1) == 0)
+        {
+            return null;
+        }
+
+        static Halo.Core.Theming.Rgba Sys(int index)
+        {
+            var c = GetSysColor(index); // 0x00BBGGRR
+            return Halo.Core.Theming.Rgba.Opaque((byte)(c & 0xFF), (byte)((c >> 8) & 0xFF), (byte)((c >> 16) & 0xFF));
+        }
+
+        return new Halo.Core.Theming.HighContrastColors(Sys(5), Sys(8), Sys(13), Sys(17)); // window, window text, highlight, gray text
     }
 
     private void SaveSettings()
@@ -1311,6 +1386,7 @@ internal sealed unsafe partial class IslandWindow : IDisposable
         var network = _network is not null ? _networkMonitor.Current?.Glyph ?? string.Empty : string.Empty;
         var glyphs = string.Join(" ", new[] { network, power?.Glyph ?? string.Empty }.Where(g => g.Length > 0));
         _visuals?.ShowStatus(glyphs, power?.ShortText ?? string.Empty);
+        _visuals?.ShowPillOptions(PillOptions(), _settings.PillShowsBattery ? power?.ShortText ?? string.Empty : string.Empty);
     }
 
     /// <summary>A connectivity reading (real or test): status icon, diagnostics, and at most one alert.</summary>

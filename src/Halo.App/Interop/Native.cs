@@ -589,6 +589,24 @@ internal static unsafe partial class Native
     [return: MarshalAs(UnmanagedType.Bool)]
     public static partial bool RegisterHotKey(nint hwnd, int id, uint modifiers, uint key);
 
+    public const uint SpiGetHighContrast = 0x0042;
+    public const uint SpiSetHighContrast = 0x0043;
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct HighContrast
+    {
+        public uint Size;
+        public uint Flags;
+        public nint DefaultScheme;
+    }
+
+    [LibraryImport("user32.dll", EntryPoint = "SystemParametersInfoW")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool SystemParametersInfoHighContrast(uint action, uint param, HighContrast* value, uint winIni);
+
+    [LibraryImport("user32.dll")]
+    public static partial uint GetSysColor(int index);
+
     [LibraryImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static partial bool UnregisterHotKey(nint hwnd, int id);
