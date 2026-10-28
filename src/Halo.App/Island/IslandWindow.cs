@@ -8,6 +8,7 @@ using Halo.Core.Clock;
 using Halo.Core.Diagnostics;
 using Halo.Core.Island;
 using Halo.Core.Media;
+using Halo.Core.Motion;
 using Halo.Core.Network;
 using Halo.Core.Power;
 using Halo.Core.Settings;
@@ -129,7 +130,7 @@ internal sealed unsafe partial class IslandWindow : IDisposable
     private bool _displayOff;
     private nint _displayNotification;
     private bool _reducedMotion;
-    private int _transitionId;
+    private readonly MotionTracker _motion = new();
 
     public IslandWindow(DiagnosticsLog? log, SettingsStore store, LogFile? fileLog = null, IslandFault fault = IslandFault.None)
     {
@@ -566,7 +567,7 @@ internal sealed unsafe partial class IslandWindow : IDisposable
                 _fullscreen?.Schedule();
                 RefreshClock("resume");
                 return null;
-            case WmTransitionDone when (int)wParam == _transitionId:
+            case WmTransitionDone when _motion.Complete((int)wParam):
                 ApplyRegion(union: false);
                 _log?.Write("transition.end", ("dir", State.IsExpanded ? "expand" : "collapse"));
                 return 0;
@@ -595,8 +596,9 @@ internal sealed unsafe partial class IslandWindow : IDisposable
                 return 0;
             case WmDestroy:
                 // Stop everything that could call back into a closing island: hover timers, clock, full-screen
-                // hooks, tray, UIA.
+                // hooks, tray, UIA, and completion callbacks of animations still running.
                 _controller.Shutdown();
+                _motion.Shutdown();
                 _ = KillTimer(hwnd, SaveTimerId);
                 SaveSettings(); // a change made less than a second before exit is not lost
                 _fullscreen?.Dispose();
@@ -664,7 +666,13 @@ internal sealed unsafe partial class IslandWindow : IDisposable
 
         if (transition.AlertChanged)
         {
-            _visuals?.ShowAlert(state.Alert?.Content);
+            _visuals?.ShowAlert(state.Alert?.Content, _reducedMotion);
+            if (transition.Previous.Alert is { } before && state.Alert is { } after && !transition.PresentationChanged
+                && !string.Equals(before.Key, after.Key, StringComparison.Ordinal))
+            {
+                _visuals?.SwapAlertContent(MotionPlanner.Swap(_reducedMotion)); // a different alert replaced this one
+            }
+
             LogAlert(transition, source);
             if (state.Alert is { } shown && _settings.AnnounceAlerts)
             {
@@ -686,9 +694,10 @@ internal sealed unsafe partial class IslandWindow : IDisposable
         if (transition.PresentationChanged)
         {
             ApplyRegion(union: true);
-            var id = ++_transitionId;
+            var plan = _motion.Begin(MotionPlanner.Transition(transition.Previous.Presentation, state.Presentation, _reducedMotion));
+            var id = plan?.Id ?? 0;
             _log?.Write("transition.start", ("dir", state.IsExpanded ? "expand" : "collapse"), ("source", source));
-            var batch = _visuals?.Animate(transition, _reducedMotion);
+            var batch = _visuals?.Animate(transition, plan, _reducedMotion);
             if (batch is not null)
             {
                 batch.Completed += (_, _) => PostMessageW(_hwnd, WmTransitionDone, id, 0);
@@ -700,7 +709,7 @@ internal sealed unsafe partial class IslandWindow : IDisposable
         }
         else
         {
-            _ = _visuals?.Animate(transition, _reducedMotion);
+            _ = _visuals?.Animate(transition, null, _reducedMotion);
         }
 
         PublishAutomation();

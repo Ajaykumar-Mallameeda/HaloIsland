@@ -898,6 +898,44 @@ Starting point: `4f26bc9`, clean tree; baseline unit 319/319, island desktop 52/
 - **Not done:** Narrator by ear (needs a person); Axe.Windows (not installed); a high-contrast review.
 - **Reduced motion:** announcements and the tree do not depend on animation (existing reduce-motion test unchanged).
 
+### B-F01 Motion system — PASS (specification)
+
+- [`MOTION_SYSTEM.md`](MOTION_SYSTEM.md) defines nine motions: morph, fade-out, fade-in, settle, swap, level,
+  emphasis, arrival and feedback.
+- **Timing:** durations stay ≤ 450 ms, against Apple's 2 s ceiling.
+- **Rules:**
+  - state owns motion;
+  - one plan per channel;
+  - an interrupted animation restarts from its current value;
+  - nothing animates while idle;
+  - suppression wins;
+  - each motion has a reduced-motion alternative;
+  - nothing is conveyed by colour alone;
+  - durations are times, not frame counts (60 and 120 Hz).
+- The 350 ms morph is unchanged, because it is the one with PB-05 evidence.
+
+### B-F02 Shared motion engine — PASS
+
+- `Halo.Core/Motion`:
+  - `MotionVocabulary` holds the durations, delays and reduced-motion alternatives;
+  - `MotionPlanner` (pure) turns a change into steps: transition, swap, level, arrival and emphasis. Equal values
+    plan nothing;
+  - `MotionTracker` keeps one plan per channel. A superseded plan's completion is ignored, and after `Shutdown`
+    nothing begins or completes.
+- `IslandVisuals` executes plans and no longer hard-codes durations. New motions:
+  - **swap:** when one alert replaces another in place, the content dips to 35 % and back, never to zero;
+  - **level:** the alert bar animates between values, for example volume 30 → 35;
+  - **arrival:** a 4 % grow-and-return, used by the timer.
+- `IslandWindow` gates `WmTransitionDone` through the tracker, which replaces the transition counter, and shuts it
+  down on exit.
+- **Tests:**
+  - unit, +12 (`MotionTests`): expand and collapse plans, reduced motion, the ceiling for every pair of
+    presentations, coalescing, the emphasis window, 50 rapid transitions (bounded, 49 stale completions ignored),
+    independent channels, cancel and shutdown;
+  - island desktop: 59/59, including the existing transition-timing and reduce-motion tests.
+- **Not measured:** PB-05 for the new swap, level and arrival motions. They are DWM animations of 90–260 ms, but
+  no frame evidence was collected.
+
 ## Next recommended action
 
 1. **Owner decisions:** E1–E3 (§5). Add: whether to package Halo as MSIX, which unblocks notifications (O-F01),

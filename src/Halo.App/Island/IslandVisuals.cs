@@ -4,6 +4,7 @@ using Halo.Core.Audio;
 using Halo.Core.Clock;
 using Halo.Core.Island;
 using Halo.Core.Media;
+using Halo.Core.Motion;
 using Windows.UI;
 using Windows.UI.Composition;
 
@@ -353,10 +354,11 @@ internal sealed class IslandVisuals : IDisposable
     }
 
     /// <summary>Shows the content of a transient alert (null clears it). Only changed lines are redrawn.</summary>
-    public void ShowAlert(AlertContent? content)
+    public void ShowAlert(AlertContent? content, bool reducedMotion = false)
     {
+        var before = _alert?.ClampedLevel;
         _alert = content;
-        DrawAlert();
+        DrawAlert(MotionPlanner.Level(before, content?.ClampedLevel, reducedMotion));
     }
 
     /// <summary>Shows a new clock reading; only lines whose text changed are redrawn.</summary>
@@ -366,8 +368,11 @@ internal sealed class IslandVisuals : IDisposable
         DrawText();
     }
 
-    /// <summary>Starts the animations for a state change. Returns the batch of a presentation change, else null.</summary>
-    public CompositionScopedBatch? Animate(IslandTransition transition, bool reducedMotion)
+    /// <summary>
+    /// Starts the animations for a state change. <paramref name="plan"/> comes from <see cref="MotionPlanner"/> for a
+    /// presentation change (null otherwise). Returns the batch of a presentation change, else null.
+    /// </summary>
+    public CompositionScopedBatch? Animate(IslandTransition transition, MotionPlan? plan, bool reducedMotion)
     {
         if (transition.HoverChanged)
         {
@@ -382,14 +387,14 @@ internal sealed class IslandVisuals : IDisposable
             _island.StartAnimation("Scale", Vector3To(new Vector3(scale, scale, 1), transition.Next.Pressed ? 90 : 180));
         }
 
-        if (!transition.PresentationChanged)
+        if (!transition.PresentationChanged || plan is null)
         {
             return null;
         }
 
-        var expand = transition.Next.Presentation == IslandPresentation.Expanded;
         var target = _layout.ShapeFor(transition.Next.Presentation);
-        var shapeMs = reducedMotion ? 1 : (int)IslandMotion.Transition.TotalMilliseconds;
+        var morph = plan.Spec(MotionKind.Morph);
+        var shapeMs = morph.IsInstant ? 1 : Ms(morph.Duration);
         var batch = _compositor.CreateScopedBatch(CompositionBatchTypes.Animation);
         _shape.StartAnimation("Size", Vector2To(new Vector2((float)target.Width, (float)target.Height), shapeMs));
         _shape.StartAnimation("Offset", Vector2To(new Vector2((float)target.Left, (float)target.Top), shapeMs));
@@ -397,16 +402,55 @@ internal sealed class IslandVisuals : IDisposable
 
         // Outgoing content leaves fast; incoming content waits until the shape has mostly grown or shrunk.
         var (outgoing, incoming) = (ContentFor(transition.Previous.Presentation), ContentFor(transition.Next.Presentation));
-        outgoing.StartAnimation("Opacity", ScalarTo(0, reducedMotion ? 150 : 110, 0));
-        incoming.StartAnimation("Opacity", ScalarTo(1, reducedMotion ? 150 : 200, reducedMotion ? 0 : (expand ? 150 : 170)));
-        if (expand && !reducedMotion)
+        var fadeOut = plan.Spec(MotionKind.FadeOut);
+        var fadeIn = plan.Spec(MotionKind.FadeIn);
+        outgoing.StartAnimation("Opacity", ScalarTo(0, Ms(fadeOut.Duration), Ms(fadeOut.Delay)));
+        incoming.StartAnimation("Opacity", ScalarTo(1, Ms(fadeIn.Duration), Ms(fadeIn.Delay)));
+        if (plan.Has(MotionKind.Settle))
         {
+            var settle = plan.Spec(MotionKind.Settle);
             _expandedContent.Offset = new Vector3(0, -Snap(_layout.Dip(8)), 0);
-            _expandedContent.StartAnimation("Offset", Vector3To(Vector3.Zero, 320, delayMs: 60));
+            _expandedContent.StartAnimation("Offset", Vector3To(Vector3.Zero, Ms(settle.Duration), delayMs: Ms(settle.Delay)));
         }
 
         batch.End();
         return batch;
+    }
+
+    /// <summary>
+    /// Swap (MOTION_SYSTEM.md): the alert's content dips and rises when one alert replaces another in place, so the
+    /// change is visible without a layout jump. The new text is already drawn; the dip never reaches zero (no flash).
+    /// </summary>
+    public void SwapAlertContent(IReadOnlyList<MotionStep> steps)
+    {
+        if (steps.Count == 0)
+        {
+            return;
+        }
+
+        var spec = steps[0].Spec;
+        var total = (float)spec.End.TotalMilliseconds;
+        var a = _compositor.CreateScalarKeyFrameAnimation();
+        a.InsertKeyFrame(0f, 1f);
+        a.InsertKeyFrame((float)(spec.Delay.TotalMilliseconds / total), 0.35f, _ease);
+        a.InsertKeyFrame(1f, 1f, _ease);
+        a.Duration = spec.End;
+        _alertContent.StartAnimation("Opacity", a);
+    }
+
+    /// <summary>Arrival (MOTION_SYSTEM.md): the island grows 4 % from its top centre and returns, once.</summary>
+    public void Arrive(IReadOnlyList<MotionStep> steps)
+    {
+        if (steps.Count == 0)
+        {
+            return;
+        }
+
+        var a = _compositor.CreateVector3KeyFrameAnimation();
+        a.InsertKeyFrame(0.4f, new Vector3(1.04f, 1.04f, 1), _ease);
+        a.InsertKeyFrame(1f, Vector3.One, _ease);
+        a.Duration = steps[0].Spec.Duration;
+        _island.StartAnimation("Scale", a);
     }
 
     /// <summary>Redraws every text surface (after a DPI change or a GPU device loss).</summary>
@@ -442,11 +486,11 @@ internal sealed class IslandVisuals : IDisposable
 
     private static float Snap(double px) => (float)Math.Round(px);
 
-    /// <summary>Clips a bar to a capsule (radius = half its height).</summary>
-    private void RoundEnds(SpriteVisual bar)
+    /// <summary>Clips a bar to a capsule (radius = half its height), optionally over a larger area than its size.</summary>
+    private void RoundEnds(SpriteVisual bar, Vector2? area = null)
     {
         var geometry = _compositor.CreateRoundedRectangleGeometry();
-        geometry.Size = bar.Size;
+        geometry.Size = area ?? bar.Size;
         geometry.CornerRadius = new Vector2(bar.Size.Y / 2);
         bar.Clip = _compositor.CreateGeometricClip(geometry);
     }
@@ -555,24 +599,37 @@ internal sealed class IslandVisuals : IDisposable
         _ => _compactContent,
     };
 
-    private void DrawAlert()
+    private void DrawAlert(IReadOnlyList<MotionStep>? level = null)
     {
         var content = _alert;
-        var level = content?.ClampedLevel;
+        var value = content?.ClampedLevel;
         _ = _alertGlyph.Show(content?.Glyph ?? string.Empty);
-        _ = _alertWide.Show(level is null ? content?.Text ?? string.Empty : string.Empty);
-        _ = _alertNarrow.Show(level is null ? string.Empty : content?.Text ?? string.Empty);
-        _ = _alertValue.Show(level is null ? string.Empty : content?.Value ?? string.Empty);
-        _alertTrack.IsVisible = level is not null;
-        _alertFill.IsVisible = level is not null;
-        if (level is { } l)
+        _ = _alertWide.Show(value is null ? content?.Text ?? string.Empty : string.Empty);
+        _ = _alertNarrow.Show(value is null ? string.Empty : content?.Text ?? string.Empty);
+        _ = _alertValue.Show(value is null ? string.Empty : content?.Value ?? string.Empty);
+        _alertTrack.IsVisible = value is not null;
+        _alertFill.IsVisible = value is not null;
+        if (value is { } l)
         {
-            _alertFill.Size = new Vector2(Math.Max(_alertTrack.Size.Y, Snap(_alertTrack.Size.X * l)), _alertTrack.Size.Y);
-            RoundEnds(_alertFill);
+            var size = new Vector2(Math.Max(_alertTrack.Size.Y, Snap(_alertTrack.Size.X * l)), _alertTrack.Size.Y);
+            if (level is { Count: > 0 } steps)
+            {
+                // Level motion: the fill follows the value instead of jumping (a rapid change restarts from where it is).
+                // The clip covers the full track and the fill is a capsule-ended bar, so only its width animates.
+                RoundEnds(_alertFill, _alertTrack.Size);
+                _alertFill.StartAnimation("Size", Vector2To(size, Ms(steps[0].Spec.Duration)));
+            }
+            else
+            {
+                _alertFill.Size = size;
+                RoundEnds(_alertFill);
+            }
         }
     }
 
     private float Px(double dip) => (float)_layout.Dip(dip);
+
+    private static int Ms(TimeSpan span) => (int)Math.Round(span.TotalMilliseconds);
 
     private TextFormat Format(string family, double sizeDip, int weight, TextAlign align, bool trim = false)
     {
@@ -715,11 +772,4 @@ internal sealed class IslandVisuals : IDisposable
             _visual.Dispose();
         }
     }
-}
-
-/// <summary>Motion constants shared by the surface and its tests.</summary>
-internal static class IslandMotion
-{
-    /// <summary>Shape transition length; the same easing and duration were measured in spike S1 (PB-05).</summary>
-    public static readonly TimeSpan Transition = TimeSpan.FromMilliseconds(350);
 }
