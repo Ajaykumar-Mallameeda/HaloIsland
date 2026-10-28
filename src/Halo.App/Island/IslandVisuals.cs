@@ -16,6 +16,9 @@ internal sealed class IslandVisuals : IDisposable
 {
     private const string DisplayFont = "Segoe UI Variable Display";
     private const string TextFont = "Segoe UI Variable Text";
+
+    /// <summary>Windows 11 icon font: icons are glyphs, so no image assets are shipped.</summary>
+    public const string IconFont = "Segoe Fluent Icons";
     private const int Regular = 400;
     private const int Semibold = 600;
 
@@ -39,6 +42,13 @@ internal sealed class IslandVisuals : IDisposable
     private readonly CompositionColorBrush _edge;
     private readonly ContainerVisual _compactContent;
     private readonly ContainerVisual _expandedContent;
+    private readonly ContainerVisual _alertContent;
+    private readonly TextLine _alertGlyph;
+    private readonly TextLine _alertWide;
+    private readonly TextLine _alertNarrow;
+    private readonly TextLine _alertValue;
+    private readonly SpriteVisual _alertTrack;
+    private readonly SpriteVisual _alertFill;
     private readonly TextLine _compactDate;
     private readonly TextLine _compactTime;
     private readonly TextLine _bigTime;
@@ -50,6 +60,7 @@ internal sealed class IslandVisuals : IDisposable
     private readonly List<TextFormat> _formats = [];
     private IslandLayout _layout;
     private ClockReading? _clock;
+    private AlertContent? _alert;
 
     public IslandVisuals(Compositor compositor, CompositionTarget target, TextRenderer text, IslandLayout layout)
     {
@@ -76,8 +87,11 @@ internal sealed class IslandVisuals : IDisposable
         _compactContent = compositor.CreateContainerVisual();
         _expandedContent = compositor.CreateContainerVisual();
         _expandedContent.Opacity = 0;
+        _alertContent = compositor.CreateContainerVisual();
+        _alertContent.Opacity = 0;
         content.Children.InsertAtTop(_compactContent);
         content.Children.InsertAtTop(_expandedContent);
+        content.Children.InsertAtTop(_alertContent);
 
         _compactDate = new TextLine(this, _compactContent);
         _compactTime = new TextLine(this, _compactContent);
@@ -91,6 +105,17 @@ internal sealed class IslandVisuals : IDisposable
         _progressFill.Brush = compositor.CreateColorBrush(Fill);
         _expandedContent.Children.InsertAtTop(_progressTrack);
         _expandedContent.Children.InsertAtTop(_progressFill);
+
+        _alertGlyph = new TextLine(this, _alertContent);
+        _alertWide = new TextLine(this, _alertContent);
+        _alertNarrow = new TextLine(this, _alertContent);
+        _alertValue = new TextLine(this, _alertContent);
+        _alertTrack = compositor.CreateSpriteVisual();
+        _alertTrack.Brush = compositor.CreateColorBrush(Track);
+        _alertFill = compositor.CreateSpriteVisual();
+        _alertFill.Brush = compositor.CreateColorBrush(Fill);
+        _alertContent.Children.InsertAtTop(_alertTrack);
+        _alertContent.Children.InsertAtTop(_alertFill);
 
         _island.Children.InsertAtTop(shapeVisual);
         _island.Children.InsertAtTop(content);
@@ -119,8 +144,9 @@ internal sealed class IslandVisuals : IDisposable
         _island.Scale = Vector3.One;
         _fill.Color = state.Hovered ? HoverFill : Black;
         _edge.Color = state.Hovered ? HoverEdge : Edge;
-        _compactContent.Opacity = state.IsExpanded ? 0 : 1;
-        _expandedContent.Opacity = state.IsExpanded ? 1 : 0;
+        _compactContent.Opacity = state.Presentation == IslandPresentation.Compact ? 1 : 0;
+        _expandedContent.Opacity = state.Presentation == IslandPresentation.Expanded ? 1 : 0;
+        _alertContent.Opacity = state.Presentation == IslandPresentation.Alert ? 1 : 0;
         _expandedContent.Offset = Vector3.Zero;
 
         foreach (var format in _formats)
@@ -141,7 +167,24 @@ internal sealed class IslandVisuals : IDisposable
         _progressTrack.Size = new Vector2(Snap(layout.Dip(368)), Snap(layout.Dip(6)));
         _progressFill.Offset = _progressTrack.Offset;
         RoundEnds(_progressTrack);
+
+        var a = layout.Alert;
+        _alertGlyph.Place(a.Left + layout.Dip(14), a.Top, layout.Dip(26), a.Height, Format(IconFont, 16, Regular, TextAlign.Center), Primary);
+        _alertWide.Place(a.Left + layout.Dip(46), a.Top, layout.Dip(236), a.Height, Format(TextFont, 14, Semibold, TextAlign.Leading), Primary);
+        _alertNarrow.Place(a.Left + layout.Dip(46), a.Top, layout.Dip(118), a.Height, Format(TextFont, 14, Semibold, TextAlign.Leading), Primary);
+        _alertValue.Place(a.Right - layout.Dip(16 + 34), a.Top, layout.Dip(34), a.Height, Format(TextFont, 12.5, Semibold, TextAlign.Trailing), Secondary);
+        _alertTrack.Offset = new Vector3(Snap(a.Left + layout.Dip(168)), Snap(a.Top + ((a.Height - layout.Dip(4)) / 2)), 0);
+        _alertTrack.Size = new Vector2(Snap(layout.Dip(78)), Snap(layout.Dip(4)));
+        _alertFill.Offset = _alertTrack.Offset;
+        RoundEnds(_alertTrack);
         RedrawAll();
+    }
+
+    /// <summary>Shows the content of a transient alert (null clears it). Only changed lines are redrawn.</summary>
+    public void ShowAlert(AlertContent? content)
+    {
+        _alert = content;
+        DrawAlert();
     }
 
     /// <summary>Shows a new clock reading; only lines whose text changed are redrawn.</summary>
@@ -172,7 +215,7 @@ internal sealed class IslandVisuals : IDisposable
             return null;
         }
 
-        var expand = transition.Next.IsExpanded;
+        var expand = transition.Next.Presentation == IslandPresentation.Expanded;
         var target = _layout.ShapeFor(transition.Next.Presentation);
         var shapeMs = reducedMotion ? 1 : (int)IslandMotion.Transition.TotalMilliseconds;
         var batch = _compositor.CreateScopedBatch(CompositionBatchTypes.Animation);
@@ -181,7 +224,7 @@ internal sealed class IslandVisuals : IDisposable
         _shape.StartAnimation("CornerRadius", Vector2To(new Vector2((float)target.Radius), shapeMs));
 
         // Outgoing content leaves fast; incoming content waits until the shape has mostly grown or shrunk.
-        var (outgoing, incoming) = expand ? (_compactContent, _expandedContent) : (_expandedContent, _compactContent);
+        var (outgoing, incoming) = (ContentFor(transition.Previous.Presentation), ContentFor(transition.Next.Presentation));
         outgoing.StartAnimation("Opacity", ScalarTo(0, reducedMotion ? 150 : 110, 0));
         incoming.StartAnimation("Opacity", ScalarTo(1, reducedMotion ? 150 : 200, reducedMotion ? 0 : (expand ? 150 : 170)));
         if (expand && !reducedMotion)
@@ -203,6 +246,7 @@ internal sealed class IslandVisuals : IDisposable
         }
 
         DrawText();
+        DrawAlert();
     }
 
     public void Dispose()
@@ -232,7 +276,31 @@ internal sealed class IslandVisuals : IDisposable
         bar.Clip = _compositor.CreateGeometricClip(geometry);
     }
 
-    private IEnumerable<TextLine> Lines() => [_compactDate, _compactTime, _bigTime, _longDate, _wordmark, _progressLabel];
+    private IEnumerable<TextLine> Lines() => [_compactDate, _compactTime, _bigTime, _longDate, _wordmark, _progressLabel, _alertGlyph, _alertWide, _alertNarrow, _alertValue];
+
+    private ContainerVisual ContentFor(IslandPresentation presentation) => presentation switch
+    {
+        IslandPresentation.Expanded => _expandedContent,
+        IslandPresentation.Alert => _alertContent,
+        _ => _compactContent,
+    };
+
+    private void DrawAlert()
+    {
+        var content = _alert;
+        var level = content?.ClampedLevel;
+        _ = _alertGlyph.Show(content?.Glyph ?? string.Empty);
+        _ = _alertWide.Show(level is null ? content?.Text ?? string.Empty : string.Empty);
+        _ = _alertNarrow.Show(level is null ? string.Empty : content?.Text ?? string.Empty);
+        _ = _alertValue.Show(level is null ? string.Empty : content?.Value ?? string.Empty);
+        _alertTrack.IsVisible = level is not null;
+        _alertFill.IsVisible = level is not null;
+        if (level is { } l)
+        {
+            _alertFill.Size = new Vector2(Math.Max(_alertTrack.Size.Y, Snap(_alertTrack.Size.X * l)), _alertTrack.Size.Y);
+            RoundEnds(_alertFill);
+        }
+    }
 
     private float Px(double dip) => (float)_layout.Dip(dip);
 

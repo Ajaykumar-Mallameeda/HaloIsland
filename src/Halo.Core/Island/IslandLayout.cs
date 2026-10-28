@@ -41,7 +41,7 @@ public readonly record struct RoundedBox(double Left, double Top, double Width, 
 /// centred under the top edge of the work area; the visible shape animates inside it. All values are physical
 /// pixels; design values are in DIP and scaled by <c>dpi / 96</c>.
 /// </summary>
-public sealed record IslandLayout(PixelRect Canvas, RoundedBox Compact, RoundedBox Expanded, double Scale)
+public sealed record IslandLayout(PixelRect Canvas, RoundedBox Compact, RoundedBox Expanded, RoundedBox Alert, double Scale)
 {
     public const double TopGapDip = 6;
     public const double CompactWidthDip = 236;
@@ -49,6 +49,10 @@ public sealed record IslandLayout(PixelRect Canvas, RoundedBox Compact, RoundedB
     public const double ExpandedWidthDip = 420;
     public const double ExpandedHeightDip = 172;
     public const double ExpandedRadiusDip = 30;
+
+    /// <summary>Transient alert pill: wider than compact, far smaller than expanded, inside the expanded shape.</summary>
+    public const double AlertWidthDip = 300;
+    public const double AlertHeightDip = 44;
 
     /// <summary>Spare room around the expanded shape so the pressed-state scale never clips.</summary>
     public const double CanvasMarginDip = 8;
@@ -69,10 +73,16 @@ public sealed record IslandLayout(PixelRect Canvas, RoundedBox Compact, RoundedB
             canvas,
             Shape(width, CompactWidthDip, CompactHeightDip, CompactHeightDip, scale),
             Shape(width, ExpandedWidthDip, ExpandedHeightDip, ExpandedRadiusDip, scale),
+            Shape(width, AlertWidthDip, AlertHeightDip, AlertHeightDip, scale),
             scale);
     }
 
-    public RoundedBox ShapeFor(IslandPresentation presentation) => presentation == IslandPresentation.Expanded ? Expanded : Compact;
+    public RoundedBox ShapeFor(IslandPresentation presentation) => presentation switch
+    {
+        IslandPresentation.Expanded => Expanded,
+        IslandPresentation.Alert => Alert,
+        _ => Compact,
+    };
 
     /// <summary>Converts a design value in DIP to pixels at this layout's scale.</summary>
     public double Dip(double dip) => dip * Scale;

@@ -35,71 +35,142 @@ public sealed record IslandTiming
     };
 }
 
-/// <summary>
-/// The one one-shot timer the island owns. The window implements it with a Win32 timer on the UI thread (no extra
-/// thread, nothing scheduled while nothing is pending); tests implement it on virtual time. <see cref="Start"/>
-/// replaces any running timer.
-/// </summary>
-public interface IIslandTimer
+/// <summary>The island's independent one-shot timers.</summary>
+public enum IslandTimerSlot
 {
-    void Start(TimeSpan delay);
+    /// <summary>Hover dwell or leave grace (only one can be pending at a time).</summary>
+    Intent,
 
-    void Cancel();
+    /// <summary>Lifetime of the alert on screen.</summary>
+    Alert,
 }
 
 /// <summary>
-/// Applies inputs to <see cref="IslandStateMachine"/> and keeps the timer in step with the phase: every input, from
-/// the pointer, a click, a menu, the tray, UI Automation or a second launch, goes through <see cref="Apply"/>, so
-/// there is one interaction path. Single-threaded (the UI thread).
+/// The island's one-shot timers. The window implements them with Win32 timers on the UI thread (no extra thread,
+/// nothing scheduled while nothing is pending); tests implement them on virtual time. <see cref="Start"/> replaces a
+/// running timer in the same slot.
 /// </summary>
-public sealed class IslandController(IIslandTimer timer, IslandTiming timing)
+public interface IIslandTimer
 {
-    private IslandTimer _armed;
+    void Start(IslandTimerSlot slot, TimeSpan delay);
+
+    void Cancel(IslandTimerSlot slot);
+}
+
+/// <summary>
+/// Applies inputs to <see cref="IslandStateMachine"/>, keeps the timers in step with the state and arbitrates
+/// transient alerts (ADR-001 §6.2). Every input, from the pointer, a click, a menu, the tray, UI Automation, a second
+/// launch, full-screen detection or a system event, goes through this class, so there is one interaction path.
+/// Single-threaded (the UI thread).
+/// <para>Alert rules:</para>
+/// <list type="bullet">
+/// <item>Same key as the alert on screen: the content is replaced and its time restarts (coalescing).</item>
+/// <item>An alert is shown only while the island is collapsed and not being pressed, and, while full screen hides the
+/// island, only if it is allowed over full screen. Otherwise it waits in a queue of at most four (same key replaces).</item>
+/// <item>A higher- or equal-priority alert replaces the one on screen (which is dropped, not re-queued); a lower one waits.</item>
+/// <item>When the alert on screen ends, or the user collapses the island, the highest-priority queued alert that is not
+/// stale is shown; stale ones are dropped.</item>
+/// <item>Expanding the island (hover, click, tray, UIA) removes the alert; alerts never pin the island.</item>
+/// <item>A timer expiry is acted on only if that slot is still armed, so a late callback cannot change a newer state.</item>
+/// </list>
+/// </summary>
+public sealed class IslandController
+{
+    public const int MaxQueuedAlerts = 4;
+
+    private readonly IIslandTimer _timer;
+    private readonly TimeProvider _time;
+    private readonly List<IslandAlert> _queue = [];
+    private IslandTimer _armedIntent;
+    private bool _alertArmed;
+
+    public IslandController(IIslandTimer timer, IslandTiming timing, TimeProvider? time = null)
+    {
+        _timer = timer;
+        Timing = timing;
+        _time = time ?? TimeProvider.System;
+    }
 
     public IslandState State { get; private set; } = IslandState.Initial;
 
-    public IslandTiming Timing { get; } = timing;
+    public IslandTiming Timing { get; private set; }
 
     public bool IsShutDown { get; private set; }
 
-    public IslandTransition Apply(IslandInput input)
+    /// <summary>Alerts waiting to be shown, in arrival order.</summary>
+    public IReadOnlyList<IslandAlert> QueuedAlerts => _queue;
+
+    /// <summary>Replaces the hover timing (settings); takes effect from the next pending action.</summary>
+    public void SetTiming(IslandTiming timing) => Timing = timing ?? throw new ArgumentNullException(nameof(timing));
+
+    public IslandTransition Apply(IslandInput input) =>
+        IsShutDown ? Unchanged() : Commit(IslandStateMachine.Apply(State, input));
+
+    /// <summary>A timer fired. Ignored when the slot is not armed (a late callback after a cancel or shutdown).</summary>
+    public IslandTransition TimerElapsed(IslandTimerSlot slot)
     {
         if (IsShutDown)
         {
-            return new IslandTransition(State, State);
+            return Unchanged();
         }
 
-        var transition = IslandStateMachine.Apply(State, input);
-        State = transition.Next;
-        if (transition.CancelsTimer)
+        if (slot == IslandTimerSlot.Intent)
         {
-            timer.Cancel();
-            _armed = IslandTimer.None;
+            var armed = _armedIntent;
+            _armedIntent = IslandTimer.None;
+            return armed switch
+            {
+                IslandTimer.HoverDwell => Apply(IslandInput.HoverDwellElapsed),
+                IslandTimer.LeaveGrace => Apply(IslandInput.LeaveGraceElapsed),
+                _ => Unchanged(),
+            };
         }
 
-        if (transition.StartsTimer is var start and not IslandTimer.None)
+        if (!_alertArmed || State.Alert is null)
         {
-            _armed = start;
-            timer.Start(Timing.DelayFor(start));
+            _alertArmed = false;
+            return Unchanged();
         }
 
-        return transition;
+        _alertArmed = false;
+        var previous = State;
+        State = State with { Alert = null };
+        ShowNextQueued();
+        return new IslandTransition(previous, State);
     }
 
-    /// <summary>The timer fired. Ignored when nothing is armed (a late callback after a cancel or shutdown).</summary>
-    public IslandTransition TimerElapsed()
+    /// <summary>The hover timer fired (kept for callers that only use hover timing).</summary>
+    public IslandTransition TimerElapsed() => TimerElapsed(IslandTimerSlot.Intent);
+
+    /// <summary>Requests a transient alert. Returns the change on screen (unchanged if it was queued).</summary>
+    public IslandTransition Raise(IslandAlert alert)
     {
-        var armed = _armed;
-        _armed = IslandTimer.None;
-        return armed switch
+        ArgumentNullException.ThrowIfNull(alert);
+        if (IsShutDown)
         {
-            IslandTimer.HoverDwell => Apply(IslandInput.HoverDwellElapsed),
-            IslandTimer.LeaveGrace => Apply(IslandInput.LeaveGraceElapsed),
-            _ => new IslandTransition(State, State),
-        };
+            return Unchanged();
+        }
+
+        alert = alert with { RaisedAt = _time.GetUtcNow() };
+        var previous = State;
+        if (State.Alert is { } current && string.Equals(current.Key, alert.Key, StringComparison.Ordinal))
+        {
+            Show(alert);
+            return new IslandTransition(previous, State);
+        }
+
+        _ = _queue.RemoveAll(a => string.Equals(a.Key, alert.Key, StringComparison.Ordinal));
+        if (!CanShow(State, alert) || (State.Alert is { } shown && alert.Priority < shown.Priority))
+        {
+            Enqueue(alert);
+            return Unchanged();
+        }
+
+        Show(alert);
+        return new IslandTransition(previous, State);
     }
 
-    /// <summary>Stops the timer and ignores every later input or callback (application exit).</summary>
+    /// <summary>Stops every timer, drops queued alerts and ignores every later input or callback (application exit).</summary>
     public void Shutdown()
     {
         if (IsShutDown)
@@ -108,7 +179,75 @@ public sealed class IslandController(IIslandTimer timer, IslandTiming timing)
         }
 
         IsShutDown = true;
-        _armed = IslandTimer.None;
-        timer.Cancel();
+        _armedIntent = IslandTimer.None;
+        _alertArmed = false;
+        _queue.Clear();
+        _timer.Cancel(IslandTimerSlot.Intent);
+        _timer.Cancel(IslandTimerSlot.Alert);
+    }
+
+    private static bool CanShow(IslandState state, IslandAlert alert) =>
+        state.Phase == IslandPhase.Collapsed && !state.Pressed && (!state.Hidden || alert.AllowedWhenSuppressed);
+
+    private IslandTransition Unchanged() => new(State, State);
+
+    private IslandTransition Commit(IslandTransition transition)
+    {
+        State = transition.Next;
+        if (transition.CancelsTimer)
+        {
+            _timer.Cancel(IslandTimerSlot.Intent);
+            _armedIntent = IslandTimer.None;
+        }
+
+        if (transition.StartsTimer is var start and not IslandTimer.None)
+        {
+            _armedIntent = start;
+            _timer.Start(IslandTimerSlot.Intent, Timing.DelayFor(start));
+        }
+
+        if (transition.Previous.Alert is not null && State.Alert is null && _alertArmed)
+        {
+            _timer.Cancel(IslandTimerSlot.Alert);
+            _alertArmed = false;
+        }
+
+        if (State.Alert is null)
+        {
+            ShowNextQueued();
+        }
+
+        return new IslandTransition(transition.Previous, State);
+    }
+
+    private void Show(IslandAlert alert)
+    {
+        State = State with { Alert = alert };
+        _alertArmed = true;
+        _timer.Start(IslandTimerSlot.Alert, alert.Duration);
+    }
+
+    private void Enqueue(IslandAlert alert)
+    {
+        if (_queue.Count >= MaxQueuedAlerts)
+        {
+            // Make room by dropping the lowest-priority, oldest entry.
+            var drop = _queue.OrderBy(a => a.Priority).ThenBy(a => a.RaisedAt).First();
+            _ = _queue.Remove(drop);
+        }
+
+        _queue.Add(alert);
+    }
+
+    private void ShowNextQueued()
+    {
+        var now = _time.GetUtcNow();
+        _ = _queue.RemoveAll(a => now - a.RaisedAt > a.StaleAfter);
+        var next = _queue.Where(a => CanShow(State, a)).OrderByDescending(a => a.Priority).ThenByDescending(a => a.RaisedAt).FirstOrDefault();
+        if (next is not null)
+        {
+            _ = _queue.Remove(next);
+            Show(next);
+        }
     }
 }

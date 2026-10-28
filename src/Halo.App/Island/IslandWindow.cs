@@ -30,6 +30,11 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
     private const nuint ClockTimerId = 1;
     private const nuint IntentTimerId = 2;
     private const nuint FullscreenTimerId = 3;
+    private const nuint AlertTimerId = 4;
+
+    /// <summary>Diagnostics-only test hook: raise a synthetic alert (wParam = priority 0–3, lParam bit 0 = allowed
+    /// over full screen, bits 8+ = duration in ms). Ignored without --diagnostics.</summary>
+    private const uint WmTestAlert = WmApp + 50;
 
     // Island right-click menu.
     private const int MenuExpand = 1;
@@ -307,9 +312,16 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
                 RefreshClock("minute");
                 return 0;
             case WmTimer when (nuint)wParam == IntentTimerId:
-                // Win32 timers repeat; the hover timers are one-shot.
+                // Win32 timers repeat; the island's timers are one-shot.
                 _ = KillTimer(hwnd, IntentTimerId);
-                Present(_controller.TimerElapsed(), "hover");
+                Present(_controller.TimerElapsed(IslandTimerSlot.Intent), "hover");
+                return 0;
+            case WmTimer when (nuint)wParam == AlertTimerId:
+                _ = KillTimer(hwnd, AlertTimerId);
+                Present(_controller.TimerElapsed(IslandTimerSlot.Alert), "alert");
+                return 0;
+            case WmTestAlert when _log is not null:
+                RaiseAlert(TestAlert((int)wParam, (long)lParam), "test");
                 return 0;
             case WmTimer when (nuint)wParam == FullscreenTimerId:
                 OnFullscreenTimer();
@@ -400,6 +412,12 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
             _log?.Write("phase", ("phase", PhaseToken(state.Phase)), ("source", source));
         }
 
+        if (transition.AlertChanged)
+        {
+            _visuals?.ShowAlert(state.Alert?.Content);
+            LogAlert(transition, source);
+        }
+
         if (transition.VisibilityChanged)
         {
             ApplyVisibility(source);
@@ -479,6 +497,50 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
             SetRoundedRegion(_hwnd, Shape(_layout.ShapeFor(State.Presentation)));
         }
     }
+
+    /// <summary>Requests a transient alert through the controller (the single arbitration path).</summary>
+    internal void RaiseAlert(IslandAlert alert, string source)
+    {
+        var transition = _controller.Raise(alert);
+        if (!transition.Changed)
+        {
+            _log?.Write("alert", ("state", "queued"), ("kind", AlertToken(alert.Kind)), ("priority", (int)alert.Priority), ("source", source));
+        }
+
+        Present(transition, source);
+    }
+
+    private static IslandAlert TestAlert(int priority, long flags)
+    {
+        var p = (AlertPriority)Math.Clamp(priority, 0, 3);
+        var ms = Math.Clamp(flags >> 8, 100, 10_000);
+        return new IslandAlert(
+            $"test.{(int)p}",
+            AlertKind.Test,
+            p,
+            new AlertContent("\uE767", $"Test alert {(int)p}", 0.5, "50"),
+            TimeSpan.FromMilliseconds(ms),
+            TimeSpan.FromSeconds(5),
+            (flags & 1) != 0);
+    }
+
+    private void LogAlert(IslandTransition transition, string source)
+    {
+        var (before, after) = (transition.Previous.Alert, transition.Next.Alert);
+        var stateToken = after is null ? "ended" : before is null ? "shown" : string.Equals(before.Key, after.Key, StringComparison.Ordinal) ? "updated" : "replaced";
+        var kind = (after ?? before)!.Kind;
+        _log?.Write("alert", ("state", stateToken), ("kind", AlertToken(kind)), ("priority", (int)(after ?? before)!.Priority), ("source", source));
+    }
+
+    private static string AlertToken(AlertKind kind) => kind switch
+    {
+        AlertKind.Volume => "volume",
+        AlertKind.Battery => "battery",
+        AlertKind.Power => "power",
+        AlertKind.Network => "network",
+        AlertKind.Media => "media",
+        _ => "test",
+    };
 
     /// <summary>Shows or hides the window for full-screen suppression, without activating it.</summary>
     private void ApplyVisibility(string source)
@@ -693,23 +755,25 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
     /// <summary>The controller's one-shot timer as a Win32 timer on the UI thread (no extra thread).</summary>
     private sealed class WindowTimer(IslandWindow owner) : IIslandTimer
     {
-        public void Start(TimeSpan delay)
+        public void Start(IslandTimerSlot slot, TimeSpan delay)
         {
             // USER_TIMER_MINIMUM is 10 ms; a zero dwell therefore fires on the next timer tick.
             var ms = (uint)Math.Max(10, Math.Ceiling(delay.TotalMilliseconds));
             if (owner._hwnd != 0)
             {
-                _ = SetTimer(owner._hwnd, IntentTimerId, ms, 0);
+                _ = SetTimer(owner._hwnd, Id(slot), ms, 0);
             }
         }
 
-        public void Cancel()
+        public void Cancel(IslandTimerSlot slot)
         {
             if (owner._hwnd != 0)
             {
-                _ = KillTimer(owner._hwnd, IntentTimerId);
+                _ = KillTimer(owner._hwnd, Id(slot));
             }
         }
+
+        private static nuint Id(IslandTimerSlot slot) => slot == IslandTimerSlot.Alert ? AlertTimerId : IntentTimerId;
     }
 }
 

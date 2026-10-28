@@ -241,7 +241,42 @@ machine (1920×1080 @ 120 Hz, 125 %, one display). "Desktop" = `Category=Integra
   remains manual.
 - **Privacy:** only the foreground window's class, rectangle and state are read; no titles or process names are
   logged (diagnostic tokens: desktop/shell/own/application).
-- **Commit:** see `git log --grep "full-screen suppression"`.
+- **Commit:** `ea894a2`.
+- **Defect found afterwards and fixed in M1-F02:** an explicit open while hidden computed the transition from an
+  already-modified state, so `VisibilityChanged` was false and the window would not have been shown. The unit
+  test now asserts `VisibilityChanged`.
+
+### M1-F02 Unified event panel and prioritisation — PASS
+
+- **Requirements:** ADR §6.1/§6.2 (alerts, interaction lock, `AllowedWhenSuppressed`), FR-SYS-01 coalescing
+  (groundwork for M3).
+- **Design:** an `Alert` presentation (300 × 44 DIP pill: icon glyph, one line, optional level bar and value)
+  managed by the existing `IslandController`; no second overlay or controller. `IslandAlert` has key, kind,
+  priority (Low/Normal/High/Critical), content, duration, stale-after and allowed-over-full-screen. Rules are in
+  ADR §6.1 "As built, M1". Timers are keyed (`Intent`, `Alert`). `TimeProvider` is injected for staleness.
+- **Event sources and their place:**
+
+  | Source | Path |
+  |---|---|
+  | Click, hover, tray, UIA, second launch | phase inputs (pin/expand/collapse) |
+  | Full screen | suppression inputs |
+  | Volume, battery, network, media (M3) | `Raise(alert)` |
+
+- **Files:** `Halo.Core/Island/IslandAlert.cs`, `IslandController.cs` (rewritten timer interface and
+  arbitration), `IslandStateMachine.cs`, `IslandLayout.cs` (alert shape), `Halo.App/Island/IslandVisuals.cs`
+  (alert content), `IslandWindow.cs` (alert timer, `alert` diagnostics, diagnostics-only test message).
+- **Unit tests:** 16 new (`AlertTests.cs`): show and expire; coalesce and restart; priority replace and queue;
+  stale drop; wait while expanded and show on collapse; expired not shown after collapse; wait while dwell is
+  pending or pressed; hover expands and clears; click pins and alerts never pin; stale alert timer; full-screen
+  allow-list; full screen clears an ordinary alert; bounded queue; shutdown; level clamp; alert shape geometry.
+  The hover and full-screen test doubles were moved to the keyed timer interface without changing their
+  assertions. Unit total 177/177.
+- **Desktop tests:** 3 new. A real alert pill with drawn content that expires back to compact, foreground
+  unchanged; an alert waits while expanded and shows after collapse; only allowed alerts appear over a
+  full-screen window. Island desktop 22/22.
+- **Runtime:** screenshot of a test alert (glyph, text, bar, value) checked by eye.
+- **Accessibility:** alerts are not yet announced to UI Automation (FR-A11Y-02; planned in M2-F05).
+- **Privacy:** alert text is never logged; diagnostics carry kind, priority and state tokens only.
 
 ## Next recommended action
 

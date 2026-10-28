@@ -276,7 +276,7 @@ public class HoverIntentTests
     private static (IslandController Island, VirtualTimer Clock) Create()
     {
         var clock = new VirtualTimer();
-        var island = new IslandController(clock, IslandTiming.Default);
+        var island = new IslandController(clock, IslandTiming.Default, clock);
         clock.Attach(island);
         return (island, clock);
     }
@@ -288,45 +288,5 @@ public class HoverIntentTests
         clock.Advance(Dwell);
         Assert.Equal(IslandPhase.ExpandedByHover, island.State.Phase);
         return (island, clock);
-    }
-
-    /// <summary>A one-slot timer on virtual time with Win32 SetTimer semantics (Start replaces, Cancel stops).</summary>
-    private sealed class VirtualTimer : IIslandTimer
-    {
-        private IslandController? _island;
-        private TimeSpan _now;
-        private TimeSpan? _due;
-
-        public bool IsArmed => _due is not null;
-
-        public int Started { get; private set; }
-
-        public int Fired { get; private set; }
-
-        public List<IslandTransition> Transitions { get; } = [];
-
-        public void Attach(IslandController island) => _island = island;
-
-        public void Start(TimeSpan delay)
-        {
-            Started++;
-            _due = _now + delay;
-        }
-
-        public void Cancel() => _due = null;
-
-        public void Advance(TimeSpan by)
-        {
-            var end = _now + by;
-            while (_due is { } due && due <= end)
-            {
-                _now = due;
-                _due = null;
-                Fired++;
-                Transitions.Add(_island!.TimerElapsed());
-            }
-
-            _now = end;
-        }
     }
 }

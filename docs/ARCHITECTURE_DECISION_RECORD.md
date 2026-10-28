@@ -196,6 +196,22 @@ applies only to a hover-opened island. Click, menu, tray, UIA and second-launch 
 until an explicit collapse, and a click on a hover-opened island pins it. Otherwise a tray "Open"
 would close 400 ms later, because the pointer is at the tray.
 
+**As built, M1 (2026-10-28):**
+
+- **Presentations:** `Compact`, `Expanded` and `Alert`, a 300 × 44 DIP transient pill inside the expanded shape.
+- **State:** `Suppressed` (full screen) and `ShowNow` (the user's override) sit beside the phase.
+- **Precedence:** user override > full-screen suppression > normal. While suppressed without the override, only
+  alerts marked `AllowedWhenSuppressed` (critical battery) are shown.
+- **Arbitration (`IslandController`):**
+  - an alert with the same key coalesces and restarts its time;
+  - higher or equal priority replaces the alert on screen (the replaced one is dropped);
+  - lower priority waits in a queue of at most 4, and entries older than their `StaleAfter` are dropped;
+  - alerts are shown only while the island is collapsed and not pressed. While the island is hovered pending,
+    expanded or pressed they wait, so a system event never interrupts the user;
+  - expanding removes the alert, and alerts never pin the island.
+- **Timers:** keyed (`Intent` for dwell/grace, `Alert`). A late callback for an unarmed slot is ignored.
+- **Not built:** activity arbitration and pages (§6.2); the island shows the clock, plus M3 content.
+
 ### 6.2 Activities
 
 ```text

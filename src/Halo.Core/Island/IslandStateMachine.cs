@@ -5,6 +5,9 @@ public enum IslandPresentation
 {
     Compact,
     Expanded,
+
+    /// <summary>A transient event panel (volume, battery, network…): a wider pill that never pins.</summary>
+    Alert,
 }
 
 /// <summary>
@@ -38,6 +41,9 @@ public enum IslandTimer
     None,
     HoverDwell,
     LeaveGrace,
+
+    /// <summary>The shown alert's lifetime (its own timer, independent of the hover timers).</summary>
+    Alert,
 }
 
 /// <summary>Inputs to the island. Pointer coordinates are already hit-tested by the window.</summary>
@@ -94,12 +100,21 @@ public readonly record struct IslandState(IslandPhase Phase, bool Hovered, bool 
 
     public bool ShowNow { get; init; }
 
-    /// <summary>False while suppressed without an override: the window is hidden and does not render.</summary>
-    public bool Visible => !Suppressed || ShowNow;
+    /// <summary>The transient alert on screen, or null. Never set while the island is expanded.</summary>
+    public IslandAlert? Alert { get; init; }
 
-    public IslandPresentation Presentation => Phase is IslandPhase.Collapsed or IslandPhase.ExpandPending ? IslandPresentation.Compact : IslandPresentation.Expanded;
+    /// <summary>Suppressed by full screen without the user's override (pointer input is ignored).</summary>
+    public bool Hidden => Suppressed && !ShowNow;
 
-    public bool IsExpanded => Presentation == IslandPresentation.Expanded;
+    /// <summary>
+    /// False while suppressed without an override, unless the alert on screen is allowed over full screen: the window
+    /// is hidden and does not render.
+    /// </summary>
+    public bool Visible => !Hidden || Alert is { AllowedWhenSuppressed: true };
+
+    public bool IsExpanded => Phase is IslandPhase.ExpandedByHover or IslandPhase.CollapsePending or IslandPhase.ExpandedPinned;
+
+    public IslandPresentation Presentation => IsExpanded ? IslandPresentation.Expanded : Alert is not null ? IslandPresentation.Alert : IslandPresentation.Compact;
 
     /// <summary>The timer this phase waits for, if any.</summary>
     public IslandTimer PendingTimer => Phase switch
@@ -123,6 +138,9 @@ public readonly record struct IslandTransition(IslandState Previous, IslandState
 
     public bool VisibilityChanged => Previous.Visible != Next.Visible;
 
+    /// <summary>The alert appeared, ended or changed content (same key coalesced).</summary>
+    public bool AlertChanged => !Equals(Previous.Alert, Next.Alert);
+
     public bool Changed => Previous != Next;
 
     /// <summary>True when the previous phase's timer must be stopped.</summary>
@@ -144,12 +162,13 @@ public static class IslandStateMachine
 {
     public static IslandTransition Apply(IslandState state, IslandInput input)
     {
-        if (!state.Visible && input is IslandInput.Expand or IslandInput.Toggle)
+        var previous = state;
+        if (state.Hidden && input is IslandInput.Expand or IslandInput.Toggle)
         {
             // An explicit request to open the island while it is suppressed is also a request to see it.
             state = state with { ShowNow = true };
         }
-        else if (!state.Visible && IsPointer(input))
+        else if (state.Hidden && IsPointer(input))
         {
             // A hidden window gets no real pointer input; late messages are ignored.
             return new IslandTransition(state, state);
@@ -181,7 +200,14 @@ public static class IslandStateMachine
             IslandInput.ShowNowCleared => state with { ShowNow = false },
             _ => throw new ArgumentOutOfRangeException(nameof(input), input, null),
         };
-        return new IslandTransition(state, next);
+
+        if (next.IsExpanded && next.Alert is not null)
+        {
+            // The expanded panel supersedes a transient alert.
+            next = next with { Alert = null };
+        }
+
+        return new IslandTransition(previous, next);
     }
 
     private static bool IsPointer(IslandInput input) => input is IslandInput.PointerEntered or IslandInput.PointerLeft or IslandInput.PointerPressed
@@ -189,7 +215,15 @@ public static class IslandStateMachine
 
     /// <summary>Suppressed without override: collapsed, no feedback, nothing pending.</summary>
     private static IslandState Hide(IslandState state) =>
-        state with { Suppressed = true, ShowNow = false, Phase = IslandPhase.Collapsed, Hovered = false, Pressed = false };
+        state with
+        {
+            Suppressed = true,
+            ShowNow = false,
+            Phase = IslandPhase.Collapsed,
+            Hovered = false,
+            Pressed = false,
+            Alert = state.Alert is { AllowedWhenSuppressed: true } ? state.Alert : null,
+        };
 
     private static IslandState Enter(IslandState state)
     {

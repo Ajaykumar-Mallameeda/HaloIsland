@@ -170,6 +170,8 @@ public class SuppressionStateTests
         Assert.True(t.Next.Visible);
         Assert.True(t.Next.ShowNow);
         Assert.Equal(IslandPhase.ExpandedPinned, t.Next.Phase);
+        Assert.True(t.VisibilityChanged); // the window must be shown: Previous is the hidden state
+        Assert.False(t.Previous.Visible);
     }
 
     [Fact]
@@ -200,8 +202,8 @@ public class SuppressionStateTests
     {
         public int Running { get; private set; }
 
-        public void Start(TimeSpan delay) => Running = 1;
+        public void Start(IslandTimerSlot slot, TimeSpan delay) => Running = slot == IslandTimerSlot.Intent ? 1 : Running;
 
-        public void Cancel() => Running = 0;
+        public void Cancel(IslandTimerSlot slot) => Running = slot == IslandTimerSlot.Intent ? 0 : Running;
     }
 }
