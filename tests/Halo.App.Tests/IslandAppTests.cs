@@ -63,7 +63,7 @@ public sealed class IslandAppTests
         using var island = IslandProcess.Start();
         island.WaitFor("ready");
         var layout = ExpectedLayout();
-        var foreground = GetForegroundWindow();
+        var foreground = SettledForeground();
         GetCursorPos(out var cursor);
         try
         {
@@ -79,7 +79,7 @@ public sealed class IslandAppTests
             AssertRegion(island.Hwnd, layout.Compact);
 
             // FR-ISL-06: pointer interaction never moves the foreground window.
-            Assert.Equal(foreground, GetForegroundWindow());
+            AssertForeground(foreground);
             Assert.Equal(2, island.Count("transition.start"));
         }
         finally
@@ -120,7 +120,7 @@ public sealed class IslandAppTests
     {
         using var island = IslandProcess.Start();
         var layout = ExpectedLayout();
-        var foreground = GetForegroundWindow();
+        var foreground = SettledForeground();
         GetCursorPos(out var cursor);
         try
         {
@@ -136,7 +136,7 @@ public sealed class IslandAppTests
             Assert.Equal(0, island.ExitCode);
             Assert.Equal(0, FindWindowW("ProjectHalo.Island", null));
             Thread.Sleep(300);
-            Assert.Equal(foreground, GetForegroundWindow());
+            AssertForeground(foreground);
         }
         finally
         {
@@ -197,7 +197,7 @@ public sealed class IslandAppTests
         var layout = ExpectedLayout();
         using var pointer = new PointerScope(layout);
         using var island = IslandProcess.Start();
-        var foreground = GetForegroundWindow();
+        var foreground = SettledForeground();
 
         MoveTo(pointer.PillX, pointer.PillY);
         var pending = island.WaitForPhase("expand_pending");
@@ -222,7 +222,7 @@ public sealed class IslandAppTests
         Assert.Equal("hover", collapse["source"]!.GetValue<string>());
         island.WaitFor("transition.end", skip: 1);
         AssertRegion(island.Hwnd, layout.Compact);
-        Assert.Equal(foreground, GetForegroundWindow());
+        AssertForeground(foreground);
     }
 
     [Fact]
@@ -450,13 +450,23 @@ public sealed class IslandAppTests
         Thread.Sleep(150);
     }
 
+    /// <summary>Closes the overflow flyout if it is open and waits until it is gone, so later tests start settled.</summary>
     private static void CloseTrayOverflow(UIA3Automation automation)
     {
-        var overflow = automation.GetDesktop().FindFirstChild(cf => cf.ByClassName("TopLevelWindowForOverflowXamlIsland"));
-        if (overflow?.FindFirstDescendant(cf => cf.ByAutomationId("NotifyItemIcon")) is { IsOffscreen: false })
+        bool Open() => automation.GetDesktop().FindFirstChild(cf => cf.ByClassName("TopLevelWindowForOverflowXamlIsland"))?
+            .FindFirstDescendant(cf => cf.ByAutomationId("NotifyItemIcon")) is { IsOffscreen: false };
+        if (Open())
         {
             PressKeys(0x1B); // Esc closes the flyout
         }
+
+        var sw = Stopwatch.StartNew();
+        while (Open() && sw.Elapsed < TimeSpan.FromSeconds(3))
+        {
+            Thread.Sleep(50);
+        }
+
+        _ = SettledForeground();
     }
 
     /// <summary>Moves the pointer without clicking (one absolute SendInput move) and waits until it is there.</summary>
@@ -473,6 +483,56 @@ public sealed class IslandAppTests
             Assert.True(sw.ElapsedMilliseconds < 500, $"the pointer did not reach {x},{y}");
             Thread.Sleep(5);
         }
+    }
+
+    /// <summary>
+    /// The foreground window once it has not changed for 500 ms (at most 5 s), so a flyout or menu closing from an
+    /// earlier step is not taken as the baseline.
+    /// </summary>
+    private static nint SettledForeground()
+    {
+        var current = GetForegroundWindow();
+        var stable = Stopwatch.StartNew();
+        var total = Stopwatch.StartNew();
+        while (stable.ElapsedMilliseconds < 500 && total.Elapsed < TimeSpan.FromSeconds(5))
+        {
+            Thread.Sleep(25);
+            var now = GetForegroundWindow();
+            if (now != current)
+            {
+                current = now;
+                stable.Restart();
+            }
+        }
+
+        return current;
+    }
+
+    /// <summary>FR-ISL-06: the foreground window is unchanged. The message names both windows.</summary>
+    private static void AssertForeground(nint expected)
+    {
+        var actual = GetForegroundWindow();
+        Assert.True(actual == expected, $"the foreground changed from {Describe(expected)} to {Describe(actual)}");
+    }
+
+    private static string Describe(nint hwnd)
+    {
+        var buffer = new char[256];
+        var length = GetClassNameW(hwnd, buffer, buffer.Length);
+        var name = new string(buffer, 0, Math.Max(0, length));
+        _ = GetWindowThreadProcessId(hwnd, out var pid);
+        string process;
+        try
+        {
+            using var p = Process.GetProcessById((int)pid);
+            process = p.ProcessName;
+        }
+        catch (ArgumentException)
+        {
+            process = "exited";
+        }
+
+        return $"0x{hwnd:X} class={name} process={process}";
     }
 
     /// <summary>Fails clearly when something other than the test (for example a real mouse) moved the pointer.</summary>
@@ -648,6 +708,12 @@ public sealed class IslandAppTests
 
     [DllImport("user32.dll")]
     private static extern nint GetForegroundWindow();
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int GetClassNameW(nint hwnd, [Out] char[] name, int max);
+
+    [DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(nint hwnd, out uint processId);
 
     [DllImport("user32.dll")]
     private static extern bool GetCursorPos(out Point point);
