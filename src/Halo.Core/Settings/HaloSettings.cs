@@ -66,6 +66,9 @@ public sealed record HaloSettings
     /// </summary>
     public bool ShowPreviews { get; init; }
 
+    /// <summary>Show due reminders and tasks in the island (F-F04/F-F05). The list itself is kept either way.</summary>
+    public bool ShowReminders { get; init; } = true;
+
     /// <summary>Serialises to the versioned JSON file format (indented, stable key order).</summary>
     public string ToJson()
     {
@@ -88,6 +91,7 @@ public sealed record HaloSettings
             w.WriteNumber("batteryCriticalPercent", BatteryCriticalPercent);
             w.WriteBoolean("showNetwork", ShowNetwork);
             w.WriteBoolean("showPreviews", ShowPreviews);
+            w.WriteBoolean("showReminders", ShowReminders);
             w.WriteEndObject();
         }
 
@@ -172,6 +176,7 @@ public sealed record HaloSettings
                 BatteryCriticalPercent = Int("batteryCriticalPercent", d.BatteryCriticalPercent, MinBatteryCritical, MaxBatteryCritical),
                 ShowNetwork = Bool("showNetwork", d.ShowNetwork),
                 ShowPreviews = Bool("showPreviews", d.ShowPreviews),
+                ShowReminders = Bool("showReminders", d.ShowReminders),
             };
 
             // Critical must stay below low; otherwise it falls back (to the default, or just under low).

@@ -28,6 +28,8 @@ internal sealed unsafe class SettingsWindow : IDisposable
     private const int IdVolume = 111;
     private const int IdBattery = 112;
     private const int IdNetwork = 113;
+    private const int IdReminders = 114;
+    private const int IdPreviews = 115;
     private const int IdClose = 2; // IDCANCEL: Esc and the Close button
     private const int IdDwellValue = 202;
     private const int IdGraceValue = 203;
@@ -128,7 +130,7 @@ internal sealed unsafe class SettingsWindow : IDisposable
             }
 
             var dpi = PrimaryWorkArea().Dpi;
-            var (w, h) = (Scale(440, dpi), Scale(484, dpi));
+            var (w, h) = (Scale(440, dpi), Scale(544, dpi));
             var (work, _) = PrimaryWorkArea();
             var x = work.Left + ((work.Right - work.Left - w) / 2);
             var y = work.Top + ((work.Bottom - work.Top - h) / 2);
@@ -179,6 +181,10 @@ internal sealed unsafe class SettingsWindow : IDisposable
         Add(IdBattery, "BUTTON", "Show &battery level and charger or low-battery alerts", BsAutoCheckBox | WsTabStop, 16, y, 400, 22);
         y += 30;
         Add(IdNetwork, "BUTTON", "Show &network status and connection alerts", BsAutoCheckBox | WsTabStop, 16, y, 400, 22);
+        y += 30;
+        Add(IdReminders, "BUTTON", "Show due &reminders and tasks", BsAutoCheckBox | WsTabStop, 16, y, 400, 22);
+        y += 30;
+        Add(IdPreviews, "BUTTON", "Show &private text (task and reminder text, previews)", BsAutoCheckBox | WsTabStop, 16, y, 400, 22);
         y += 42;
         Add(IdDefaults, "BUTTON", "Restore &defaults", BsPushButton | WsTabStop, 16, y, 130, 28);
         Add(IdLogFolder, "BUTTON", "Open &log folder", BsPushButton | WsTabStop, 158, y, 130, 28);
@@ -224,6 +230,8 @@ internal sealed unsafe class SettingsWindow : IDisposable
             Check(IdVolume, s.ShowVolume);
             Check(IdBattery, s.ShowBattery);
             Check(IdNetwork, s.ShowNetwork);
+            Check(IdReminders, s.ShowReminders);
+            Check(IdPreviews, s.ShowPreviews);
             _ = SendMessageW(_controls[IdDwell], TbmSetPos, 1, s.HoverDwellMs);
             _ = SendMessageW(_controls[IdGrace], TbmSetPos, 1, s.LeaveGraceMs);
             _ = EnableWindow(_controls[IdDwell], s.HoverToExpand);
@@ -267,6 +275,8 @@ internal sealed unsafe class SettingsWindow : IDisposable
             ShowVolume = IsChecked(IdVolume),
             ShowBattery = IsChecked(IdBattery),
             ShowNetwork = IsChecked(IdNetwork),
+            ShowReminders = IsChecked(IdReminders),
+            ShowPreviews = IsChecked(IdPreviews),
         };
         _owner.UpdateSettings(s);
         Show(s);
@@ -297,7 +307,7 @@ internal sealed unsafe class SettingsWindow : IDisposable
                 var id = (int)(wParam & 0xFFFF);
                 switch (id)
                 {
-                    case IdHover or IdFullscreen or IdMotion or IdStartExpanded or IdAnnounce or IdMedia or IdVolume or IdBattery or IdNetwork:
+                    case IdHover or IdFullscreen or IdMotion or IdStartExpanded or IdAnnounce or IdMedia or IdVolume or IdBattery or IdNetwork or IdReminders or IdPreviews:
                         Commit();
                         return 0;
                     case IdDefaults:

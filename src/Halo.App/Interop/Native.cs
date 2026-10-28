@@ -536,6 +536,71 @@ internal static unsafe partial class Native
     [LibraryImport("user32.dll")]
     public static partial nint GetSysColorBrush(int index);
 
+    // Tasks window (F-F05): edit, list box, combo box and date-time picker controls.
+    public const long WsBorder = 0x00800000;
+    public const long WsVScroll = 0x00200000;
+    public const long EsAutoHScroll = 0x0080;
+    public const long LbsNotify = 0x0001;
+    public const long LbsNoIntegralHeight = 0x0100;
+    public const long CbsDropDownList = 0x0003;
+    public const long DtsShortDateFormat = 0x0000;
+    public const long DtsTimeFormat = 0x0009;
+    public const string DateTimePickClass = "SysDateTimePick32";
+    public const uint IccDateClasses = 0x100;
+    public const uint LbAddString = 0x0180;
+    public const uint LbResetContent = 0x0184;
+    public const uint LbSetCurSel = 0x0186;
+    public const uint LbGetCurSel = 0x0188;
+    public const uint LbnSelChange = 1;
+    public const uint CbAddString = 0x0143;
+    public const uint CbGetCurSel = 0x0147;
+    public const uint CbSetCurSel = 0x014E;
+    public const uint DtmGetSystemTime = 0x1001;
+    public const uint DtmSetSystemTime = 0x1002;
+    public const uint EmSetLimitText = 0x00C5;
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct SystemTime
+    {
+        public ushort Year;
+        public ushort Month;
+        public ushort DayOfWeek;
+        public ushort Day;
+        public ushort Hour;
+        public ushort Minute;
+        public ushort Second;
+        public ushort Milliseconds;
+    }
+
+    [LibraryImport("user32.dll", EntryPoint = "SendMessageW", StringMarshalling = StringMarshalling.Utf16)]
+    public static partial nint SendMessageText(nint hwnd, uint msg, nint wParam, string lParam);
+
+    [LibraryImport("user32.dll")]
+    public static partial int GetWindowTextLengthW(nint hwnd);
+
+    [LibraryImport("user32.dll")]
+    public static partial int GetWindowTextW(nint hwnd, char* text, int max);
+
+    [LibraryImport("user32.dll")]
+    public static partial nint SetFocus(nint hwnd);
+
+    /// <summary>The text of a window or control.</summary>
+    public static string WindowText(nint hwnd)
+    {
+        var length = GetWindowTextLengthW(hwnd);
+        if (length <= 0)
+        {
+            return string.Empty;
+        }
+
+        var buffer = new char[length + 1];
+        fixed (char* b = buffer)
+        {
+            var read = GetWindowTextW(hwnd, b, buffer.Length);
+            return new string(b, 0, Math.Max(0, read));
+        }
+    }
+
     [LibraryImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static partial bool IsDialogMessageW(nint dialog, Msg* msg);

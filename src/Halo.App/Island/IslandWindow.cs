@@ -84,6 +84,7 @@ internal sealed unsafe partial class IslandWindow : IDisposable
     private const int TrayExit = 13;
     private const int TrayShowNow = 14;
     private const int TraySettings = 15;
+    private const int TrayTasks = 16;
 
     private static readonly TimeSpan ClockSlack = TimeSpan.FromMilliseconds(40);
 
@@ -212,6 +213,7 @@ internal sealed unsafe partial class IslandWindow : IDisposable
         }
 
         InitActivities();
+        InitReminders();
         _ = ShowWindow(_hwnd, SwShowNoActivate);
 
         // Completes once the first frame of the visual tree has been committed to DWM.
@@ -225,7 +227,7 @@ internal sealed unsafe partial class IslandWindow : IDisposable
         Msg msg;
         while (GetMessageW(&msg, 0, 0, 0) > 0)
         {
-            if (_settingsWindow?.PreTranslate(&msg) == true)
+            if (_settingsWindow?.PreTranslate(&msg) == true || _tasksWindow?.PreTranslate(&msg) == true)
             {
                 continue;
             }
@@ -345,7 +347,7 @@ internal sealed unsafe partial class IslandWindow : IDisposable
 
     private nint? Handle(nint hwnd, uint msg, nint wParam, nint lParam)
     {
-        if (HandleActivityMessage(msg, wParam) is { } handled)
+        if ((HandleActivityMessage(msg, wParam) ?? HandleReminderMessage(msg, wParam)) is { } handled)
         {
             return handled;
         }
@@ -563,6 +565,7 @@ internal sealed unsafe partial class IslandWindow : IDisposable
                 RefreshClock("time_change");
                 // Countdowns run on monotonic time and are unaffected; quiet mode's end is a wall-clock time.
                 SetQuiet(_quietMode.IsActive(DateTimeOffset.UtcNow) ? _quietMode : QuietMode.Off, "time_change");
+                CheckReminders("time_change");
                 return 0;
             case WmPowerBroadcast when wParam == PbtApmSuspend:
                 OnSuspend();
@@ -616,6 +619,7 @@ internal sealed unsafe partial class IslandWindow : IDisposable
                 _fullscreen?.Schedule();
                 RefreshClock("resume");
                 OnResume();
+                CheckReminders("resume");
                 return null;
             case WmTransitionDone when _motion.Complete((int)wParam):
                 ApplyRegion(union: false);
@@ -648,7 +652,11 @@ internal sealed unsafe partial class IslandWindow : IDisposable
                 // Stop everything that could call back into a closing island: hover timers, clock, full-screen
                 // hooks, tray, UIA, and completion callbacks of animations still running.
                 StopActivityTimers();
+                _ = KillTimer(hwnd, ReminderTimerId);
                 SaveState(); // a running countdown survives the exit (FR-TIM-02)
+                SaveTasks();
+                _tasksWindow?.Dispose();
+                _tasksWindow = null;
                 _controller.Shutdown();
                 _motion.Shutdown();
                 _ = KillTimer(hwnd, SaveTimerId);
@@ -956,6 +964,21 @@ internal sealed unsafe partial class IslandWindow : IDisposable
             UpdateStatus();
             _log?.Write("network", ("state", "off"), ("kind", "none"), ("reason", reason));
             Present(_controller.DropAlerts(AlertKind.Network), "settings");
+        }
+
+        if (_taskStore is not null)
+        {
+            // Reminders follow the settings at once: turned off, their notifications leave the island.
+            RegisterReminderProvider();
+            if (!s.ShowReminders)
+            {
+                foreach (var id in _notifications.DropProvider(RemindersProvider))
+                {
+                    _ = _board.Remove(id);
+                }
+            }
+
+            CheckReminders("settings");
         }
 
         if (_layout is not null && _layout.VolumeRow != s.ShowVolume)
@@ -1491,6 +1514,7 @@ internal sealed unsafe partial class IslandWindow : IDisposable
         }
 
         items.Add(new MenuEntry(TraySettings, "Settings\u2026"));
+        items.Add(new MenuEntry(TrayTasks, "Tasks and reminders\u2026"));
         items.Add(new MenuEntry(0, "Timer", Children: TimerMenu()));
         items.Add(new MenuEntry(0, "Focus session", Children: FocusMenu()));
         items.Add(new MenuEntry(0, "Do Not Disturb", Children: QuietMenu()));
@@ -1513,6 +1537,9 @@ internal sealed unsafe partial class IslandWindow : IDisposable
             case TraySettings:
                 _settingsWindow = SettingsWindow.Open(this, _settingsWindow);
                 _log?.Write("settings.window", ("state", "open"));
+                break;
+            case TrayTasks:
+                OpenTasksWindow();
                 break;
             case TrayShowNow:
                 Apply(State.ShowNow ? IslandInput.ShowNowCleared : IslandInput.ShowNowRequested, "tray");

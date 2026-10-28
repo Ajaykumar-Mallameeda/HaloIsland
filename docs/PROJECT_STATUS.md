@@ -1037,6 +1037,89 @@ Starting point: `4f26bc9`, clean tree; baseline unit 319/319, island desktop 52/
 - **Test change:** the tray Exit step now selects the last item with Up instead of counting Down presses. The assertion is unchanged.
 - **Not done:** real sleep and resume (needs the machine to sleep), and a real wall-clock change on the desktop (needs administrator rights). Both are covered by unit tests on a manual clock.
 
+### D-F01 Notification framework — PASS
+
+- **`Halo.Core/Notifications/NotificationCenter`** is provider-neutral. A `HaloNotification` holds:
+  - the provider token and the source ID, which is the deduplication key and is never shown;
+  - priority;
+  - title and preview, which are private;
+  - a redacted text, a glyph and the time it occurred;
+  - the actions the provider supports.
+- **Rules:**
+  - **deduplication:** one provider and source ID is shown once. A push and a poll of the same item, or a
+    re-submission after a dismissal, show nothing. The memory is bounded at 512 entries and pruned in arrival order;
+  - **per-provider policy:** enabled, preview, minimum priority, alert duration and lifetime, over full screen, in
+    quiet mode;
+  - **rate limit:** at most 6 arrivals a minute per provider by default. More are accepted into the island
+    without an alert, so a burst never floods;
+  - **expiry**, dismissal, and dropping a provider's live items when it is turned off.
+- **Output:** an island activity (private unless previews are allowed; actions plus Dismiss) and an arrival alert.
+  Quiet mode and full screen apply through the board and the controller (G-F03).
+- **Content:** kept in memory only. The center never logs or persists it.
+
+### D-F02 Windows app notification compatibility — INVESTIGATED; no Windows toast path added (owner decision L-1)
+
+- Windows App SDK `AppNotificationManager` works for unpackaged apps but needs:
+  - the Windows App SDK runtime, a new framework dependency;
+  - a COM activator registration, so a click can relaunch the app;
+  - it does not work in elevated apps.
+- Reading other apps' notifications (`UserNotificationListener`) needs package identity, so it stays **BLOCKED** (O-F01).
+- **What was built instead:** Halo's own notifications (reminders now; later providers) appear in the island and
+  are announced through UIA. Nothing new was installed or registered.
+- Evidence: RESEARCH_EXPANSION_CAMPAIGN §1 S6, §2.2.
+
+### D-F03 Notification presentation settings — PASS (for the providers that exist)
+
+- **Settings:**
+  - "Show due reminders and tasks" (`showReminders`, default on) turns the reminder provider on or off. Turning
+    it off removes its notifications from the island at once;
+  - "Show private text" (`showPreviews`, **default off**) applies to task and reminder text and to provider
+    previews: pill, card, alert and UIA alike;
+  - both are in the settings window, which now has 11 check boxes, and both apply live.
+- **Fixed in code, not exposed:**
+  - **per-provider durations, priority threshold and quiet/full-screen behaviour:** they are set by the provider's
+    policy, because no second provider exists yet that the user could tell apart;
+  - **reminders over full screen:** allowed, per the ADR-001 §6.2 default;
+  - **reminders in quiet mode:** held and summarised.
+
+### D-F04 Notification actions — PASS
+
+- Actions are fixed tokens. Dismiss is handled by the center; anything else goes to the provider's handler.
+- A provider's **Rejected** is reported as "That didn't work" and is never shown as success.
+- An action the notification does not offer is never sent, and text from content is never executed.
+- Reminders offer snooze (10 min), mark done and dismiss.
+
+### F-F04 Local reminders and F-F05 To-do list — PASS
+
+- **`Halo.Core/Tasks/TaskList`:**
+  - create, edit, complete, reopen and delete; an optional due time; daily or weekly recurrence;
+  - snooze and dismiss;
+  - pending count and next due;
+  - text is cleaned (control characters removed, at most 200 characters), with at most 500 items; completed
+    items older than 30 days are dropped on load.
+- **Recurrence** keeps the local time of day across DST, tested with a custom zone. A long gap gives the next
+  future occurrence, not a replay of each missed day.
+- **Persistence:** `tasks.json` through `AtomicJsonFile`. The text is stored only on this machine and never logged.
+- **In the island:**
+  - a due item is a notification from `halo.reminders` (see D-F01);
+  - reminders missed while Halo was closed are shown at start, once each;
+  - a snoozed reminder at a new time is a new notification;
+  - editing, completing or deleting a task removes its reminder from the island;
+  - one one-shot timer waits for the next alert. Time changes and resume re-check it.
+- **Tasks window:** tray › "Tasks and reminders…" opens a native window with a list, a text field, "Remind me on"
+  date and time pickers, Repeat, and Add, Save changes, Complete, Delete and New buttons.
+- **Tests:**
+  - unit, +17 (`NotificationCenterTests` 9, `TaskListTests` 8). They found two real bugs, both fixed:
+    - `Clean` trimmed before removing control characters;
+    - deduplication pruning could forget the newest item when timestamps were equal;
+  - unit total 415/415;
+  - desktop, +4:
+    - a due reminder is shown and announced as "Reminder" with no task text in the name, announcement or log; it
+      is snoozed through UIA and `tasks.json` records the snooze;
+    - with previews on, the text is shown, and dismiss stops it;
+    - a reminder missed while closed is shown at start;
+    - the tasks window adds and completes a task through UIA.
+
 ## Next recommended action
 
 1. **Owner decisions:** E1–E3 (§5). Add: whether to package Halo as MSIX, which unblocks notifications (O-F01),

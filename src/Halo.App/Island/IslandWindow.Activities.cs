@@ -242,7 +242,13 @@ internal sealed partial class IslandWindow
         var before = _board.Primary;
         Put(TimerActivities.TimerId, TimerActivities.ForCountdown(_countdown, _timerDoneAt, DateTimeOffset.Now));
         Put(TimerActivities.FocusId, TimerActivities.ForFocus(_focus));
-        if (_board.RemoveExpired().Changed && _board.Find(TimerActivities.TimerId) is null && _countdown.State == CountdownState.Completed)
+        var expired = _board.RemoveExpired().Changed;
+        if (expired)
+        {
+            ForgetExpiredNotifications();
+        }
+
+        if (expired && _board.Find(TimerActivities.TimerId) is null && _countdown.State == CountdownState.Completed)
         {
             // The finished timer waited long enough without being dismissed.
             _countdown.Clear();
@@ -386,6 +392,11 @@ internal sealed partial class IslandWindow
 
     private void RunActivityAction(string activityId, string action, string source)
     {
+        if (RunNotificationAction(activityId, action, source))
+        {
+            return;
+        }
+
         var ok = (activityId, action) switch
         {
             (TimerActivities.TimerId, TimerActions.Pause) => _countdown.Pause(),
