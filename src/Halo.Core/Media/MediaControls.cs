@@ -8,6 +8,9 @@ public enum MediaCommand
     Previous,
     PlayPause,
     Next,
+
+    /// <summary>Show the next media session (J-F01); only offered when several exist.</summary>
+    SwitchSource,
 }
 
 /// <summary>One transport button: its command and its square hit area in canvas pixels.</summary>
@@ -61,8 +64,30 @@ public static class MediaControls
             buttons.Add(new MediaButton(MediaCommand.Next, centerX + step, centerY, size));
         }
 
+        if (media.SessionCount > 1)
+        {
+            // J-F01: at the right end of the row, clear of Next (296–332 DIP vs 360–396 DIP).
+            buttons.Add(new MediaButton(MediaCommand.SwitchSource, e.Left + layout.Dip(ColumnLeftDip + ColumnWidthDip - (ButtonDip / 2)), centerY, size));
+        }
+
         return buttons;
     }
+
+    /// <summary>The seek band over the media progress bar (J-F02), or null when the session cannot seek.</summary>
+    public static SeekBand? Seek(IslandLayout layout, MediaSnapshot? media)
+    {
+        ArgumentNullException.ThrowIfNull(layout);
+        if (media is not { CanSeek: true, Timeline: not null })
+        {
+            return null;
+        }
+
+        var e = layout.Expanded;
+        return new SeekBand(e.Left + layout.Dip(ColumnLeftDip), layout.Dip(ColumnWidthDip), e.Top + layout.Dip(ProgressCenterDip), layout.Dip(12));
+    }
+
+    /// <summary>Centre of the media progress bar below the expanded shape's top (IslandVisuals places it at 86–90 DIP).</summary>
+    public const double ProgressCenterDip = 88;
 
     /// <summary>The button under a canvas point, if any.</summary>
     public static MediaCommand? HitTest(IReadOnlyList<MediaButton> buttons, double x, double y)
@@ -82,8 +107,18 @@ public static class MediaControls
     /// <summary>Icon-font glyph for a button (Segoe Fluent Icons); play/pause shows the action it will take.</summary>
     public static string Glyph(MediaCommand command, bool playing) => command switch
     {
+        MediaCommand.SwitchSource => "\uE8AB",
         MediaCommand.Previous => "",
         MediaCommand.Next => "",
         _ => playing ? "" : "",
     };
+}
+
+/// <summary>The clickable band over the progress bar: canvas pixels.</summary>
+public sealed record SeekBand(double Left, double Width, double CenterY, double HalfHeight)
+{
+    public bool Contains(double x, double y) => Math.Abs(y - CenterY) <= HalfHeight && x >= Left - HalfHeight && x <= Left + Width + HalfHeight;
+
+    /// <summary>The position for a pointer x, as a fraction from 0 to 1.</summary>
+    public double FractionAt(double x) => Math.Clamp((x - Left) / Width, 0, 1);
 }

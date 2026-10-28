@@ -200,6 +200,12 @@ internal enum AutomationRequest
 
     /// <summary>Show a page of the expanded island (value = page index).</summary>
     ShowPage = 16,
+
+    /// <summary>Show the next media session.</summary>
+    MediaSwitch = 17,
+
+    /// <summary>Seek the media session (value = percent).</summary>
+    Seek = 18,
 }
 
 /// <summary>
@@ -744,7 +750,7 @@ internal sealed class IslandAutomationElement(IslandAutomationProvider root, str
             throw new ArgumentException("The value is outside 0 to 100.", nameof(value));
         }
 
-        root.Post(AutomationRequest.SetVolume, (int)Math.Round(value));
+        root.Post(node.Command == AccessibleCommand.Seek ? AutomationRequest.Seek : AutomationRequest.SetVolume, (int)Math.Round(value));
     }
 
     private static AutomationRequest Request(AccessibleNode node, AccessibleRole expected)
@@ -762,6 +768,7 @@ internal sealed class IslandAutomationElement(IslandAutomationProvider root, str
             AccessibleCommand.ToggleMute => AutomationRequest.ToggleMute,
             AccessibleCommand.ActivityAction => AutomationRequest.ActivityAction,
             AccessibleCommand.ShowPage => AutomationRequest.ShowPage,
+            AccessibleCommand.MediaSwitch => AutomationRequest.MediaSwitch,
             _ => throw new InvalidOperationException("The element has no action."),
         };
     }

@@ -1185,6 +1185,39 @@ Starting point: `4f26bc9`, clean tree; baseline unit 319/319, island desktop 52/
     - a real Ctrl+Alt+H chord sent with `SendInput` opens and closes the island, and focus is unchanged;
     - the shortcut already held by the test process is reported with error 1409.
 
+### J-F01 Manual media-session switching — PASS
+
+- **Switching:**
+  - with two or more sessions, a switch button (36 DIP, clear of Next) appears at the end of the transport row;
+  - the artist line adds a short app name taken from the AppUserModelID, for example "Spotify" or "ZuneMusic",
+    only when it is needed to tell sessions apart.
+- **Rules:**
+  - the user's choice holds while its session exists, even if another session is the one playing;
+  - when the chosen session ends, the island falls back to Windows' current session (FR-MED-03);
+  - a command pressed before a switch cannot reach the new session (the existing stale-command check);
+  - app IDs and names are never logged; diagnostics carry the session count and index only.
+- **UIA:** "Switch media source (1 of 2)" button.
+- **Tests:**
+  - unit (`MediaSwitchSeekTests`): the preference wins and falls back, next wraps, app names are shortened, and
+    the switch button appears only with several sessions and does not overlap Next;
+  - desktop: two **real** sessions, the test's silent MediaPlayer and a silent MediaPlayer hosted by Windows
+    PowerShell. The UIA switch button changes the selected session, and the choice holds.
+
+### J-F02 Seeking — PASS
+
+- **When it is offered:** only when the session reports `IsPlaybackPositionEnabled` and has a timeline.
+- **How it works:**
+  - a click on the progress bar seeks there, on release, so slipping off the bar cancels;
+  - through UIA, the position becomes a slider, and `SetValue` seeks;
+  - a session that cannot seek keeps a read-only progress bar, and nothing offers to seek.
+- **Mechanism:** `TryChangePlaybackPositionAsync` from the session's own start and end times. The result token is
+  logged: accepted, refused or failed.
+- **Tests:**
+  - unit: seek band only when seekable, fraction clamping, slider only when seekable;
+  - desktop, against a **real** session: the test MediaPlayer reported seeking enabled, UIA `SetValue(50)` was
+    accepted, and the player's own position moved to the middle of the file (the test did **not** take its
+    "not seekable" skip path).
+
 ## Next recommended action
 
 1. **Owner decisions:** E1–E3 (§5). Add: whether to package Halo as MSIX, which unblocks notifications (O-F01),

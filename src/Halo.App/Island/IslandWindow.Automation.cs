@@ -119,6 +119,8 @@ internal sealed partial class IslandWindow
             AutomationRequest.MediaNext => "next",
             AutomationRequest.ToggleMute => "mute",
             AutomationRequest.SetVolume => "set",
+            AutomationRequest.MediaSwitch => "switch",
+            AutomationRequest.Seek => "seek",
             _ => "unknown",
         };
         if (!State.IsExpanded || !State.Visible)
@@ -137,6 +139,12 @@ internal sealed partial class IslandWindow
                 break;
             case AutomationRequest.MediaNext when _mediaSnapshot?.CanNext == true:
                 RunMediaCommand(MediaCommand.Next, _media?.Selected.Id);
+                break;
+            case AutomationRequest.MediaSwitch when _mediaSnapshot is { SessionCount: > 1 }:
+                RunMediaCommand(MediaCommand.SwitchSource, _media?.Selected.Id);
+                break;
+            case AutomationRequest.Seek when _mediaSnapshot is { CanSeek: true } && value is >= 0 and <= 100 && _media?.Selected.Session is { } seekSession:
+                MediaWatcher.Seek(seekSession, value / 100.0, _log);
                 break;
             case AutomationRequest.ToggleMute when _volume?.Current is { } now:
                 var muted = _volume.SetMuted(!now.Muted);

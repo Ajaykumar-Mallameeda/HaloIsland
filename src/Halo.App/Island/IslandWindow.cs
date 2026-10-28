@@ -111,6 +111,7 @@ internal sealed unsafe partial class IslandWindow : IDisposable
     private MediaSnapshot? _mediaSnapshot;
     private bool _mediaUnavailableLogged;
     private MediaCommand? _pressedMedia;
+    private SeekBand? _seekBand;
     private int? _pressedAction;
     private int? _pressedDot;
     private string? _pressedMediaSession;
@@ -455,6 +456,21 @@ internal sealed unsafe partial class IslandWindow : IDisposable
             case WmMouseWheel when State.IsExpanded && State.Visible:
                 // FR-ISL-08: the wheel steps through the pages of the open island.
                 StepPage((short)HighWord(wParam) > 0 ? -1 : 1, "wheel");
+                return 0;
+            case WmLButtonDown when SeekBandAt(LowWord(lParam), HighWord(lParam)) is { } band:
+                // J-F02: a click on the progress bar of a seekable session seeks there (on release, so a slip off cancels).
+                _seekBand = band;
+                _pressedMediaSession = _media?.Selected.Id;
+                _ = SetCapture(hwnd);
+                return 0;
+            case WmLButtonUp when _seekBand is { } seek:
+                _seekBand = null;
+                _ = ReleaseCapture();
+                if (seek.Contains(LowWord(lParam), HighWord(lParam)) && _media?.Selected is { Session: { } seekTarget, Id: var seekId } && string.Equals(seekId, _pressedMediaSession, StringComparison.Ordinal))
+                {
+                    MediaWatcher.Seek(seekTarget, seek.FractionAt(LowWord(lParam)), _log);
+                }
+
                 return 0;
             case WmLButtonDown when MediaButtonAt(LowWord(lParam), HighWord(lParam)) is { } command:
                 // A transport button: it acts on the session and does not collapse or toggle the island.
@@ -1149,12 +1165,18 @@ internal sealed unsafe partial class IslandWindow : IDisposable
             ("next", snapshot?.CanNext == true ? 1 : 0),
             ("previous", snapshot?.CanPrevious == true ? 1 : 0),
             ("title_length", snapshot?.Title.Length ?? 0),
-            ("sessions", snapshot?.SessionCount ?? 0));
+            ("sessions", snapshot?.SessionCount ?? 0),
+            ("index", snapshot?.SessionIndex ?? 0),
+            ("seek", snapshot?.CanSeek == true ? 1 : 0));
     }
 
     /// <summary>The transport button under a client point while the media card is on screen.</summary>
     private MediaCommand? MediaButtonAt(int x, int y) =>
-        State.IsExpanded && _mediaSnapshot is { } m ? MediaControls.HitTest(MediaControls.Layout(_layout, m), x, y) : null;
+        State.IsExpanded && CurrentPage == IslandPage.Media && _mediaSnapshot is { } m ? MediaControls.HitTest(MediaControls.Layout(_layout, m), x, y) : null;
+
+    /// <summary>The seek band under a client point while a seekable session's card is on screen (J-F02).</summary>
+    private SeekBand? SeekBandAt(int x, int y) =>
+        State.IsExpanded && State.Visible && CurrentPage == IslandPage.Media && MediaControls.Seek(_layout, _mediaSnapshot) is { } band && band.Contains(x, y) ? band : null;
 
     /// <summary>
     /// Sends a transport command to the session that was selected when the button was pressed (a different session
@@ -1163,6 +1185,14 @@ internal sealed unsafe partial class IslandWindow : IDisposable
     /// </summary>
     private void RunMediaCommand(MediaCommand command, string? sessionId)
     {
+        if (command == MediaCommand.SwitchSource)
+        {
+            // J-F01: not a session command; the watcher re-selects and the island redraws from the new snapshot.
+            var switched = _media?.SelectNext() == true;
+            _log?.Write("media.command", ("command", "switch"), ("result", switched ? "accepted" : "refused"));
+            return;
+        }
+
         var (session, currentId) = _media?.Selected ?? default;
         var token = command switch { MediaCommand.Previous => "previous", MediaCommand.Next => "next", _ => "play_pause" };
         if (session is null || !string.Equals(sessionId, currentId, StringComparison.Ordinal))

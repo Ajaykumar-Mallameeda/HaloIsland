@@ -46,6 +46,12 @@ public enum AccessibleCommand
 
     /// <summary>Show a page of the expanded island; <see cref="AccessibleNode.Argument"/> is the page index.</summary>
     ShowPage,
+
+    /// <summary>Show the next media session (J-F01).</summary>
+    MediaSwitch,
+
+    /// <summary>Seek the media session (J-F02): the slider's value is the position in percent.</summary>
+    Seek,
 }
 
 /// <summary>
@@ -122,6 +128,7 @@ public static class IslandAccessibility
     public const string PreviousId = "Halo.Media.Previous";
     public const string PlayPauseId = "Halo.Media.PlayPause";
     public const string NextId = "Halo.Media.Next";
+    public const string SwitchId = "Halo.Media.Switch";
     public const string MuteId = "Halo.Volume.Mute";
     public const string VolumeId = "Halo.Volume";
     public const string ActivityId = "Halo.Activity";
@@ -171,7 +178,8 @@ public static class IslandAccessibility
             if (media.Timeline is { } timeline)
             {
                 var fraction = Math.Clamp(timeline.FractionAt(input.Now, media.IsPlaying), 0, 1);
-                nodes.Add(new AccessibleNode(MediaProgressId, AccessibleRole.ProgressBar, "Track position " + timeline.LabelAt(input.Now, media.IsPlaying), Box(layout, 112, 82, 284, 32))
+                // J-F02: a seekable session makes the position a slider; otherwise it is a read-only progress bar.
+                nodes.Add(new AccessibleNode(MediaProgressId, media.CanSeek ? AccessibleRole.Slider : AccessibleRole.ProgressBar, "Track position " + timeline.LabelAt(input.Now, media.IsPlaying), Box(layout, 112, 82, 284, 32), media.CanSeek ? AccessibleCommand.Seek : AccessibleCommand.None)
                 {
                     Value = Math.Round(fraction * 100),
                 });
@@ -183,6 +191,7 @@ public static class IslandAccessibility
                 {
                     MediaCommand.Previous => (PreviousId, "Previous track", AccessibleCommand.MediaPrevious),
                     MediaCommand.Next => (NextId, "Next track", AccessibleCommand.MediaNext),
+                    MediaCommand.SwitchSource => (SwitchId, $"Switch media source ({media.SessionIndex} of {media.SessionCount})", AccessibleCommand.MediaSwitch),
                     _ => (PlayPauseId, media.IsPlaying ? "Pause" : "Play", AccessibleCommand.MediaPlayPause),
                 };
                 nodes.Add(new AccessibleNode(id, AccessibleRole.Button, name, new RoundedBox(button.CenterX - (button.Size / 2), button.CenterY - (button.Size / 2), button.Size, button.Size, 0), command));

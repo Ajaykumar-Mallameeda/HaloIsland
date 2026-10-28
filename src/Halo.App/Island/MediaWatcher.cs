@@ -35,6 +35,8 @@ internal sealed class MediaWatcher : IDisposable
     private GlobalSystemMediaTransportControlsSessionManager? _manager;
     private GlobalSystemMediaTransportControlsSession? _selected;
     private string? _selectedId;
+    private string? _preferredId;
+    private IReadOnlyList<MediaSessionInfo> _infos = [];
     private MediaSnapshot? _latest;
     private string? _metaKey;
     private (string Title, string Artist, byte[]? Art, int Version) _meta;
@@ -80,6 +82,49 @@ internal sealed class MediaWatcher : IDisposable
             }
         }
     }
+
+    /// <summary>
+    /// J-F01: the user asked for the next session. The choice holds while that session exists; when it ends the island
+    /// falls back to Windows' current session. Returns false with fewer than two sessions.
+    /// </summary>
+    public bool SelectNext()
+    {
+        lock (_gate)
+        {
+            var next = MediaSessionSelector.Next(_infos, _selectedId);
+            if (next is null)
+            {
+                return false;
+            }
+
+            _preferredId = next;
+        }
+
+        Dirty(metadata: true);
+        return true;
+    }
+
+    /// <summary>
+    /// J-F02: seeks the session to a fraction of its timeline, off the UI thread. Only called when the session reports
+    /// seeking as enabled; the result token is logged ("accepted", "refused", "failed").
+    /// </summary>
+    internal static void Seek(GlobalSystemMediaTransportControlsSession session, double fraction, DiagnosticsLog? log) =>
+        _ = Task.Run(async () =>
+        {
+            string result;
+            try
+            {
+                var t = session.GetTimelineProperties();
+                var target = t.StartTime + TimeSpan.FromTicks((long)((t.EndTime - t.StartTime).Ticks * Math.Clamp(fraction, 0, 1)));
+                result = await session.TryChangePlaybackPositionAsync(target.Ticks) ? "accepted" : "refused";
+            }
+            catch (Exception ex) when (ex is COMException or InvalidOperationException or UnauthorizedAccessException)
+            {
+                result = "failed";
+            }
+
+            log?.Write("media.command", ("command", "seek"), ("result", result), ("percent", (int)Math.Round(fraction * 100)));
+        });
 
     public async Task StartAsync()
     {
@@ -298,7 +343,18 @@ internal sealed class MediaWatcher : IDisposable
         }
 
         var infos = sessions.Select(s => new MediaSessionInfo(s.SourceAppUserModelId ?? string.Empty, Map(s.GetPlaybackInfo().PlaybackStatus))).ToList();
-        var id = MediaSessionSelector.Select(infos, current?.SourceAppUserModelId);
+        string? id;
+        lock (_gate)
+        {
+            _infos = infos;
+            if (_preferredId is not null && !infos.Any(i => string.Equals(i.Id, _preferredId, StringComparison.Ordinal)))
+            {
+                _preferredId = null; // the chosen session ended
+            }
+
+            id = MediaSessionSelector.Select(infos, current?.SourceAppUserModelId, _preferredId);
+        }
+
         var session = id is null ? null : sessions.FirstOrDefault(s => string.Equals(s.SourceAppUserModelId, id, StringComparison.Ordinal));
         lock (_gate)
         {
@@ -355,6 +411,9 @@ internal sealed class MediaWatcher : IDisposable
             ArtSize = _meta.Art is null ? 0 : ArtPixels,
             ArtVersion = _meta.Version,
             SessionCount = sessions.Count,
+            CanSeek = controls.IsPlaybackPositionEnabled && timeline is not null,
+            SourceName = MediaSessionSelector.SourceName(id),
+            SessionIndex = Math.Max(1, infos.FindIndex(i => string.Equals(i.Id, id, StringComparison.Ordinal)) + 1),
         };
     }
 }

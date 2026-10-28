@@ -84,6 +84,7 @@ internal sealed class IslandVisuals : IDisposable
     private readonly TextLine _buttonPrevious;
     private readonly TextLine _buttonPlayPause;
     private readonly TextLine _buttonNext;
+    private readonly TextLine _buttonSwitch;
     private CompositionDrawingSurface? _artSurface;
     private MediaSnapshot? _media;
     private int _artShown = -1;
@@ -199,6 +200,7 @@ internal sealed class IslandVisuals : IDisposable
         _buttonPrevious = new TextLine(this, _mediaGroup);
         _buttonPlayPause = new TextLine(this, _mediaGroup);
         _buttonNext = new TextLine(this, _mediaGroup);
+        _buttonSwitch = new TextLine(this, _mediaGroup);
         _compactMediaGlyph = new TextLine(this, _compactContent);
         _compactMediaTitle = new TextLine(this, _compactContent);
 
@@ -338,10 +340,10 @@ internal sealed class IslandVisuals : IDisposable
         RoundEnds(_mediaTrack);
         _mediaTime.Place(e.Left + layout.Dip(112), e.Top + layout.Dip(96), layout.Dip(170), layout.Dip(18), Format(TextFont, 11.5, Regular, TextAlign.Leading), Tertiary);
         _mediaClock.Place(e.Right - layout.Dip(24 + 110), e.Top + layout.Dip(96), layout.Dip(110), layout.Dip(18), Format(TextFont, 11.5, Semibold, TextAlign.Trailing), Tertiary, smallSize: Px(9.5f));
-        var all = new MediaSnapshot { Title = string.Empty, Artist = string.Empty, CanPrevious = true, CanPlayPause = true, CanNext = true };
+        var all = new MediaSnapshot { Title = string.Empty, Artist = string.Empty, CanPrevious = true, CanPlayPause = true, CanNext = true, SessionCount = 2 };
         foreach (var b in MediaControls.Layout(layout, all))
         {
-            var line = b.Command switch { MediaCommand.Previous => _buttonPrevious, MediaCommand.Next => _buttonNext, _ => _buttonPlayPause };
+            var line = b.Command switch { MediaCommand.Previous => _buttonPrevious, MediaCommand.Next => _buttonNext, MediaCommand.SwitchSource => _buttonSwitch, _ => _buttonPlayPause };
             line.Place(b.CenterX - (b.Size / 2), b.CenterY - (b.Size / 2), b.Size, b.Size, Format(IconFont, b.Command == MediaCommand.PlayPause ? 20 : 15, Regular, TextAlign.Center), Primary);
         }
 
@@ -616,7 +618,7 @@ internal sealed class IslandVisuals : IDisposable
     }
 
     private IEnumerable<TextLine> Lines() => [_compactDate, _compactTime, _bigTime, _longDate, _wordmark, _progressLabel, _alertGlyph, _alertWide, _alertNarrow, _alertValue,
-        _artPlaceholder, _mediaTitle, _mediaArtist, _mediaTime, _mediaClock, _compactMediaGlyph, _compactMediaTitle, _buttonPrevious, _buttonPlayPause, _buttonNext,
+        _artPlaceholder, _mediaTitle, _mediaArtist, _mediaTime, _mediaClock, _compactMediaGlyph, _compactMediaTitle, _buttonPrevious, _buttonPlayPause, _buttonNext, _buttonSwitch,
         _volumeGlyph, _volumeValue, _volumeNone, _statusGlyphs, _statusText, _compactActivityGlyph, _compactActivityText, _activityGlyph, _activityTitle,
         _activitySubtitle, .. _activityButtons];
 
@@ -775,13 +777,16 @@ internal sealed class IslandVisuals : IDisposable
         ok &= _compactMediaGlyph.Show(!compactMedia ? string.Empty : m!.IsPlaying ? "\uE768" : "\uE769");
         ok &= _compactMediaTitle.Show(!compactMedia ? string.Empty : m!.Title.Length > 0 ? m.Title : m.Headline);
         ok &= _mediaTitle.Show(m is null ? string.Empty : m.Title.Length > 0 ? m.Title : "Unknown title");
-        ok &= _mediaArtist.Show(m?.Artist ?? string.Empty);
+        // J-F01: with several sessions, the app name tells them apart.
+        var source = m is { SessionCount: > 1 } ? m.SourceName : string.Empty;
+        ok &= _mediaArtist.Show(m is null ? string.Empty : source.Length == 0 ? m.Artist : m.Artist.Length == 0 ? source : $"{m.Artist} \u00b7 {source}");
         ok &= _mediaClock.Show(m is null || _clock is null ? string.Empty : _clock.TimeWithDesignator, _clock?.Designator.Length ?? 0);
         // FR-MED-02: only controls the session reports as enabled are shown.
         var playing = m?.IsPlaying == true;
         ok &= _buttonPrevious.Show(m?.CanPrevious == true ? MediaControls.Glyph(MediaCommand.Previous, playing) : string.Empty);
         ok &= _buttonPlayPause.Show(m?.CanPlayPause == true ? MediaControls.Glyph(MediaCommand.PlayPause, playing) : string.Empty);
         ok &= _buttonNext.Show(m?.CanNext == true ? MediaControls.Glyph(MediaCommand.Next, playing) : string.Empty);
+        ok &= _buttonSwitch.Show(m is { SessionCount: > 1 } ? MediaControls.Glyph(MediaCommand.SwitchSource, playing) : string.Empty);
         var hasArt = m?.Art is { Count: > 0 };
         _art.IsVisible = hasArt;
         ok &= _artPlaceholder.Show(m is not null && !hasArt ? "\uE8D6" : string.Empty);

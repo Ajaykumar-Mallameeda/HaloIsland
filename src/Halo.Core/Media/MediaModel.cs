@@ -49,6 +49,15 @@ public sealed record MediaSnapshot
     /// <summary>How many sessions Windows lists (diagnostics only; says nothing about their content).</summary>
     public int SessionCount { get; init; }
 
+    /// <summary>The session reports a seekable position (J-F02): only then is the progress bar a seek control.</summary>
+    public bool CanSeek { get; init; }
+
+    /// <summary>A short name for the session's app, shown only when several sessions exist (J-F01). Never logged.</summary>
+    public string SourceName { get; init; } = string.Empty;
+
+    /// <summary>1-based position of this session among <see cref="SessionCount"/>.</summary>
+    public int SessionIndex { get; init; } = 1;
+
     public bool IsPlaying => Playback == MediaPlayback.Playing;
 
     /// <summary>"Title — Artist", or whichever exists; "Unknown title" when neither does.</summary>
@@ -164,13 +173,21 @@ public static class MediaText
     }
 }
 
-/// <summary>Which session the island follows (FR-MED-03).</summary>
+/// <summary>Which session the island follows (FR-MED-03, J-F01).</summary>
 public static class MediaSessionSelector
 {
-    /// <summary>Windows' current session if it is still listed, else the first playing one, else the first; null if none.</summary>
-    public static string? Select(IReadOnlyList<MediaSessionInfo> sessions, string? currentId)
+    /// <summary>
+    /// The user's choice while that session exists (J-F01), else Windows' current session if it is still listed, else
+    /// the first playing one, else the first; null if none.
+    /// </summary>
+    public static string? Select(IReadOnlyList<MediaSessionInfo> sessions, string? currentId, string? preferredId = null)
     {
         ArgumentNullException.ThrowIfNull(sessions);
+        if (preferredId is not null && sessions.Any(s => string.Equals(s.Id, preferredId, StringComparison.Ordinal)))
+        {
+            return preferredId;
+        }
+
         if (currentId is not null && sessions.Any(s => string.Equals(s.Id, currentId, StringComparison.Ordinal)))
         {
             return currentId;
@@ -185,5 +202,59 @@ public static class MediaSessionSelector
         }
 
         return sessions.Count > 0 ? sessions[0].Id : null;
+    }
+
+    /// <summary>The session after <paramref name="selectedId"/> in list order, wrapping; null with fewer than two.</summary>
+    public static string? Next(IReadOnlyList<MediaSessionInfo> sessions, string? selectedId)
+    {
+        ArgumentNullException.ThrowIfNull(sessions);
+        if (sessions.Count < 2)
+        {
+            return null;
+        }
+
+        var i = sessions.ToList().FindIndex(s => string.Equals(s.Id, selectedId, StringComparison.Ordinal));
+        return sessions[(i + 1) % sessions.Count].Id;
+    }
+
+    /// <summary>
+    /// A short app name from a session's AppUserModelID: "Spotify.exe" → "Spotify",
+    /// "Microsoft.ZuneMusic_8wekyb3d8bbwe!Microsoft.ZuneMusic" → "ZuneMusic". Cleaned and capped; "Media" when nothing
+    /// readable remains.
+    /// </summary>
+    public static string SourceName(string? appId)
+    {
+        var s = appId ?? string.Empty;
+        var slash = s.LastIndexOfAny(['\\', '/']);
+        if (slash >= 0)
+        {
+            s = s[(slash + 1)..];
+        }
+
+        var bang = s.LastIndexOf('!');
+        if (bang >= 0)
+        {
+            s = s[(bang + 1)..];
+        }
+
+        if (s.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+        {
+            s = s[..^4];
+        }
+
+        var dot = s.LastIndexOf('.');
+        if (dot >= 0 && dot < s.Length - 1)
+        {
+            s = s[(dot + 1)..];
+        }
+
+        var underscore = s.IndexOf('_', StringComparison.Ordinal);
+        if (underscore > 0)
+        {
+            s = s[..underscore];
+        }
+
+        s = MediaText.Clean(s);
+        return s.Length is 0 or > 32 ? "Media" : s;
     }
 }
