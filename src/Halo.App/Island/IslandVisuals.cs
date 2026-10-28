@@ -393,11 +393,38 @@ internal sealed class IslandVisuals : IDisposable
     /// Shows the selected media session (null = none: the clock view and the date come back). Only changed lines are
     /// redrawn; the art surface only when the picture changes.
     /// </summary>
-    public void ShowMedia(MediaSnapshot? media, DateTimeOffset now)
+    public void ShowMedia(MediaSnapshot? media, DateTimeOffset now, bool reducedMotion = false)
     {
+        // C-F05: a new track or session swaps the card and the pill's title together (no flash, no layout jump).
+        // Playback-state and progress-only changes do not animate.
+        var changedTrack = _media is { } before && media is { } after
+            && (!string.Equals(before.Title, after.Title, StringComparison.Ordinal) || !string.Equals(before.Artist, after.Artist, StringComparison.Ordinal)
+                || before.ArtVersion != after.ArtVersion || before.SessionIndex != after.SessionIndex);
         _media = media;
         DrawText();
         UpdateMediaProgress(now);
+        if (changedTrack)
+        {
+            Dip(_mediaGroup, MotionPlanner.Swap(reducedMotion));
+            Dip(_compactMediaTitle.Visual, MotionPlanner.Swap(reducedMotion));
+        }
+    }
+
+    /// <summary>The Swap motion on one visual: a dip to 35 % and back, never to zero.</summary>
+    private void Dip(Visual visual, IReadOnlyList<MotionStep> steps)
+    {
+        if (steps.Count == 0)
+        {
+            return;
+        }
+
+        var spec = steps[0].Spec;
+        var a = _compositor.CreateScalarKeyFrameAnimation();
+        a.InsertKeyFrame(0f, 1f);
+        a.InsertKeyFrame((float)(spec.Delay.TotalMilliseconds / spec.End.TotalMilliseconds), 0.35f, _ease);
+        a.InsertKeyFrame(1f, 1f, _ease);
+        a.Duration = spec.End;
+        visual.StartAnimation("Opacity", a);
     }
 
     /// <summary>
@@ -498,20 +525,35 @@ internal sealed class IslandVisuals : IDisposable
     }
 
     /// <summary>Shows the endpoint volume in the expanded row (null = no output device).</summary>
-    public void ShowVolume(VolumeReading? reading)
+    /// <param name="reading">The endpoint volume, or null for no device.</param>
+    /// <param name="animate">C-F04: changes made elsewhere glide (Level motion); a drag on the slider stays direct.</param>
+    /// <param name="reducedMotion">The reduce-motion preference.</param>
+    public void ShowVolume(VolumeReading? reading, bool animate = false, bool reducedMotion = false)
     {
+        var before = _volume?.Percent;
         _volume = reading;
+        _volumeLevel = animate ? MotionPlanner.Level(before, reading?.Percent, reducedMotion) : [];
         _ = DrawVolume();
+        _volumeLevel = [];
     }
+
+    private IReadOnlyList<MotionStep> _volumeLevel = [];
 
     /// <summary>
     /// Shows status icons (icon-font glyphs, for example network and battery) and a short value ("82%") at the top right
     /// of the open clock view. Both empty brings back the "Halo" wordmark.
     /// </summary>
-    public void ShowStatus(string glyphs, string text)
+    public void ShowStatus(string glyphs, string text, bool reducedMotion = false)
     {
+        // C-F03/C-F06: a battery or connectivity change swaps the cluster; the first reading just appears.
+        var changed = (_statusGlyphText.Length > 0 || _statusValue.Length > 0) && (!string.Equals(glyphs, _statusGlyphText, StringComparison.Ordinal) || !string.Equals(text, _statusValue, StringComparison.Ordinal));
         (_statusGlyphText, _statusValue) = (glyphs, text);
         _ = DrawStatus();
+        if (changed)
+        {
+            Dip(_statusGlyphs.Visual, MotionPlanner.Swap(reducedMotion));
+            Dip(_statusText.Visual, MotionPlanner.Swap(reducedMotion));
+        }
     }
 
     /// <summary>Shows the content of a transient alert (null clears it). Only changed lines are redrawn.</summary>
@@ -751,10 +793,22 @@ internal sealed class IslandVisuals : IDisposable
             // Muted: the bar keeps the level but dims, as in Windows' own flyout.
             _volumeFillBrush.Color = reading.Muted ? Tertiary : Fill;
             var width = _volumeTrack.Size.X * reading.Percent / 100f;
-            _volumeFill.Size = new Vector2(Math.Max(_volumeTrack.Size.Y, Snap(width)), _volumeTrack.Size.Y);
-            RoundEnds(_volumeFill);
+            var size = new Vector2(Math.Max(_volumeTrack.Size.Y, Snap(width)), _volumeTrack.Size.Y);
             var t = _volumeThumb.Size.X;
-            _volumeThumb.Offset = new Vector3(Snap(_volumeTrack.Offset.X + width - (t / 2)), Snap(_volumeTrack.Offset.Y + (_volumeTrack.Size.Y / 2) - (t / 2)), 0);
+            var thumb = new Vector3(Snap(_volumeTrack.Offset.X + width - (t / 2)), Snap(_volumeTrack.Offset.Y + (_volumeTrack.Size.Y / 2) - (t / 2)), 0);
+            if (_volumeLevel is { Count: > 0 } level)
+            {
+                var ms = Ms(level[0].Spec.Duration);
+                RoundEnds(_volumeFill, _volumeTrack.Size);
+                _volumeFill.StartAnimation("Size", Vector2To(size, ms));
+                _volumeThumb.StartAnimation("Offset", Vector3To(thumb, ms));
+            }
+            else
+            {
+                _volumeFill.Size = size;
+                RoundEnds(_volumeFill, _volumeTrack.Size);
+                _volumeThumb.Offset = thumb;
+            }
         }
 
         return ok;

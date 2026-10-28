@@ -1256,6 +1256,24 @@ Starting point: `4f26bc9`, clean tree; baseline unit 319/319, island desktop 52/
   - dark is the default;
   - with the date and activities hidden from the pill, its left half stays empty while a timer runs.
 
+### C-F01–C-F07 Activity animations — PASS (C-F08 camera/microphone: see K)
+
+All of these use the shared vocabulary (B-F01/B-F02), and none adds a motion of its own.
+
+| Feature | What happens | Where it was verified |
+|---|---|---|
+| C-F01 Event arrival | The pill morphs into the alert shape and the content fades in. One alert replacing another in place uses **Swap**, a dip to 35 % with no flash. The island returns to its previous state when the alert ends. Repeated events coalesce, priority and the user-open rules apply, and suppression and reduced motion are respected | Existing alert desktop tests plus motion unit tests |
+| C-F02 Timer | Pill, card, Emphasis and Arrival | G-F01 |
+| C-F03 Battery | The status cluster swaps when the level, charging or charger state changes, and the battery alert's level bar animates (**Level**). No battery state is invented on machines without a battery (M3-F04) | Battery desktop tests, which use synthetic readings |
+| C-F04 Volume | The volume pill's bar and the open island's slider fill and thumb glide (**Level**) on changes made elsewhere. A drag stays direct. Rapid changes coalesce into one pill (M3-F03) | Volume desktop tests against the real endpoint |
+| C-F05 Media | A new track, artwork or session swaps the card and the pill's title together. Play and pause and progress do not animate. Stale metadata is replaced on a session change (watcher, M3-F01) | Media desktop tests against real sessions |
+| C-F06 Network | The status cluster swaps on a change. A transient alert comes only for lost, limited or restored, after a 2 s debounce, with no repeats during reconnection (M3-F05) | Network desktop tests, which use synthetic readings |
+| C-F07 Notification | The arrival pill appears, expanding shows the card with its actions, dismissing removes it, a higher priority replaces it, and bursts are summarised. Quiet mode holds it. Redacted text is used when previews are off | D-F01 and F-F04 desktop tests |
+
+- **Reduced motion:** Swap, Level, Arrival and Emphasis are all off; the shape changes instantly.
+- **Not measured:** PB-05 for the new motions. They run in DWM, last 90–260 ms and are finite, but no frame
+  evidence was collected.
+
 ## Next recommended action
 
 1. **Owner decisions:** E1–E3 (§5). Add: whether to package Halo as MSIX, which unblocks notifications (O-F01),

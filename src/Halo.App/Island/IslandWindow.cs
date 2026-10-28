@@ -1225,7 +1225,7 @@ internal sealed unsafe partial class IslandWindow : IDisposable
         }
 
         _mediaSnapshot = snapshot;
-        _visuals?.ShowMedia(snapshot, DateTimeOffset.Now);
+        _visuals?.ShowMedia(snapshot, DateTimeOffset.Now, _reducedMotion);
         ApplyPage(animate: false); // a session appearing or ending adds or removes the media page
         PublishAutomation();
         UpdateMediaTick();
@@ -1385,7 +1385,7 @@ internal sealed unsafe partial class IslandWindow : IDisposable
         var power = _batteryWatching && _battery.Current is { HasBattery: true } p ? p : (PowerReading?)null;
         var network = _network is not null ? _networkMonitor.Current?.Glyph ?? string.Empty : string.Empty;
         var glyphs = string.Join(" ", new[] { network, power?.Glyph ?? string.Empty }.Where(g => g.Length > 0));
-        _visuals?.ShowStatus(glyphs, power?.ShortText ?? string.Empty);
+        _visuals?.ShowStatus(glyphs, power?.ShortText ?? string.Empty, _reducedMotion);
         _visuals?.ShowPillOptions(PillOptions(), _settings.PillShowsBattery ? power?.ShortText ?? string.Empty : string.Empty);
     }
 
@@ -1463,7 +1463,7 @@ internal sealed unsafe partial class IslandWindow : IDisposable
         }
 
         var (reading, fromHalo) = change;
-        _visuals?.ShowVolume(reading);
+        _visuals?.ShowVolume(reading, animate: !_volumeDragging, _reducedMotion);
         _log?.Write("volume", ("percent", reading.Percent), ("muted", reading.Muted ? 1 : 0), ("source", fromHalo ? "halo" : "external"));
         if (!fromHalo && !State.IsExpanded)
         {
