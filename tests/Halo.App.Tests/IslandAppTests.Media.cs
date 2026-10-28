@@ -169,6 +169,12 @@ public sealed partial class IslandAppTests
         Assert.True(quiet, $"another app holds a media session ({string.Join(", ", foreign)}); stop its playback or close it before running the media tests");
     }
 
+    private static string[] AllMediaSessions()
+    {
+        var manager = GlobalSystemMediaTransportControlsSessionManager.RequestAsync().AsTask().GetAwaiter().GetResult();
+        return [.. manager.GetSessions().Select(s => $"{s.SourceAppUserModelId}:{s.GetPlaybackInfo().PlaybackStatus}")];
+    }
+
     private static string[] ForeignMediaSessions()
     {
         var own = Path.GetFileName(Environment.ProcessPath) ?? string.Empty;
@@ -180,7 +186,7 @@ public sealed partial class IslandAppTests
     {
         System.Text.Json.Nodes.JsonObject? found = null;
         var ok = WaitUntil(() => (found = island.Events("media").LastOrDefault(e => e["state"]?.GetValue<string>() == state && (titleLength is null || e["title_length"]?.GetValue<int>() == titleLength))) is not null, timeoutMs);
-        Assert.True(ok, $"no media state '{state}'; seen: {string.Join(",", island.Events("media").Select(e => $"{e["state"]}/{e["title_length"]}/s{e["sessions"]}"))}; events: {string.Join(",", island.Events("media.event").Select(e => e["kind"]?.GetValue<string>()))}; failures: {string.Join(",", island.Events("media.refresh_failed").Select(e => $"{e["type"]}:{e["hresult"]}"))}; status: {string.Join(",", island.Events("media.status").Select(e => e["status"]?.GetValue<string>()))}");
+        Assert.True(ok, $"no media state '{state}'; seen: {string.Join(",", island.Events("media").Select(e => $"{e["state"]}/{e["title_length"]}/s{e["sessions"]}"))}; events: {string.Join(",", island.Events("media.event").Select(e => e["kind"]?.GetValue<string>()))}; failures: {string.Join(",", island.Events("media.refresh_failed").Select(e => $"{e["type"]}:{e["hresult"]}"))}; status: {string.Join(",", island.Events("media.status").Select(e => e["status"]?.GetValue<string>()))}; sessions seen by the test: {string.Join(",", AllMediaSessions())}");
         return found!;
     }
 }

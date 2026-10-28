@@ -1,11 +1,19 @@
 # Project Status — Project Halo
 
-Last updated: 2026-10-28 (evening: hover-intent and tray icon)
+Last updated: 2026-10-29 (M3 media and system intelligence complete; see §8 for every feature)
 
 ## Current phase
 
-**Phase 4 — M2 island shell in progress on option C.** The S1/S2 gate is closed provisionally. The
-island runs as a native app and now has hover-intent expansion and a tray icon.
+**Phase 4 — M1, M2 and M3 built on option C.** The island is a working daily app:
+- the clock;
+- hover and click expansion, the tray icon, settings and full-screen suppression;
+- now playing with playback controls, and a volume pill and slider;
+- battery and network status and alerts, all through one alert controller.
+
+Every feature's real status, tests and commit are in the feature register (§8). Not done: optional features (§8,
+"Optional features"), release work (packaging, Start with Windows, installer), and the owner decisions in §5.
+
+The S1/S2 rendering gate is closed provisionally:
 
 - The S1/S2 matrix ran at 120 Hz (2 of 3 sessions per technique), then the owner stopped it.
 - Calibration is VALID at 120 Hz and INVALID at 60 Hz.
@@ -27,6 +35,8 @@ S3–S8 (Execution 2) have not started.
 | Product-island PB-05 | **Not shown**: smoke runs capture only 9 of 20 transitions validly at 120 Hz |
 | PB-03 with a visible clock | **Owner decision E2** (§5) |
 | Narrator / Axe.Windows review | **Not done** |
+| UIA events from the island provider | **Open defect** (M2-F05): raised with S_OK but not received by clients |
+| PB-04 (music playing) | **Not measured**: media now exists, but no PB-04 measurement method has been run |
 | Manual DPI check S2-11M (100/150/175 %) | **Not done** |
 | Multi-monitor and mixed DPI | **Blocked**: one display (D7) |
 
@@ -93,9 +103,18 @@ S3–S8 (Execution 2) have not started.
     failure runs the same clean-up and releases the single-instance mutex;
   - `--diagnostics` prints privacy-safe JSON events for tests (`phase`, `tray`, `transition.*`, …).
 
-Not built yet (by scope): media, volume, battery, network, notifications, keyboard indicators, timers,
-to-dos, settings, persistence, Start with Windows, logging to disk, full-screen detection (S7),
-keyboard focus path (FR-ISL-07), packaging.
+Built since this section was written (details in §8):
+- full-screen suppression (M1-F01) and transient alerts (M1-F02);
+- settings with a settings window (M2-F01/F02) and the local diagnostic log (M2-F03);
+- now playing and playback controls (M3-F01/F02);
+- the volume pill and the volume row in the open island (M3-F03);
+- battery and network status and alerts (M3-F04/F05).
+
+Not built yet:
+- notifications (O-F01, blocked: package identity);
+- keyboard indicators (O-F02, deferred);
+- timers, to-dos and Start with Windows;
+- the keyboard focus path (FR-ISL-07) and packaging.
 
 ## 3. Measured on the product island (SMOKE, not budget verdicts — report §9.5)
 
@@ -119,12 +138,12 @@ PB-06 (dwell → first *frame* ≤ 50 ms) was **not** measured: the first frame 
 Direct3D picked the NVIDIA GPU (its driver loaded) and 68 MB on the Intel GPU. With WARP it was 15.5 MB.
 The island therefore rasterises text with WARP; shape animation still runs on the GPU in DWM.
 
-## 4. Tests (2026-10-28, clean Release build: 0 warnings, 0 errors)
+## 4. Tests (updated 2026-10-29 at the M3 gate; clean Release build: 0 warnings, 0 errors)
 
 | Suite | Command | Result |
 |---|---|---|
-| Unit (all projects) | `dotnet test --solution Halo.slnx -c Release -- --filter-not-trait "Category=Integration"` | **132/132** passed (spikes 79, Halo.Core 46, Halo.App 7) |
-| Island desktop tests | `dotnet test --project tests/Halo.App.Tests/Halo.App.Tests.csproj -c Release -- --filter-trait "Category=Integration"` | **14/14** passed at 120 Hz in 4 consecutive runs of the final build (`62a7d90`); one earlier focus failure is described below |
+| Unit (all projects) | `dotnet test --solution Halo.slnx -c Release -- --filter-not-trait "Category=Integration"` | **319/319** passed (M3 gate; was 132 on 2026-10-28) |
+| Island desktop tests | `dotnet test --project tests/Halo.App.Tests/Halo.App.Tests.csproj -c Release -- --filter-trait "Category=Integration"` | **52/52** passed in 2 consecutive full runs at the M3 gate (§8); intermittent failures and their fixes are in the gate entry |
 | Spike desktop tests | `dotnet test --project spikes/tests/Halo.Spikes.Tests/Halo.Spikes.Tests.csproj -c Release -- --filter-trait "Category=Integration"` | **5/5** passed |
 | Locked restore | `dotnet restore Halo.slnx --locked-mode` | passed |
 
@@ -180,8 +199,11 @@ Earlier decisions Q1–Q8 were answered on 2026-10-27, and the PB-02 rule change
   it visible. Halo does not change that setting.
 - The keyboard on the tray icon opens the island (Space/Enter) but does not close it, because Enter
   can deliver the select event twice.
-- No settings yet: dwell, grace and click-only mode cannot be changed without rebuilding.
 - Primary monitor only; multi-monitor untested (one display).
+- UIA events from the island never reach clients (M2-F05 defect), so pills are not announced spontaneously.
+- Battery, charger and network transitions were verified with synthetic readings, never by unplugging or
+  disconnecting (§8, M3-F04/F05).
+- Status icons (network, battery) show only in the open clock view, not in the media view.
 
 ## 7. Session notes
 
@@ -752,14 +774,88 @@ Smoke run `APP-SMOKE-120-195953` (valid, 120 Hz), SMOKE and not a verdict:
   - **Exit with everything busy:** a pill on screen, another queued and a network debounce pending. Exit takes
     under 5 s with code 0, no window is left, and the pending debounce never fires.
   Island desktop 52/52; the system volume was back at its starting 28 % afterwards.
-- **Commit:** see the M3 gate.
+- **Commit:** `9162c4c`.
+
+### M3 completion gate — PASS (functional); performance smoke partly unusable (see below)
+
+**Results on this machine (2026-10-29):**
+- locked restore passed;
+- clean Release build (`--no-incremental`): 0 warnings, 0 errors;
+- unit tests 319/319;
+- island desktop tests 52/52 in 2 consecutive full runs (after the fixes below);
+- spike desktop tests 5/5;
+- no Halo process left, and the system volume back at its starting 28 %, not muted.
+
+**Real Windows state vs. synthetic inputs:**
+
+| API | Tested against real Windows | Synthetic only |
+|---|---|---|
+| Media sessions (GSMTC) | session appears and ends, title, pause, play/pause, Next, setting off | several sessions from different apps (unit-tested selector) |
+| Core Audio endpoint | external change → pill, mute, slider click and drag, mute button, re-bind, setting off | a real device switch or unplug; hardware volume keys |
+| Power (`GetSystemPowerStatus` + notifications) | the start-up reading (AC, 100 %) | charger plug/unplug, discharge through 20 % and 10 % |
+| Network (`NetworkInformation`) | the start-up reading (Wi-Fi, connected), the 2 s debounce on ten real-path events | lost, limited, restored, Wi-Fi → Ethernet, API failure (injected) |
+
+**Test defects found during the gate and fixed (audit trail):**
+
+1. **Tray test failures:** `TrayIconTogglesAndItsMenuOpensCollapsesAndExits` failed in 4 of 7 full runs and passed
+   alone.
+   - **Evidence:** a new failure message showed the right click landing on a 50 × 15 px button, so the overflow
+     flyout was mid-animation, and the flyout was gone when the menu should have appeared.
+   - **Why it was more likely now:** M3-F06's settings test left the flyout open behind the settings window, and
+     clicking an icon closes the flyout with an animation.
+   - **Fix:** `FindTrayButton` accepts the button only when its rectangle is unchanged 120 ms later.
+     `CloseTrayOverflow` closes a flyout that is not in the foreground with its own chevron button. The new test
+     closes the settings window and the flyout.
+   - **Result:** the triggering trio passed 6/6 (3 of 5 failed before); then two full runs passed 52/52. The test's
+     assertions are unchanged.
+2. **Media tests, once:** all three failed together in one full run, with no media events at all in the island.
+   - The cause was not found, and it did not recur in the following 6 full runs.
+   - The failure message now lists the sessions Windows reports to the test process, so a repeat shows whether
+     the test's session was registered.
+   - Kept open as an intermittent with unknown cause.
+
+**Performance smoke (`harness app-check`, SMOKE, not budget verdicts):**
+- **Harness fix:** the harness computed the island's canvas without the volume row, so its grey backdrop and
+  capture region were 50 px shorter than the island. `APP-SMOKE-120-013037` ran that way and is superseded.
+- **Run `APP-SMOKE-120-013355`** (valid by the harness's own checks, 120 Hz, canvas 545 × 283):
+
+  | Measurement | Value |
+  |---|---|
+  | Start → first frame p50 | 230.5 ms (M2: 185.2 ms; start-up now also opens the media manager, the audio endpoint, power notifications and a network read) |
+  | Idle 90 s | 15.6 ms CPU (one scheduler tick), 1 clock update. Frames: **160, not attributable to Halo**, see below |
+  | Private / working set | 19.3 / 73.6 MB (M2: 17.4 / 60.7 MB) |
+  | Transitions | 17/20 valid (3 capture-coalesced); 1 with one long frame; p95 8.9 ms; max 15.4 ms |
+  | Exit p50 | 75.7 ms; 0 processes left |
+
+- **Idle frames:** the harness baseline calibration (`dev-cal --kind base`, no Halo running) **failed** with 102
+  attributed frames, so the screen region was changing without Halo. A 30 s diagnostics run of the island logged
+  no periodic event: only start-up, one clock tick and one reading per feed. The 160 idle frames are therefore
+  **not** evidence about Halo. The idle-frame smoke must be repeated on a quiet desktop (no terminal or editor
+  output on screen). PB-03 is unchanged and still an owner decision (E2).
+- **Not measured:** PB-04 (music playing), PB-07 as a frame time (only the 5.3–6.1 ms change → pill state time),
+  PB-08.
+
+### Optional features
+
+- **O-F01 Notification previews — BLOCKED.** The supported API (`UserNotificationListener`) needs package
+  identity and the `userNotificationListener` capability, so it needs an MSIX-packaged Halo (SECURITY_AND_PRIVACY
+  §4). Halo is unpackaged, and packaging is release work that was not authorised. No scraper or workaround was
+  built, and the feature stays off.
+- **O-F02 Keyboard and input indicators — DEFERRED (owner decision).**
+  - Caps Lock has no hook-free change notification. Watching it needs a global low-level keyboard hook or
+    raw-input sink, which observes every key press system-wide, or polling, which the project avoids;
+  - the input-language indicator needs per-foreground-thread layout reads (spike S6, not run);
+  - both fall under the prompt's "broad global keyboard hook / unresolved privacy decision" rule. Nothing was
+    built.
 
 ## Next recommended action
 
-1. Owner reviews E1–E3 (E2 now has a precise proposal).
-2. Next feature: **full-screen suppression (FR-ISL-09, spike S7)**. The island is topmost, so it now
-   covers full-screen video, games and slideshows. Hide it while a full-screen app is in the foreground
-   on its monitor, and add the tray item "Show island now" as the override that FR-ISL-09 requires.
-   This builds on the tray menu and the controller, starting with the §4.3 full-screen matrix.
-3. Then the keyboard focus path (FR-ISL-07) and a first Settings surface for dwell, grace and
-   click-only mode.
+1. **Owner decisions:** E1–E3 (§5). Add: whether to package Halo as MSIX, which unblocks notifications (O-F01),
+   Start with Windows and a signed install; and whether Caps Lock / input-language indicators may observe
+   keyboard state (O-F02).
+2. **Next engineering item:** fix the UIA event defect (M2-F05). Rebuild the island provider as a fragment root,
+   then check with Narrator. Today screen readers do not hear alerts spontaneously.
+3. **Measurements on a quiet desktop** (no editor or terminal output on screen): repeat the idle smoke, then
+   PB-04 with music playing and PB-07 as a frame time.
+4. Then the remaining Core features: timer and tasks (M4), Start with Windows, manual media-session switching
+   and seek.

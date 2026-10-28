@@ -30,7 +30,9 @@ internal static partial class AppCheck
         var env = RunEnvironment.Capture();
         var hz = env.Snapshot.PrimaryRefreshHz;
         env.Check(validity, hz, "start");
-        var layout = IslandLayout.Compute(new PixelRect(env.WorkArea.Left, env.WorkArea.Top, env.WorkArea.Width, env.WorkArea.Height), env.Dpi);
+        // The island's canvas with its default settings (the volume row is on by default since M3-F03), so the backdrop
+        // and the capture cover the whole island and nothing behind it is counted.
+        var layout = IslandLayout.Compute(new PixelRect(env.WorkArea.Left, env.WorkArea.Top, env.WorkArea.Width, env.WorkArea.Height), env.Dpi, Halo.Core.Settings.HaloSettings.Defaults.ShowVolume);
         var canvas = new PxRect(layout.Canvas.Left, layout.Canvas.Top, layout.Canvas.Width, layout.Canvas.Height);
         var refreshMs = 1000.0 / hz;
         var lastInput = Win32.LastInputTick();

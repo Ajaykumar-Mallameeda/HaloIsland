@@ -97,6 +97,8 @@ public sealed partial class IslandAppTests
         Assert.True(WaitUntil(() => island.Events("alert").Any(e => e["kind"]?.GetValue<string>() == "battery" && e["state"]?.GetValue<string>() == "ended" && e["source"]?.GetValue<string>() == "settings"), 2000), Alerts(island));
         window.Focus();
         PressKeys(0x1B);
+        Assert.True(WaitUntil(() => WaitForSettingsWindow(automation, 200) is null), "Esc did not close the settings window");
+        CloseTrayOverflow(automation); // leave Explorer's tray as later tests expect it
     }
 
     [Fact]

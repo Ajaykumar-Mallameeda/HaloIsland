@@ -87,6 +87,26 @@ tests (U = unit, I = integration, UI = UI automation, M = manual, P = performanc
 | FR-SYS-07 (Adv, opt-in) | Input-language change indicator | Spike S6 (`GetKeyboardLayout` of foreground thread on foreground/change events) | as above | Spike S6 | — | M |
 | FR-SYS-08 (Adv) | Bluetooth audio device connected, battery when exposed | WinRT `DeviceWatcher`, `BluetoothDevice` | — | — | No battery property → name only; must not disturb other devices (cf. E-098) | I with headset, M |
 
+### 3.3a As built: media and system indicators (M3, 2026-10-29)
+
+Requirements are unchanged. This table records what exists; evidence is in PROJECT_STATUS §8.
+
+| ID | State | Notes |
+|---|---|---|
+| FR-MED-01 | Built | Title, artist, art, play state and progress; the island falls back to the clock when the session ends |
+| FR-MED-02 | Built **except seek** | Previous, play/pause and next, each only when the session enables it. Seek was left out: GSMTC position changes are unreliable across players |
+| FR-MED-03 | Partly built | Follows Windows' current session (else the playing one, else the first). Switching between sessions by hand is **not built** |
+| FR-MED-04 | Built | Art from the session's own thumbnail only: 4 MB cap, 96 px decode off the UI thread, 2 s timeout, placeholder otherwise. Decoded with `Windows.Graphics.Imaging`, not WPF |
+| FR-MED-05 | Built | Progress interpolated; 1 Hz redraw only while the open card is visible and playing; none when paused |
+| FR-MED-06 | Not built | Optional animated indicator (needs PB-04 first) |
+| FR-MED-07 (Adv) | Built | Volume row in the open island (mute button and slider) |
+| FR-SYS-01 | Built | Coalesced volume pill for changes made elsewhere; no device → "No audio output" and no pill. PB-07 **not measured** (a state-change smoke time only) |
+| FR-SYS-02 | Built | Charger pill; machines without a battery show nothing. Verified with synthetic readings |
+| FR-SYS-03 | Built | Low 20 % / critical 10 %, configurable in the settings file; once per discharge; unknown level → no alert. "Fully charged" is not built |
+| FR-SYS-04 | Built | Lost / limited / restored pill after 2 s of quiet; startup never alerts |
+| FR-SYS-05…08 | Not built | Advanced; FR-SYS-06/07 deferred for privacy (PROJECT_STATUS §8, O-F02) |
+| FR-NTF-01 | Not built | Blocked: needs package identity (O-F01) |
+
 ### 3.4 Timer (FR-TIM) and tasks (FR-TSK)
 
 | ID | Requirement | APIs | Perm. | Deps | Failure modes → behaviour | Tests |

@@ -425,7 +425,14 @@ public sealed partial class IslandAppTests
                     .FindFirstDescendant(cf => cf.ByAutomationId("NotifyItemIcon").And(cf.ByName("Halo")));
                 if (button is not null && !button.IsOffscreen && button.BoundingRectangle.Width > 0)
                 {
-                    return button;
+                    // The flyout animates open and closed (clicking an icon closes it): accept the button only when its
+                    // rectangle is the same 120 ms later, so a click never lands on a flyout that is mid-animation.
+                    var first = button.BoundingRectangle;
+                    Thread.Sleep(120);
+                    if (!button.IsOffscreen && button.BoundingRectangle == first)
+                    {
+                        return button;
+                    }
                 }
             }
 
@@ -444,9 +451,13 @@ public sealed partial class IslandAppTests
 
     private static void OpenTrayMenu(UIA3Automation automation)
     {
-        var r = FindTrayButton(automation).BoundingRectangle;
-        RightClick(r.X + (r.Width / 2), r.Y + (r.Height / 2));
-        Assert.NotEqual(0, WaitForWindow("#32768"));
+        var button = FindTrayButton(automation);
+        var r = button.BoundingRectangle;
+        var (x, y) = (r.X + (r.Width / 2), r.Y + (r.Height / 2));
+        var under = RootAt(x, y);
+        RightClick(x, y);
+        var menu = WaitForWindow("#32768");
+        Assert.True(menu != 0, $"no tray menu after a right click at {x},{y} (button {r}, parent {button.Parent?.ClassName}); under the point before: {Describe(under)}; now: {Describe(RootAt(x, y))}; foreground: {Describe(GetForegroundWindow())}");
         Thread.Sleep(150);
     }
 
@@ -460,6 +471,13 @@ public sealed partial class IslandAppTests
         if (Open() && Describe(GetForegroundWindow()).Contains("TopLevelWindowForOverflowXamlIsland", StringComparison.Ordinal))
         {
             PressKeys(0x1B); // Esc closes the flyout
+        }
+        else if (Open())
+        {
+            // Another window (for example the settings window) took the foreground while the flyout stayed open: its
+            // own chevron button toggles it closed without sending keys anywhere.
+            automation.GetDesktop().FindFirstChild(cf => cf.ByClassName("Shell_TrayWnd"))?
+                .FindFirstDescendant(cf => cf.ByName("Show Hidden Icons"))?.Patterns.Invoke.Pattern.Invoke();
         }
 
         var sw = Stopwatch.StartNew();
