@@ -108,6 +108,12 @@ is revisited if notification content is ever persisted (it is not, by design).
 mute. Device IDs and names are not logged or stored; diagnostics carry percent, mute and binding status. Nothing
 about audio content or other apps' sessions is read. `showVolume` off releases Core Audio entirely.
 
+**As built, battery and network (M3-F04/F05, 2026-10-29):** battery readings are the charge level, power source
+and charging flag from `GetSystemPowerStatus`. Network readings are the connectivity level and adapter type of the
+internet profile. The Wi-Fi network name (profile name), addresses, traffic, DNS and browsing activity are never
+read. Nothing is stored or sent; diagnostics hold state tokens only. `showBattery` and `showNetwork` turn each feed
+off.
+
 ## 7. Licensing, intellectual property and reverse-engineering boundary
 
 | Topic | Position |

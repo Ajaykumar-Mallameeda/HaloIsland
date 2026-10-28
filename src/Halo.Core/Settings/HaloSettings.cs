@@ -57,6 +57,9 @@ public sealed record HaloSettings
     /// <summary>Critical-battery alert threshold in percent, 2–25, and always below the low threshold.</summary>
     public int BatteryCriticalPercent { get; init; } = 10;
 
+    /// <summary>Network icon in the open island and lost / restored / limited alerts (FR-SYS-04, M3-F05).</summary>
+    public bool ShowNetwork { get; init; } = true;
+
     /// <summary>Serialises to the versioned JSON file format (indented, stable key order).</summary>
     public string ToJson()
     {
@@ -77,6 +80,7 @@ public sealed record HaloSettings
             w.WriteBoolean("showBattery", ShowBattery);
             w.WriteNumber("batteryLowPercent", BatteryLowPercent);
             w.WriteNumber("batteryCriticalPercent", BatteryCriticalPercent);
+            w.WriteBoolean("showNetwork", ShowNetwork);
             w.WriteEndObject();
         }
 
@@ -159,6 +163,7 @@ public sealed record HaloSettings
                 ShowBattery = Bool("showBattery", d.ShowBattery),
                 BatteryLowPercent = Int("batteryLowPercent", d.BatteryLowPercent, MinBatteryLow, MaxBatteryLow),
                 BatteryCriticalPercent = Int("batteryCriticalPercent", d.BatteryCriticalPercent, MinBatteryCritical, MaxBatteryCritical),
+                ShowNetwork = Bool("showNetwork", d.ShowNetwork),
             };
 
             // Critical must stay below low; otherwise it falls back (to the default, or just under low).

@@ -7,6 +7,7 @@ using Halo.Core.Clock;
 using Halo.Core.Diagnostics;
 using Halo.Core.Island;
 using Halo.Core.Media;
+using Halo.Core.Network;
 using Halo.Core.Power;
 using Halo.Core.Settings;
 using Halo.Core.Shell;
@@ -40,6 +41,10 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
     private const nuint MediaDebounceTimerId = 6;
     private const nuint MediaTickTimerId = 7;
     private const nuint VolumeDeviceTimerId = 8;
+    private const nuint NetworkDebounceTimerId = 9;
+
+    /// <summary>FR-SYS-04: network changes are read after 2 s without another change (flapping links give one reading).</summary>
+    private const uint NetworkDebounceMs = 2000;
 
     /// <summary>Device notifications arrive in bursts (unplug: state, removed, default changed): one re-bind per burst.</summary>
     private const uint VolumeDeviceDebounceMs = 200;
@@ -57,6 +62,9 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
     /// <summary>Diagnostics-only test hook: a synthetic power reading through the real path (wParam = ACLineStatus |
     /// BatteryFlag &lt;&lt; 8 | BatteryLifePercent &lt;&lt; 16). Ignored without --diagnostics or while battery is off.</summary>
     private const uint WmTestPower = WmApp + 51;
+
+    /// <summary>Diagnostics-only test hook: a synthetic network reading (wParam = NetworkState | NetworkKind &lt;&lt; 8).</summary>
+    private const uint WmTestNetwork = WmApp + 52;
 
     // Island right-click menu.
     private const int MenuExpand = 1;
@@ -105,6 +113,9 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
     private bool _batteryWatching;
     private nint _acdcNotification;
     private nint _batteryNotification;
+    private NetworkWatcher? _network;
+    private readonly NetworkMonitor _networkMonitor = new();
+    private bool _networkUnavailableLogged;
     private IslandLayout _layout = null!;
     private ClockReading _clock = null!;
     private bool _tracking;
@@ -532,6 +543,26 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
                 }
 
                 return 1;
+            case NetworkWatcher.ChangedMessage:
+                // Restarting the timer on every change is the debounce: one read after 2 s of quiet.
+                _ = SetTimer(hwnd, NetworkDebounceTimerId, NetworkDebounceMs, 0);
+                _log?.Write("network.event");
+                return 0;
+            case WmTimer when (nuint)wParam == NetworkDebounceTimerId:
+                _ = KillTimer(hwnd, NetworkDebounceTimerId);
+                _network?.Read();
+                return 0;
+            case NetworkWatcher.ReadingMessage:
+                _log?.Write("network.read", ("hresult", _network?.LastHResult ?? 0));
+                if (_network?.Latest is { } networkReading)
+                {
+                    OnNetworkReading(networkReading, "system");
+                }
+
+                return 0;
+            case WmTestNetwork when _log is not null && _network is not null:
+                OnNetworkReading(new NetworkReading((NetworkState)(wParam & 0xFF), (NetworkKind)((wParam >> 8) & 0xFF)), "test");
+                return 0;
             case WmTestPower when _log is not null && _batteryWatching:
                 OnPowerReading(PowerReading.FromSystem((byte)(wParam & 0xFF), (byte)((wParam >> 8) & 0xFF), (byte)((wParam >> 16) & 0xFF)), "test");
                 return 0;
@@ -585,6 +616,9 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
                 _volume?.Dispose();
                 _volume = null;
                 StopBattery();
+                _ = KillTimer(hwnd, NetworkDebounceTimerId);
+                _network?.Dispose();
+                _network = null;
                 _settingsWindow = null;
                 _ = KillTimer(hwnd, IntentTimerId);
                 _ = KillTimer(hwnd, ClockTimerId);
@@ -833,6 +867,25 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
             _log?.Write("power", ("battery", 0), ("percent", -1), ("source", "off"), ("charging", 0), ("reason", reason));
         }
 
+        if (s.ShowNetwork && _network is null && _hwnd != 0)
+        {
+            _network = new NetworkWatcher(_hwnd, fail: _fault == IslandFault.Network);
+            if (!_network.Start())
+            {
+                LogNetworkUnavailable();
+            }
+
+            _network.Read(); // the start-up reading, without the debounce
+        }
+        else if (!s.ShowNetwork && _network is not null)
+        {
+            _ = KillTimer(_hwnd, NetworkDebounceTimerId);
+            _network.Dispose();
+            _network = null;
+            UpdateStatus();
+            _log?.Write("network", ("state", "off"), ("kind", "none"), ("reason", reason));
+        }
+
         if (_layout is not null && _layout.VolumeRow != s.ShowVolume)
         {
             // The volume row makes the expanded island taller.
@@ -993,6 +1046,11 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
             parts.Add(power.Spoken);
         }
 
+        if (_network is not null && _networkMonitor.Current is { State: not NetworkState.Unknown } net)
+        {
+            parts.Add(net.Spoken);
+        }
+
         if (_volume?.Current is { } v)
         {
             parts.Add(v.Spoken);
@@ -1068,11 +1126,49 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
         }
     }
 
-    /// <summary>Status icons and value at the top right of the open island (battery now; network in M3-F05).</summary>
+    /// <summary>Status icons and value at the top right of the open island: network, then battery and its percent.</summary>
     private void UpdateStatus()
     {
         var power = _batteryWatching && _battery.Current is { HasBattery: true } p ? p : (PowerReading?)null;
-        _visuals?.ShowStatus(power?.Glyph ?? string.Empty, power?.ShortText ?? string.Empty);
+        var network = _network is not null ? _networkMonitor.Current?.Glyph ?? string.Empty : string.Empty;
+        var glyphs = string.Join(" ", new[] { network, power?.Glyph ?? string.Empty }.Where(g => g.Length > 0));
+        _visuals?.ShowStatus(glyphs, power?.ShortText ?? string.Empty);
+    }
+
+    /// <summary>A connectivity reading (real or test): status icon, diagnostics, and at most one alert.</summary>
+    private void OnNetworkReading(NetworkReading reading, string reason)
+    {
+        if (_networkMonitor.Current == reading)
+        {
+            return;
+        }
+
+        var nameBefore = AccessibleName;
+        var alert = _networkMonitor.Update(reading);
+        UpdateStatus();
+        _log?.Write("network", ("state", reading.State.ToString().ToLowerInvariant()), ("kind", reading.Kind.ToString().ToLowerInvariant()), ("reason", reason));
+        if (reading.State == NetworkState.Unknown)
+        {
+            LogNetworkUnavailable();
+        }
+
+        if (alert is not null)
+        {
+            RaiseAlert(alert, "network");
+        }
+        else if (State.IsExpanded)
+        {
+            _automation?.RaiseChanged(true, true, nameBefore, AccessibleName);
+        }
+    }
+
+    private void LogNetworkUnavailable()
+    {
+        if (!_networkUnavailableLogged)
+        {
+            _networkUnavailableLogged = true;
+            _fileLog?.Write(LogLevel.Warning, "network.unavailable", ("hresult", _network?.LastHResult ?? 0));
+        }
     }
 
     private static bool IsBatterySetting(nint lParam)
@@ -1452,6 +1548,9 @@ internal enum IslandFault
 
     /// <summary>Behave as if Windows reports no audio output device.</summary>
     NoAudio,
+
+    /// <summary>Every network read fails as if the connectivity API were unavailable.</summary>
+    Network,
 }
 
 /// <summary>

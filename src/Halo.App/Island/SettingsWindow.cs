@@ -27,6 +27,7 @@ internal sealed unsafe class SettingsWindow : IDisposable
     private const int IdMedia = 110;
     private const int IdVolume = 111;
     private const int IdBattery = 112;
+    private const int IdNetwork = 113;
     private const int IdClose = 2; // IDCANCEL: Esc and the Close button
     private const int IdDwellValue = 202;
     private const int IdGraceValue = 203;
@@ -127,7 +128,7 @@ internal sealed unsafe class SettingsWindow : IDisposable
             }
 
             var dpi = PrimaryWorkArea().Dpi;
-            var (w, h) = (Scale(440, dpi), Scale(454, dpi));
+            var (w, h) = (Scale(440, dpi), Scale(484, dpi));
             var (work, _) = PrimaryWorkArea();
             var x = work.Left + ((work.Right - work.Left - w) / 2);
             var y = work.Top + ((work.Bottom - work.Top - h) / 2);
@@ -176,6 +177,8 @@ internal sealed unsafe class SettingsWindow : IDisposable
         Add(IdVolume, "BUTTON", "Show &volume changes and the volume slider", BsAutoCheckBox | WsTabStop, 16, y, 400, 22);
         y += 30;
         Add(IdBattery, "BUTTON", "Show &battery level and charger or low-battery alerts", BsAutoCheckBox | WsTabStop, 16, y, 400, 22);
+        y += 30;
+        Add(IdNetwork, "BUTTON", "Show &network status and connection alerts", BsAutoCheckBox | WsTabStop, 16, y, 400, 22);
         y += 42;
         Add(IdDefaults, "BUTTON", "Restore &defaults", BsPushButton | WsTabStop, 16, y, 130, 28);
         Add(IdLogFolder, "BUTTON", "Open &log folder", BsPushButton | WsTabStop, 158, y, 130, 28);
@@ -220,6 +223,7 @@ internal sealed unsafe class SettingsWindow : IDisposable
             Check(IdMedia, s.ShowMedia);
             Check(IdVolume, s.ShowVolume);
             Check(IdBattery, s.ShowBattery);
+            Check(IdNetwork, s.ShowNetwork);
             _ = SendMessageW(_controls[IdDwell], TbmSetPos, 1, s.HoverDwellMs);
             _ = SendMessageW(_controls[IdGrace], TbmSetPos, 1, s.LeaveGraceMs);
             _ = EnableWindow(_controls[IdDwell], s.HoverToExpand);
@@ -262,6 +266,7 @@ internal sealed unsafe class SettingsWindow : IDisposable
             ShowMedia = IsChecked(IdMedia),
             ShowVolume = IsChecked(IdVolume),
             ShowBattery = IsChecked(IdBattery),
+            ShowNetwork = IsChecked(IdNetwork),
         };
         _owner.UpdateSettings(s);
         Show(s);
@@ -292,7 +297,7 @@ internal sealed unsafe class SettingsWindow : IDisposable
                 var id = (int)(wParam & 0xFFFF);
                 switch (id)
                 {
-                    case IdHover or IdFullscreen or IdMotion or IdStartExpanded or IdAnnounce or IdMedia or IdVolume or IdBattery:
+                    case IdHover or IdFullscreen or IdMotion or IdStartExpanded or IdAnnounce or IdMedia or IdVolume or IdBattery or IdNetwork:
                         Commit();
                         return 0;
                     case IdDefaults:

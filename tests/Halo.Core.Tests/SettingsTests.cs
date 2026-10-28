@@ -46,7 +46,7 @@ public sealed class SettingsTests : IDisposable
     [Fact]
     public void SettingsPersistAcrossRestarts()
     {
-        var changed = HaloSettings.Defaults with { HoverToExpand = false, HoverDwellMs = 250, LeaveGraceMs = 900, StartExpanded = true, ReduceMotion = true, HideInFullscreen = false, AnnounceAlerts = false, ShowMedia = false, ShowVolume = false, ShowBattery = false, BatteryLowPercent = 30, BatteryCriticalPercent = 5 };
+        var changed = HaloSettings.Defaults with { HoverToExpand = false, HoverDwellMs = 250, LeaveGraceMs = 900, StartExpanded = true, ReduceMotion = true, HideInFullscreen = false, AnnounceAlerts = false, ShowMedia = false, ShowVolume = false, ShowBattery = false, BatteryLowPercent = 30, BatteryCriticalPercent = 5, ShowNetwork = false };
         Assert.True(new SettingsStore(_dir).Save(changed));
 
         var reloaded = new SettingsStore(_dir).Load(out var status);
@@ -180,12 +180,12 @@ public sealed class SettingsTests : IDisposable
     {
         var json = HaloSettings.Defaults.ToJson();
 
-        foreach (var key in new[] { "schemaVersion", "hoverToExpand", "hoverDwellMs", "leaveGraceMs", "startExpanded", "reduceMotion", "hideInFullscreen", "announceAlerts", "showMedia", "showVolume", "showBattery", "batteryLowPercent", "batteryCriticalPercent" })
+        foreach (var key in new[] { "schemaVersion", "hoverToExpand", "hoverDwellMs", "leaveGraceMs", "startExpanded", "reduceMotion", "hideInFullscreen", "announceAlerts", "showMedia", "showVolume", "showBattery", "batteryLowPercent", "batteryCriticalPercent", "showNetwork" })
         {
             Assert.Contains($"\"{key}\"", json, StringComparison.Ordinal);
         }
 
-        Assert.Equal(13, json.Count(c => c == ':'));
+        Assert.Equal(14, json.Count(c => c == ':'));
     }
 
     [Fact]

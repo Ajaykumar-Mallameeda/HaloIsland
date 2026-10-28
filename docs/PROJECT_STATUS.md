@@ -674,6 +674,53 @@ Smoke run `APP-SMOKE-120-195953` (valid, 120 Hz), SMOKE and not a verdict:
 - **Runtime check:** screenshot of the open island showing the plugged-in glyph and "100%".
 - **Hardware-dependent and not verified:** a real unplug or plug, a real discharge through the thresholds, a
   desktop without a battery (unit-tested mapping only), and battery saver.
+- **Commit:** `eea7c2b`.
+
+### M3-F05 Network connectivity — PASS (transitions verified with synthetic readings)
+
+- **Requirements:** FR-SYS-04 (lost / restored / limited alert, debounced 2 s), the M3-F05 contract (state and
+  connection type, no activity collected, startup while disconnected, API failures, event bursts).
+- **API:** `Windows.Networking.Connectivity.NetworkInformation` from the Windows SDK projection already referenced.
+  No new package.
+  - `NetworkStatusChanged` only posts a message. The island restarts a 2 s timer on each one, so it reads once
+    after 2 s of quiet;
+  - the read runs off the UI thread: `GetInternetConnectionProfile()`, then its connectivity level and adapter
+    type (WLAN, WWAN, or IANA type 6 for Ethernet);
+  - the start-up read is immediate.
+- **Privacy:** the profile name (the Wi-Fi network's name), addresses, traffic, usage and history are never read.
+  Diagnostics carry the state and type tokens only.
+- **Rules (`Halo.Core/Network/NetworkMonitor`):**
+  - the first known reading never alerts, even when offline;
+  - lost → "Offline" (3 s); limited → "Limited connectivity" (3 s); restored or type switched → "Connected to
+    Wi-Fi" or "Connected to Ethernet" (2.5 s). All are Normal priority with one key, so changes update a single
+    pill, and none appear over full screen;
+  - an unchanged or unknown reading (API failure) never alerts. After a failure, the next reading is compared with
+    the last known one, so a failed read cannot fake a "Connected".
+- **User-visible:** a network glyph before the battery glyph in the open clock view's status cluster: Wi-Fi,
+  Ethernet, globe (other), Wi-Fi-warning or Ethernet-error when limited, globe-blocked when offline. The UIA
+  description adds "Connected to Wi-Fi" or "Offline".
+- **Setting:** "Show network status and connection alerts" (`showNetwork`, default on). Off unsubscribes.
+- **Failure:** a failed read gives `unknown` (no icon, no alert), a `network.unavailable` warning once per run, and
+  a retry on the next change event. `HALO_TEST_FAULT=network` injects it.
+- **Files:** `Halo.Core/Network/Network.cs`, `Halo.App/Island/NetworkWatcher.cs`, `IslandWindow.cs`,
+  `HaloSettings.cs`, `SettingsWindow.cs`, `Program.cs`.
+- **Unit tests (13 new, `NetworkTests`):** glyphs for 7 state/type pairs; spoken text with no network name; no
+  alert at start-up, even offline; lost, limited, reconnect and Wi-Fi → Ethernet each alert once; unchanged
+  readings are silent; a failed read is ignored and does not fake a reconnect; an unknown start; a burst of
+  changes through the controller is one pill holding the newest text. Unit 313/313.
+- **Desktop tests (4 new):**
+  - **Real:** the start-up reading matches the test's own read of the same API (this machine: Wi-Fi, connected),
+    with no pill, and the UIA description has "Connected to Wi-Fi";
+  - **Real debounce:** ten change events 100 ms apart give exactly one read, 1.9–3 s after the last event;
+  - **SYNTHETIC** (`WmApp+52`, diagnostics only): Wi-Fi → offline → (repeat ignored) → limited → Ethernet gives
+    one network pill updated in place and never queued;
+  - **Fault and off:** with the injected fault the state is `unknown`, the read reports its HRESULT, there is no
+    pill, a later event retries, and the warning is logged exactly once. With `showNetwork` off there are no
+    reads.
+  Island desktop 48/48.
+- **Runtime check:** screenshot of the open island: Wi-Fi glyph, battery glyph, "100%".
+- **Not verified with real hardware changes:** disconnecting Wi-Fi, a cable change, a captive portal or a metered
+  or cellular link (they would disrupt the owner's connection; covered by synthetic readings and unit tests).
 - **Commit:** see the next entry.
 
 ## Next recommended action
