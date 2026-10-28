@@ -1,6 +1,6 @@
 # Project Status — Project Halo
 
-Last updated: 2026-10-29 (M3 media and system intelligence complete; see §8 for every feature)
+Last updated: 2026-10-29 (expansion campaign in progress; see §9 for its features, §8 for M1–M3)
 
 ## Current phase
 
@@ -35,7 +35,7 @@ S3–S8 (Execution 2) have not started.
 | Product-island PB-05 | **Not shown**: smoke runs capture only 9 of 20 transitions validly at 120 Hz |
 | PB-03 with a visible clock | **Owner decision E2** (§5) |
 | Narrator / Axe.Windows review | **Not done** |
-| UIA events from the island provider | **Open defect** (M2-F05): raised with S_OK but not received by clients |
+| UIA events from the island provider | **Fixed** (A-F01, §9): received by a real UIA client; Narrator by ear still **not done** |
 | PB-04 (music playing) | **Not measured**: media now exists, but no PB-04 measurement method has been run |
 | Manual DPI check S2-11M (100/150/175 %) | **Not done** |
 | Multi-monitor and mixed DPI | **Blocked**: one display (D7) |
@@ -200,7 +200,6 @@ Earlier decisions Q1–Q8 were answered on 2026-10-27, and the PB-02 rule change
 - The keyboard on the tray icon opens the island (Space/Enter) but does not close it, because Enter
   can deliver the select event twice.
 - Primary monitor only; multi-monitor untested (one display).
-- UIA events from the island never reach clients (M2-F05 defect), so pills are not announced spontaneously.
 - Battery, charger and network transitions were verified with synthetic readings, never by unplugging or
   disconnecting (§8, M3-F04/F05).
 - Status icons (network, battery) show only in the open clock view, not in the media view.
@@ -847,6 +846,57 @@ Smoke run `APP-SMOKE-120-195953` (valid, 120 Hz), SMOKE and not a verdict:
   - the input-language indicator needs per-foreground-thread layout reads (spike S6, not run);
   - both fall under the prompt's "broad global keyboard hook / unresolved privacy decision" rule. Nothing was
     built.
+
+## 9. Expansion campaign feature register (started 2026-10-29)
+
+Campaign brief: accessibility repair, motion system, activities, notifications, productivity, customisation.
+Research: [`RESEARCH_EXPANSION_CAMPAIGN.md`](RESEARCH_EXPANSION_CAMPAIGN.md). Motion: [`MOTION_SYSTEM.md`](MOTION_SYSTEM.md).
+Starting point: `4f26bc9`, clean tree; baseline unit 319/319, island desktop 52/52.
+
+### A-F01 Screen-reader announcements and the island's UIA tree — PASS (Narrator by ear: NOT RUN)
+
+- **Root cause of M2-F05:** `ProviderOptions.ServerSideProvider` was declared as `0x1`. In UIAutomationCore.h,
+  `0x1` is `ClientSideProvider` and server-side is `0x2`. UIA therefore treated the island as a client-side proxy
+  and delivered none of the events it raised, although each call returned `S_OK`.
+- **How it was found:** bisection with a real out-of-process UIA client (RESEARCH_EXPANSION_CAMPAIGN §3):
+  - Calculator, WinForms and WPF notifications arrived (13/13 each);
+  - a plain Win32 window using Halo's provider got none;
+  - in one process, WPF's managed provider worked and Halo's declarations did not.
+- **Second defect, from the same trace:** UIA calls providers on its own threads. The old provider read window
+  fields and drove the controller on those threads.
+- **New design:**
+  - `Halo.Core/Accessibility/IslandAccessibility` builds the tree from one immutable snapshot of what is on
+    screen. It is a pure function and is unit-tested;
+  - `IslandAutomationProvider` is now a fragment root. It keeps Button, Invoke and ExpandCollapse, and adds the
+    Window pattern, which UiaRaiseNotificationEvent's remarks require for `WS_POPUP` windows;
+  - the island's children are:
+    - while compact: a live status element only while an alert is shown (`LiveSetting` polite, or assertive when
+      critical);
+    - while expanded: time, date and day progress (a progress bar), network and battery text, media summary,
+      track position, and Previous / Play–Pause / Next buttons (only those the session enables);
+    - with the volume row: a mute toggle button and a volume slider (RangeValue, 0–100);
+  - reads come only from the published snapshot. Commands are posted to the UI thread and re-checked there, so a
+    stale request is dropped;
+  - events are raised only for real changes: expand state, name, structure (children invalidated), live region,
+    and toggle/value of controls. Clock ticks change only the island's name; no notification is ever raised for
+    them;
+  - an element that has left the screen returns `UIA_E_ELEMENTNOTAVAILABLE`. After shutdown, nothing is exposed
+    and nothing is posted;
+  - not keyboard-focusable and no `SetForegroundWindow`, so there is no focus stealing (FR-ISL-06).
+- **Tests:**
+  - unit, +19 (11 Core tree, 8 provider rewrites and additions): unit 338/338;
+  - desktop, +7, all with a real UIA3 client:
+    - an alert notification is **received** on a desktop-subtree listener, with text and MostRecent processing;
+    - a critical alert arrives as ImportantMostRecent;
+    - the ExpandCollapseState change is received;
+    - expanding and collapsing raise no notifications;
+    - the expanded tree has the expected roles, the slider equals the real endpoint volume, bounds lie inside the
+      window, and the children are gone after collapse;
+    - an alert is a live child while shown and is gone when it ends;
+    - Invoke through UIA does not change the foreground;
+  - island desktop 59/59.
+- **Not done:** Narrator by ear (needs a person); Axe.Windows (not installed); a high-contrast review.
+- **Reduced motion:** announcements and the tree do not depend on animation (existing reduce-motion test unchanged).
 
 ## Next recommended action
 

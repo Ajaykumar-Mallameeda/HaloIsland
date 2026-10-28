@@ -5,11 +5,7 @@ namespace Halo.App.Tests;
 
 /// <summary>
 /// Accessibility foundation (M2-F05) checked with a real UI Automation client attached. Not a Narrator review.
-/// <para>
-/// Known defect (PROJECT_STATUS, M2-F05): UIA events raised by the island's provider (property changes and
-/// notifications) return S_OK but are not received by UIA clients, so these tests verify what the island does (it
-/// raises the announcement only when allowed, and describes the alert), not that a screen reader hears it.
-/// </para>
+/// Delivery of the events to a client is proven in IslandAppTests.AccessibilityEvents (A-F01 fixed the M2-F05 defect).
 /// </summary>
 public sealed partial class IslandAppTests
 {

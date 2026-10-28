@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using Halo.App.Interop;
+using Halo.Core.Accessibility;
 using Halo.Core.Audio;
 using Halo.Core.Clock;
 using Halo.Core.Diagnostics;
@@ -23,7 +24,7 @@ namespace Halo.App.Island;
 /// region (union of the current and target shapes during a transition). One instance per process, on the primary
 /// monitor's work area.
 /// </summary>
-internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
+internal sealed unsafe partial class IslandWindow : IDisposable
 {
     public const string ClassName = "ProjectHalo.Island";
     public const string Title = "Halo";
@@ -32,6 +33,9 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
     public const uint WmCommandFromInstance = WmApp + 1;
 
     private const uint WmTransitionDone = WmApp + 100;
+
+    /// <summary>A UI Automation request (wParam = <see cref="AutomationRequest"/>, lParam = value) posted from a UIA thread.</summary>
+    private const uint WmAutomationRequest = WmApp + 101;
     private const uint SpiSetClientAreaAnimation = 0x1043;
     private const nuint ClockTimerId = 1;
     private const nuint IntentTimerId = 2;
@@ -157,16 +161,6 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
         _ = SetTimer(_hwnd, SaveTimerId, SaveDebounceMs, 0);
     }
 
-    public bool IsExpanded => State.IsExpanded;
-
-    public string AccessibleName => _mediaSnapshot is { } m
-        ? $"Halo, {m.AccessibleSummary}, {_clock.TimeWithDesignator}, {_clock.LongDate}"
-        : $"Halo, {_clock.TimeWithDesignator}, {_clock.LongDate}";
-
-    public string? AccessibleDescription => State.Alert is { } alert
-        ? alert.Content.Spoken
-        : State.IsExpanded ? ExpandedDescription() : null;
-
     private IslandState State => _controller.State;
 
     /// <summary>Creates the window and runs its message loop until the window is closed. Returns the exit code.</summary>
@@ -195,7 +189,8 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
         _text = new TextRenderer(_compositor);
         _visuals = new IslandVisuals(_compositor, _target, _text, _layout);
         _visuals.ShowClock(_clock);
-        _automation = new IslandAutomationProvider(_hwnd, this);
+        _automation = new IslandAutomationProvider(_hwnd, WmAutomationRequest);
+        PublishAutomation();
         ArmClock();
         _tray = new TrayIcon(_hwnd);
         AddTray("initial");
@@ -237,10 +232,6 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
         _fileLog?.Write(LogLevel.Information, "app.exit", ("code", 0));
         return 0;
     }
-
-    public void RequestExpanded(bool expanded) => Apply(expanded ? IslandInput.Expand : IslandInput.Collapse, "automation");
-
-    public void RequestToggle() => Apply(IslandInput.Toggle, "automation");
 
     /// <summary>
     /// Releases everything the island owns. After a normal exit WM_DESTROY has already stopped the timers and removed
@@ -462,6 +453,9 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
                 return 0;
             case WmGetObject:
                 return _automation?.HandleGetObject(wParam, lParam);
+            case WmAutomationRequest:
+                OnAutomationRequest((AutomationRequest)(int)wParam, (int)lParam);
+                return 0;
             case WmTimer when (nuint)wParam == ClockTimerId:
                 RefreshClock("minute");
                 return 0;
@@ -689,7 +683,6 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
             UpdateMediaTick();
         }
 
-        var nameBefore = AccessibleName;
         if (transition.PresentationChanged)
         {
             ApplyRegion(union: true);
@@ -710,12 +703,11 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
             _ = _visuals?.Animate(transition, _reducedMotion);
         }
 
-        _automation?.RaiseChanged(transition.Previous.IsExpanded, state.IsExpanded, nameBefore, AccessibleName);
+        PublishAutomation();
     }
 
     private void RefreshClock(string reason)
     {
-        var nameBefore = AccessibleName;
         _clock = ClockFace.Read(DateTimeOffset.Now, CultureInfo.CurrentCulture);
         if (State.Visible)
         {
@@ -727,7 +719,7 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
             _clockDirty = true;
         }
 
-        _automation?.RaiseChanged(State.IsExpanded, State.IsExpanded, nameBefore, AccessibleName);
+        PublishAutomation();
         _log?.Write("clock", ("reason", reason));
         ArmClock();
     }
@@ -801,6 +793,7 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
         ApplyRegion(union: false);
         _visuals?.ApplyLayout(_layout, State);
         _log?.Write("placement", ("reason", reason), ("left", c.Left), ("top", c.Top), ("width", c.Width), ("height", c.Height), ("dpi", (int)dpi));
+        PublishAutomation();
     }
 
     private void ApplyRegion(bool union)
@@ -985,10 +978,9 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
             return;
         }
 
-        var nameBefore = AccessibleName;
         _mediaSnapshot = snapshot;
         _visuals?.ShowMedia(snapshot, DateTimeOffset.Now);
-        _automation?.RaiseChanged(State.IsExpanded, State.IsExpanded, nameBefore, AccessibleName);
+        PublishAutomation();
         UpdateMediaTick();
 
         // Tokens only: never the title, artist or app (SECURITY_AND_PRIVACY_DESIGN §6).
@@ -1115,7 +1107,6 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
             return; // several notifications for one change: nothing new
         }
 
-        var nameBefore = AccessibleName;
         var alert = _battery.Update(reading);
         UpdateStatus();
         _log?.Write("power", ("battery", reading.HasBattery ? 1 : 0), ("percent", reading.Percent ?? -1), ("source", reading.Source.ToString().ToLowerInvariant()), ("charging", reading.Charging ? 1 : 0), ("reason", reason));
@@ -1123,10 +1114,8 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
         {
             RaiseAlert(alert, "power");
         }
-        else if (State.IsExpanded)
-        {
-            _automation?.RaiseChanged(true, true, nameBefore, AccessibleName);
-        }
+
+        PublishAutomation();
     }
 
     /// <summary>Status icons and value at the top right of the open island: network, then battery and its percent.</summary>
@@ -1145,8 +1134,6 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
         {
             return;
         }
-
-        var nameBefore = AccessibleName;
         var alert = _networkMonitor.Update(reading);
         UpdateStatus();
         _log?.Write("network", ("state", reading.State.ToString().ToLowerInvariant()), ("kind", reading.Kind.ToString().ToLowerInvariant()), ("reason", reason));
@@ -1159,10 +1146,8 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
         {
             RaiseAlert(alert, "network");
         }
-        else if (State.IsExpanded)
-        {
-            _automation?.RaiseChanged(true, true, nameBefore, AccessibleName);
-        }
+
+        PublishAutomation();
     }
 
     private void LogNetworkUnavailable()
@@ -1199,6 +1184,8 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
         {
             _log?.Write("volume", ("percent", v.Percent), ("muted", v.Muted ? 1 : 0), ("source", "bind"));
         }
+
+        PublishAutomation();
     }
 
     /// <summary>
@@ -1214,17 +1201,14 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
         }
 
         var (reading, fromHalo) = change;
-        var nameBefore = AccessibleName;
         _visuals?.ShowVolume(reading);
         _log?.Write("volume", ("percent", reading.Percent), ("muted", reading.Muted ? 1 : 0), ("source", fromHalo ? "halo" : "external"));
         if (!fromHalo && !State.IsExpanded)
         {
             RaiseAlert(VolumeAlert.For(reading), "volume");
         }
-        else if (State.IsExpanded)
-        {
-            _automation?.RaiseChanged(true, true, nameBefore, AccessibleName);
-        }
+
+        PublishAutomation();
     }
 
     /// <summary>The volume-row part under a client point while the open island shows a bound device.</summary>
