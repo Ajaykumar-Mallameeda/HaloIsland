@@ -63,6 +63,11 @@ internal static unsafe partial class Native
     public const uint NifTip = 0x04;
     public const uint NifShowTip = 0x80;
     public const uint NotifyIconVersion4 = 4;
+    public const uint WmWtsSessionChange = 0x02B1;
+    public const nint WtsSessionLock = 0x7;
+    public const nint WtsSessionUnlock = 0x8;
+    public const nint PbtPowerSettingChange = 0x8013;
+    public static readonly Guid GuidSessionDisplayStatus = new("2B84C20E-AD23-4ddf-93DB-05FFBD7EFCA5");
     public const uint EventSystemForeground = 0x0003;
     public const uint EventObjectLocationChange = 0x800B;
     public const uint WinEventOutOfContext = 0x0000;
@@ -464,6 +469,21 @@ internal static unsafe partial class Native
     [LibraryImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static partial bool IsWindowVisible(nint hwnd);
+
+    [LibraryImport("wtsapi32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool WTSRegisterSessionNotification(nint hwnd, uint flags);
+
+    [LibraryImport("wtsapi32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool WTSUnRegisterSessionNotification(nint hwnd);
+
+    [LibraryImport("user32.dll")]
+    public static partial nint RegisterPowerSettingNotification(nint recipient, Guid* powerSetting, uint flags);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool UnregisterPowerSettingNotification(nint handle);
 
     /// <summary>Full rectangle of the primary monitor (not the work area) and its handle.</summary>
     public static (nint Monitor, Rect Bounds) PrimaryMonitor()

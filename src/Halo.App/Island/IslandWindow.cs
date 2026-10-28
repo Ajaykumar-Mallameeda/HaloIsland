@@ -68,6 +68,9 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
     private bool _tracking;
     private bool _menuOpen;
     private bool _clockDirty;
+    private bool _sessionLocked;
+    private bool _displayOff;
+    private nint _displayNotification;
     private bool _reducedMotion;
     private int _transitionId;
 
@@ -108,6 +111,10 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
         ArmClock();
         _tray = new TrayIcon(_hwnd);
         AddTray("initial");
+        // FR-ISL-12: the clock pauses while the session is locked or the display is off.
+        _ = WTSRegisterSessionNotification(_hwnd, 0);
+        var displayStatus = GuidSessionDisplayStatus;
+        _displayNotification = RegisterPowerSettingNotification(_hwnd, &displayStatus, 0);
         _fullscreen = new FullscreenWatcher(_hwnd, FullscreenTimerId);
         _log?.Write("fullscreen.watch", ("status", _fullscreen.Start() ? "running" : "failed"));
         if (_fault == IslandFault.Startup)
@@ -333,8 +340,21 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
                 OnTrayEvent((uint)(lParam & 0xFFFF), LowWord(wParam), HighWord(wParam));
                 return 0;
             case WmTimeChange:
+                // The time or the time zone changed; .NET caches the local time zone until told otherwise.
+                TimeZoneInfo.ClearCachedData();
                 RefreshClock("time_change");
                 return 0;
+            case WmSettingChange when IsIntlChange(lParam):
+                // Regional format changed (12/24 h, date order): drop the cached culture data.
+                CultureInfo.CurrentCulture.ClearCachedData();
+                RefreshClock("intl");
+                return null;
+            case WmWtsSessionChange when wParam == WtsSessionLock || wParam == WtsSessionUnlock:
+                SetClockPaused(locked: wParam == WtsSessionLock, displayOff: _displayOff, "session");
+                return 0;
+            case WmPowerBroadcast when wParam == PbtPowerSettingChange && DisplayState(lParam) is { } on:
+                SetClockPaused(_sessionLocked, displayOff: !on, "display");
+                return 1;
             case WmPowerBroadcast when wParam == PbtApmResumeAutomatic:
                 RefreshClock("resume");
                 return null;
@@ -373,6 +393,13 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
                 _fullscreen = null;
                 _ = KillTimer(hwnd, IntentTimerId);
                 _ = KillTimer(hwnd, ClockTimerId);
+                _ = WTSUnRegisterSessionNotification(hwnd);
+                if (_displayNotification != 0)
+                {
+                    _ = UnregisterPowerSettingNotification(_displayNotification);
+                    _displayNotification = 0;
+                }
+
                 if (_tray?.Remove() is { } removed)
                 {
                     // The shell's own answer: true only if it still had the icon.
@@ -466,9 +493,51 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
         ArmClock();
     }
 
+    private static bool IsIntlChange(nint lParam) =>
+        lParam != 0 && new string((char*)lParam).Equals("intl", StringComparison.Ordinal);
+
+    /// <summary>GUID_SESSION_DISPLAY_STATUS from a POWERBROADCAST_SETTING: true = on or dimmed, false = off.</summary>
+    private static bool? DisplayState(nint lParam)
+    {
+        if (lParam == 0)
+        {
+            return null;
+        }
+
+        var setting = (byte*)lParam;
+        var guid = *(Guid*)setting;
+        var length = *(uint*)(setting + 16);
+        return guid == GuidSessionDisplayStatus && length >= 1 ? setting[20] != 0 : null;
+    }
+
+    /// <summary>
+    /// Stops the minute clock (no timer, no wake-ups) while the session is locked or the display is off; refreshes it
+    /// immediately when both end, so the time is right as soon as the user can see it.
+    /// </summary>
+    private void SetClockPaused(bool locked, bool displayOff, string reason)
+    {
+        var wasPaused = _sessionLocked || _displayOff;
+        (_sessionLocked, _displayOff) = (locked, displayOff);
+        var paused = locked || displayOff;
+        if (paused && !wasPaused)
+        {
+            _ = KillTimer(_hwnd, ClockTimerId);
+            _log?.Write("clock", ("reason", "paused"), ("by", reason));
+        }
+        else if (!paused && wasPaused)
+        {
+            RefreshClock("resumed");
+        }
+    }
+
     /// <summary>One-shot timer to just after the next minute boundary (no periodic timer while idle).</summary>
     private void ArmClock()
     {
+        if (_sessionLocked || _displayOff)
+        {
+            return;
+        }
+
         var delay = ClockFace.DelayToNextMinute(DateTimeOffset.Now, ClockSlack);
         _ = SetTimer(_hwnd, ClockTimerId, (uint)Math.Ceiling(delay.TotalMilliseconds), 0);
     }

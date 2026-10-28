@@ -28,7 +28,9 @@ public static class ClockFace
         var designator = usesDesignator ? localNow.ToString("tt", culture) : string.Empty;
         var shortDate = localNow.ToString("ddd d", culture);
         var longDate = localNow.ToString(MonthDayWithWeekday(format), culture);
-        var fraction = localNow.TimeOfDay.TotalSeconds / TimeSpan.FromDays(1).TotalSeconds;
+        // Wall-clock fraction of the day, kept inside [0, 1) (so the label never reads 100 % and never goes negative,
+        // including on 23- and 25-hour daylight-saving days, where the wall clock still runs 00:00 to 23:59).
+        var fraction = Math.Clamp(localNow.TimeOfDay.TotalSeconds / TimeSpan.FromDays(1).TotalSeconds, 0, 0.999999);
         return new ClockReading(time, designator, shortDate, longDate, fraction, localNow.DayOfYear);
     }
 

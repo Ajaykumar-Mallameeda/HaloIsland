@@ -277,6 +277,52 @@ machine (1920×1080 @ 120 Hz, 125 %, one display). "Desktop" = `Category=Integra
 - **Runtime:** screenshot of a test alert (glyph, text, bar, value) checked by eye.
 - **Accessibility:** alerts are not yet announced to UI Automation (FR-A11Y-02; planned in M2-F05).
 - **Privacy:** alert text is never logged; diagnostics carry kind, priority and state tokens only.
+- **Commit:** `daab0bf`.
+
+### M1-F03 Clock and idle-rendering contract — PASS (PB-03 wording still an owner decision)
+
+- **Requirements:** FR-ISL-12 (no rendering while hidden, locked or display off), PB-03 (unchanged), clock
+  correctness.
+- **Behaviour:**
+  - the clock stays event-driven: one one-shot timer to the next minute boundary, and only changed text lines are
+    redrawn;
+  - while the session is locked (`WTSRegisterSessionNotification`) or the display is off
+    (`GUID_SESSION_DISPLAY_STATUS`), the clock timer is stopped entirely. It refreshes at once on unlock or
+    display-on;
+  - while full screen hides the island, text is not redrawn until it is shown again;
+  - `WM_TIMECHANGE` clears .NET's cached time zone before re-reading (a time-zone change was not picked up before);
+  - `WM_SETTINGCHANGE("intl")` clears the cached culture, so a 12/24-hour or date-order change applies;
+  - day progress is clamped to [0, 1), so the label reads 0–99 % (including 23- and 25-hour DST days, which use
+    the wall clock).
+- **Unit tests:** 7 new (`ClockBoundaryTests.cs`: midnight/new-year rollover, 0/50/99 %, DST day, leap year,
+  the minute timer is the only periodic cadence). Unit 184/184.
+- **Desktop test:** 1 new. The window messages Windows sends for lock, unlock, time change and `intl` are sent to
+  the running island: pause, resume, refresh. A real lock or display-off was not performed (it would disturb the
+  owner).
+- **Idle evidence (SMOKE, not a verdict):** `APP-SMOKE-120-192017`, valid. 90 s idle: 0 ms CPU, 2 attributed
+  frames, 2 clock updates, 17.8 MB private.
+- **PB-03:** unchanged. Its literal wording ("0 frames/s settled") still conflicts with a visible minute clock;
+  decision E2 (§5) remains open with the precise proposal.
+
+### M1 completion gate — PASS (2026-10-28, idle machine)
+
+Locked restore passed; Release build 0 warnings; unit 184/184; island desktop 23/23 in 2 consecutive runs; spike
+desktop 5/5. Verified in those suites: full-screen suppression and override, tray, hover and click, single
+instance, no focus change, clean shutdown, clock lifecycle, no orphaned processes.
+
+Smoke run `APP-SMOKE-120-192017` (valid, 120 Hz):
+
+| Measurement | Value |
+|---|---|
+| Start → first frame p50 | 175.2 ms (158.8 ms before M1; start-up now also registers the tray, app bar, WinEvent hook and session notifications) |
+| Idle 90 s | 0 ms CPU, 2 frames, 2 clock updates |
+| Private / working set | 17.8 / 62.3 MB |
+| Transitions | 20/20 valid; 1 with one long frame; max 17.2 ms |
+| Exit p50 | 69 ms; 0 processes left |
+
+The earlier gate attempt (`APP-SMOKE-120-181627`) was INVALID (`user_input_during_run`), and one hover test in the
+same session failed with "the pointer was moved during the test". Both were caused by real mouse use and are kept
+here as the audit trail.
 
 ## Next recommended action
 
