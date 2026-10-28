@@ -15,7 +15,8 @@ namespace Halo.App.Tests;
 
 /// <summary>
 /// Starts the real Halo.exe and checks it on the desktop: placement, window styles, input region, click toggling,
-/// focus, UI Automation, single instance and clean exit. One class so the tests never run concurrently.
+/// focus, UI Automation, single instance, hover-intent timing and clean exit. One class so the tests never run
+/// concurrently.
 /// </summary>
 [Trait("Category", "Integration")]
 public sealed class IslandAppTests
@@ -25,6 +26,8 @@ public sealed class IslandAppTests
     private const int WsExNoActivate = 0x08000000;
     private const int WsExNoRedirectionBitmap = 0x00200000;
     private const int WsExAppWindow = 0x00040000;
+
+    private static (int X, int Y) s_lastMove;
 
     [Fact]
     public void LaunchShowsCompactIslandCentredAtTopAndExitsCleanly()
@@ -185,6 +188,133 @@ public sealed class IslandAppTests
         // A black pill with white text: mostly dark pixels and a few hundred bright glyph pixels.
         Assert.True(dark > bright * 4, $"dark={dark} bright={bright}");
         Assert.True(bright > 80, $"too few text pixels: {bright}");
+    }
+
+    [Fact]
+    public void HoverDwellExpandsThePanelStaysOpenAndLeaveGraceCollapses()
+    {
+        var layout = ExpectedLayout();
+        using var pointer = new PointerScope(layout);
+        using var island = IslandProcess.Start();
+        var foreground = GetForegroundWindow();
+
+        MoveTo(pointer.PillX, pointer.PillY);
+        var pending = island.WaitForPhase("expand_pending");
+        var opened = island.WaitForPhase("expanded_hover");
+        Assert.InRange(Ms(opened, pending), 100, 400);
+        Assert.Equal("hover", island.WaitFor("transition.start")["source"]!.GetValue<string>());
+        Assert.Equal("expand", island.WaitFor("transition.end")["dir"]!.GetValue<string>());
+        AssertRegion(island.Hwnd, layout.Expanded);
+
+        // Pill → panel: the pointer stays inside the expanded shape, so nothing is scheduled.
+        MoveTo(pointer.PillX, pointer.PanelY);
+        Thread.Sleep(900);
+        AssertPointerUndisturbed();
+        Assert.True(island.Count("phase", "collapse_pending") == 0 && island.Count("transition.start") == 1, island.Trace());
+
+        MoveTo(pointer.PillX, pointer.OutsideY);
+        var leaving = island.WaitForPhase("collapse_pending");
+        var closed = island.WaitForPhase("collapsed", after: leaving);
+        Assert.InRange(Ms(closed, leaving), 380, 900);
+        var collapse = island.WaitFor("transition.start", skip: 1);
+        Assert.Equal("collapse", collapse["dir"]!.GetValue<string>());
+        Assert.Equal("hover", collapse["source"]!.GetValue<string>());
+        island.WaitFor("transition.end", skip: 1);
+        AssertRegion(island.Hwnd, layout.Compact);
+        Assert.Equal(foreground, GetForegroundWindow());
+    }
+
+    [Fact]
+    public void LeavingBeforeTheDwellDoesNotExpand()
+    {
+        var layout = ExpectedLayout();
+        using var pointer = new PointerScope(layout);
+        using var island = IslandProcess.Start();
+
+        MoveTo(pointer.PillX, pointer.PillY);
+        island.WaitForPhase("expand_pending");
+        MoveTo(pointer.PillX, pointer.OutsideY);
+        island.WaitForPhase("collapsed");
+        Thread.Sleep(700);
+
+        AssertPointerUndisturbed();
+        Assert.True(island.Count("transition.start") == 0 && island.Count("phase", "expanded_hover") == 0, island.Trace());
+    }
+
+    [Fact]
+    public void ReturningWithinTheGraceCancelsTheCollapse()
+    {
+        var layout = ExpectedLayout();
+        using var pointer = new PointerScope(layout);
+        using var island = IslandProcess.Start();
+
+        MoveTo(pointer.PillX, pointer.PillY);
+        island.WaitFor("transition.end");
+        MoveTo(pointer.PillX, pointer.OutsideY);
+        var leaving = island.WaitForPhase("collapse_pending");
+        Thread.Sleep(120);
+        MoveTo(pointer.PillX, pointer.PanelY);
+        var back = island.WaitForPhase("expanded_hover", after: leaving);
+        Assert.True(Ms(back, leaving) < 400, "the pointer came back after the grace");
+        Thread.Sleep(900);
+
+        AssertPointerUndisturbed();
+        Assert.True(island.Count("transition.start") == 1 && island.Count("phase", "collapsed") == 0, island.Trace());
+    }
+
+    [Fact]
+    public void ExitWhileHoverTimersArePendingIsClean()
+    {
+        var layout = ExpectedLayout();
+        using var pointer = new PointerScope(layout);
+
+        using (var island = IslandProcess.Start())
+        {
+            MoveTo(pointer.PillX, pointer.PillY);
+            island.WaitForPhase("expand_pending");
+            Assert.True(island.Exit().TotalMilliseconds < 5000);
+            Assert.Equal(0, island.ExitCode);
+        }
+
+        MoveTo(pointer.PillX, pointer.OutsideY);
+        using (var island = IslandProcess.Start())
+        {
+            MoveTo(pointer.PillX, pointer.PillY);
+            island.WaitFor("transition.end");
+            MoveTo(pointer.PillX, pointer.OutsideY);
+            island.WaitForPhase("collapse_pending");
+            Assert.True(island.Exit().TotalMilliseconds < 5000);
+            Assert.Equal(0, island.ExitCode);
+        }
+
+        Assert.Empty(Process.GetProcessesByName("Halo"));
+        Assert.Equal(0, FindWindowW("ProjectHalo.Island", null));
+    }
+
+    private static double Ms(JsonObject later, JsonObject earlier) =>
+        (later["qpc"]!.GetValue<long>() - earlier["qpc"]!.GetValue<long>()) * 1000.0 / Stopwatch.Frequency;
+
+    /// <summary>Moves the pointer without clicking (one absolute SendInput move) and waits until it is there.</summary>
+    private static void MoveTo(int x, int y)
+    {
+        var w = GetSystemMetrics(0);
+        var h = GetSystemMetrics(1);
+        Input[] inputs = [new() { Type = 0, Mouse = new MouseInput { X = ((x * 65536) + (w / 2)) / w, Y = ((y * 65536) + (h / 2)) / h, Flags = 0x0001 | 0x8000 } }];
+        Assert.Equal(1u, SendInput(1, inputs, Marshal.SizeOf<Input>()));
+        s_lastMove = (x, y);
+        var sw = Stopwatch.StartNew();
+        while (!(GetCursorPos(out var p) && Math.Abs(p.X - x) <= 1 && Math.Abs(p.Y - y) <= 1))
+        {
+            Assert.True(sw.ElapsedMilliseconds < 500, $"the pointer did not reach {x},{y}");
+            Thread.Sleep(5);
+        }
+    }
+
+    /// <summary>Fails clearly when something other than the test (for example a real mouse) moved the pointer.</summary>
+    private static void AssertPointerUndisturbed()
+    {
+        Assert.True(GetCursorPos(out var p), "GetCursorPos failed");
+        Assert.True(Math.Abs(p.X - s_lastMove.X) <= 1 && Math.Abs(p.Y - s_lastMove.Y) <= 1, $"the pointer was moved during the test (expected {s_lastMove.X},{s_lastMove.Y}, found {p.X},{p.Y}); rerun without touching the mouse");
     }
 
     private static IslandLayout ExpectedLayout()
@@ -373,6 +503,35 @@ public sealed class IslandAppTests
     private static extern int GetDpiForMonitor(nint monitor, int type, out uint dpiX, out uint dpiY);
 #pragma warning restore SYSLIB1054
 
+    /// <summary>Points used by the hover tests; parks the pointer away from the island and restores it afterwards.</summary>
+    private sealed class PointerScope : IDisposable
+    {
+        private readonly Point _saved;
+
+        public PointerScope(IslandLayout layout)
+        {
+            GetCursorPos(out _saved);
+            PillX = layout.Canvas.Left + (int)layout.Compact.CenterX;
+            PillY = layout.Canvas.Top + (int)(layout.Compact.Top + (layout.Compact.Height / 2));
+            PanelY = layout.Canvas.Top + (int)(layout.Expanded.Bottom - layout.Dip(24));
+            OutsideY = layout.Canvas.Bottom + (int)layout.Dip(80);
+            MoveTo(PillX, OutsideY);
+            Thread.Sleep(50);
+        }
+
+        public int PillX { get; }
+
+        public int PillY { get; }
+
+        /// <summary>Inside the expanded panel, below the pill.</summary>
+        public int PanelY { get; }
+
+        /// <summary>Below the island canvas.</summary>
+        public int OutsideY { get; }
+
+        public void Dispose() => SetCursorPos(_saved.X, _saved.Y);
+    }
+
     /// <summary>A running Halo.exe with --diagnostics; its JSON events are collected from standard output.</summary>
     private sealed class IslandProcess : IDisposable
     {
@@ -452,11 +611,56 @@ public sealed class IslandAppTests
 
         public int Count(string name) => _events.Count(e => e["event"]?.GetValue<string>() == name);
 
-        public bool WaitForExit(TimeSpan timeout) => _process.WaitForExit(timeout);
+        public int Count(string name, string phase) => _events.Count(e => e["event"]?.GetValue<string>() == name && e["phase"]?.GetValue<string>() == phase);
+
+        public List<JsonObject> Events(string name) => _events.Where(e => e["event"]?.GetValue<string>() == name).ToList();
+
+        /// <summary>Phases and transitions in order, for assertion messages.</summary>
+        public string Trace() => string.Join(" → ", _events
+            .Where(e => e["event"]?.GetValue<string>() is "phase" or "transition.start")
+            .Select(e => e["event"]!.GetValue<string>() == "phase" ? $"{e["phase"]}({e["source"]})" : $"[{e["dir"]}]"));
+
+        public string? LastPhase() => _events.LastOrDefault(e => e["event"]?.GetValue<string>() == "phase")?["phase"]?.GetValue<string>();
+
+        /// <summary>Waits for a "phase" event with the given phase, optionally one logged after another event.</summary>
+        public JsonObject WaitForPhase(string phase, JsonObject? after = null)
+        {
+            var since = after?["qpc"]!.GetValue<long>() ?? 0;
+            var sw = Stopwatch.StartNew();
+            while (sw.Elapsed < TimeSpan.FromSeconds(15))
+            {
+                var found = _events.FirstOrDefault(e => e["event"]?.GetValue<string>() == "phase" && e["phase"]?.GetValue<string>() == phase && e["qpc"]!.GetValue<long>() > since);
+                if (found is not null)
+                {
+                    return found;
+                }
+
+                Assert.False(_process.HasExited, $"Halo exited while waiting for phase '{phase}'");
+                Thread.Sleep(5);
+            }
+
+            throw new TimeoutException($"No phase '{phase}'.");
+        }
+
+        public bool WaitForExit(TimeSpan timeout)
+        {
+            if (!_process.WaitForExit(timeout))
+            {
+                return false;
+            }
+
+            _process.WaitForExit(); // also drains redirected output, so every event is collected
+            return true;
+        }
 
         /// <summary>Closes the island through a second "Halo.exe --exit" launch and returns how long it took to exit.</summary>
         public TimeSpan Exit()
         {
+            if (_process.HasExited)
+            {
+                return TimeSpan.Zero;
+            }
+
             var sw = Stopwatch.StartNew();
             using var closer = Process.Start(new ProcessStartInfo(ExePath, "--exit") { UseShellExecute = false })!;
             Assert.True(closer.WaitForExit(5000));

@@ -27,13 +27,19 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
     private const uint WmTransitionDone = WmApp + 100;
     private const uint SpiSetClientAreaAnimation = 0x1043;
     private const nuint ClockTimerId = 1;
-    private const int MenuToggle = 1;
+    private const nuint IntentTimerId = 2;
+
+    // Island right-click menu.
+    private const int MenuExpand = 1;
     private const int MenuExit = 2;
+    private const int MenuCollapse = 3;
+
     private static readonly TimeSpan ClockSlack = TimeSpan.FromMilliseconds(40);
 
     private static IslandWindow? s_current;
 
     private readonly DiagnosticsLog? _log;
+    private readonly IslandController _controller;
     private nint _hwnd;
     private uint _taskbarCreated;
     private Compositor? _compositor;
@@ -42,19 +48,25 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
     private IslandVisuals? _visuals;
     private IslandAutomationProvider? _automation;
     private IslandLayout _layout = null!;
-    private IslandState _state = IslandState.Initial;
     private ClockReading _clock = null!;
     private bool _tracking;
+    private bool _menuOpen;
     private bool _reducedMotion;
     private int _transitionId;
 
-    public IslandWindow(DiagnosticsLog? log) => _log = log;
+    public IslandWindow(DiagnosticsLog? log)
+    {
+        _log = log;
+        _controller = new IslandController(new WindowTimer(this), IslandTiming.Default);
+    }
 
-    public bool IsExpanded => _state.IsExpanded;
+    public bool IsExpanded => State.IsExpanded;
 
     public string AccessibleName => $"Halo, {_clock.TimeWithDesignator}, {_clock.LongDate}";
 
-    public string? AccessibleDescription => _state.IsExpanded ? _clock.DayProgressText : null;
+    public string? AccessibleDescription => State.IsExpanded ? _clock.DayProgressText : null;
+
+    private IslandState State => _controller.State;
 
     /// <summary>Creates the window and runs its message loop until the window is closed. Returns the exit code.</summary>
     public int Run()
@@ -99,6 +111,7 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
 
     public void Dispose()
     {
+        _controller.Shutdown();
         _visuals?.Dispose();
         _visuals = null;
         _text?.Dispose();
@@ -198,15 +211,21 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
                     _tracking = true;
                     var tme = new TrackMouseEventInfo { Size = (uint)sizeof(TrackMouseEventInfo), Flags = TmeLeave, Hwnd = hwnd };
                     _ = TrackMouseEvent(&tme);
-                    Apply(IslandInput.PointerEntered, "pointer");
+                }
+
+                // Hover is "inside the target shape", not "inside the window region": during a collapse the region
+                // still covers the expanded shape, and the pointer there must not count as resting on the pill.
+                if (!_menuOpen && GetCapture() != hwnd)
+                {
+                    SetHovered(InsideTarget(LowWord(lParam), HighWord(lParam)));
                 }
 
                 return 0;
             case WmMouseLeave:
                 _tracking = false;
-                if (GetCapture() != hwnd)
+                if (!_menuOpen && GetCapture() != hwnd)
                 {
-                    Apply(IslandInput.PointerLeft, "pointer");
+                    SetHovered(false);
                 }
 
                 return 0;
@@ -214,8 +233,12 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
                 _ = SetCapture(hwnd);
                 Apply(IslandInput.PointerPressed, "pointer");
                 return 0;
+            case WmRButtonDown:
+                // Holding the right button must not let the dwell open the island under the menu.
+                Apply(IslandInput.MenuRequested, "pointer");
+                return 0;
             case WmLButtonUp:
-                var inside = _layout.ShapeFor(_state.Presentation).Contains(LowWord(lParam), HighWord(lParam));
+                var inside = InsideTarget(LowWord(lParam), HighWord(lParam));
 
                 // Handle the release first: ReleaseCapture sends WM_CAPTURECHANGED synchronously, which would
                 // otherwise cancel the press before this click is counted.
@@ -227,16 +250,21 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
                 }
 
                 return 0;
-            case WmCaptureChanged when _state.Pressed:
+            case WmCaptureChanged when State.Pressed:
                 Apply(IslandInput.PointerReleasedOutside, "pointer");
                 return 0;
             case WmRButtonUp:
-                ShowMenu(LowWord(lParam), HighWord(lParam));
+                ShowIslandMenu(_layout.Canvas.Left + LowWord(lParam), _layout.Canvas.Top + HighWord(lParam));
                 return 0;
             case WmGetObject:
                 return _automation?.HandleGetObject(wParam, lParam);
             case WmTimer when (nuint)wParam == ClockTimerId:
                 RefreshClock("minute");
+                return 0;
+            case WmTimer when (nuint)wParam == IntentTimerId:
+                // Win32 timers repeat; the hover timers are one-shot.
+                _ = KillTimer(hwnd, IntentTimerId);
+                Present(_controller.TimerElapsed(), "hover");
                 return 0;
             case WmTimeChange:
                 RefreshClock("time_change");
@@ -246,7 +274,7 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
                 return null;
             case WmTransitionDone when (int)wParam == _transitionId:
                 ApplyRegion(union: false);
-                _log?.Write("transition.end", ("dir", _state.IsExpanded ? "expand" : "collapse"));
+                _log?.Write("transition.end", ("dir", State.IsExpanded ? "expand" : "collapse"));
                 return 0;
             case WmCommandFromInstance:
                 Apply(wParam == 2 ? IslandInput.Toggle : IslandInput.Expand, "instance");
@@ -267,6 +295,9 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
                 _ = DestroyWindow(hwnd);
                 return 0;
             case WmDestroy:
+                // Stop everything that could call back into a closing island: hover timers, clock, UIA.
+                _controller.Shutdown();
+                _ = KillTimer(hwnd, IntentTimerId);
                 _ = KillTimer(hwnd, ClockTimerId);
                 _automation?.Disconnect();
                 _automation = null;
@@ -283,21 +314,28 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
         }
     }
 
-    private void Apply(IslandInput input, string source)
+    private void Apply(IslandInput input, string source) => Present(_controller.Apply(input), source);
+
+    /// <summary>Shows the result of one input: feedback, a shape transition, the input region and UIA events.</summary>
+    private void Present(IslandTransition transition, string source)
     {
-        var transition = IslandStateMachine.Apply(_state, input);
         if (!transition.Changed)
         {
             return;
         }
 
+        var state = transition.Next;
+        if (transition.PhaseChanged)
+        {
+            _log?.Write("phase", ("phase", PhaseToken(state.Phase)), ("source", source));
+        }
+
         var nameBefore = AccessibleName;
-        _state = transition.Next;
         if (transition.PresentationChanged)
         {
             ApplyRegion(union: true);
             var id = ++_transitionId;
-            _log?.Write("transition.start", ("dir", _state.IsExpanded ? "expand" : "collapse"), ("source", source));
+            _log?.Write("transition.start", ("dir", state.IsExpanded ? "expand" : "collapse"), ("source", source));
             var batch = _visuals?.Animate(transition, _reducedMotion);
             if (batch is not null)
             {
@@ -313,7 +351,7 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
             _ = _visuals?.Animate(transition, _reducedMotion);
         }
 
-        _automation?.RaiseChanged(transition.Previous.IsExpanded, _state.IsExpanded, nameBefore, AccessibleName);
+        _automation?.RaiseChanged(transition.Previous.IsExpanded, state.IsExpanded, nameBefore, AccessibleName);
     }
 
     private void RefreshClock(string reason)
@@ -321,7 +359,7 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
         var nameBefore = AccessibleName;
         _clock = ClockFace.Read(DateTimeOffset.Now, CultureInfo.CurrentCulture);
         _visuals?.ShowClock(_clock);
-        _automation?.RaiseChanged(_state.IsExpanded, _state.IsExpanded, nameBefore, AccessibleName);
+        _automation?.RaiseChanged(State.IsExpanded, State.IsExpanded, nameBefore, AccessibleName);
         _log?.Write("clock", ("reason", reason));
         ArmClock();
     }
@@ -340,7 +378,7 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
         var c = _layout.Canvas;
         _ = SetWindowPos(_hwnd, HwndTopmost, c.Left, c.Top, c.Width, c.Height, SwpNoActivate);
         ApplyRegion(union: false);
-        _visuals?.ApplyLayout(_layout, _state);
+        _visuals?.ApplyLayout(_layout, State);
         _log?.Write("placement", ("reason", reason), ("left", c.Left), ("top", c.Top), ("width", c.Width), ("height", c.Height), ("dpi", (int)dpi));
     }
 
@@ -354,49 +392,129 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
         }
         else
         {
-            SetRoundedRegion(_hwnd, Shape(_layout.ShapeFor(_state.Presentation)));
+            SetRoundedRegion(_hwnd, Shape(_layout.ShapeFor(State.Presentation)));
+        }
+    }
+
+    private static string PhaseToken(IslandPhase phase) => phase switch
+    {
+        IslandPhase.Collapsed => "collapsed",
+        IslandPhase.ExpandPending => "expand_pending",
+        IslandPhase.ExpandedByHover => "expanded_hover",
+        IslandPhase.CollapsePending => "collapse_pending",
+        IslandPhase.ExpandedPinned => "expanded_pinned",
+        _ => "unknown",
+    };
+
+    /// <summary>True when a client-area point lies inside the shape of the current (target) presentation.</summary>
+    private bool InsideTarget(int clientX, int clientY) => _layout.ShapeFor(State.Presentation).Contains(clientX, clientY);
+
+    private void SetHovered(bool hovered)
+    {
+        if (hovered != State.Hovered)
+        {
+            Apply(hovered ? IslandInput.PointerEntered : IslandInput.PointerLeft, "pointer");
+        }
+    }
+
+    /// <summary>Re-reads the pointer after a menu closes, because pointer messages were ignored while it was open.</summary>
+    private void SyncPointer()
+    {
+        var inside = GetCursorPos(out var p)
+            && GetAncestor(WindowFromPoint(p), 2) == _hwnd
+            && InsideTarget(p.X - _layout.Canvas.Left, p.Y - _layout.Canvas.Top);
+        SetHovered(inside);
+    }
+
+    private void ShowIslandMenu(int x, int y)
+    {
+        // The item reflects the state when the menu opens; it maps to Expand or Collapse, never Toggle, so it does
+        // what its label says even if the state changes while the menu is open.
+        var expanded = State.IsExpanded;
+        var command = RunMenu(x, y, 0, [(expanded ? MenuCollapse : MenuExpand, expanded ? "Collapse" : "Expand"), (0, null), (MenuExit, "Exit Halo")], 0);
+        switch (command)
+        {
+            case MenuExpand:
+                Apply(IslandInput.Expand, "menu");
+                break;
+            case MenuCollapse:
+                Apply(IslandInput.Collapse, "menu");
+                break;
+            case MenuExit:
+                _log?.Write("exit.request", ("source", "menu"));
+                _ = PostMessageW(_hwnd, WmClose, 0, 0);
+                break;
         }
     }
 
     /// <summary>
-    /// Right-click menu. Menus need their owner in the foreground, so the island activates only for this explicit
-    /// user action and hands the foreground back to the previous window afterwards (FR-ISL-06).
+    /// Shows a popup menu at a screen point and returns the chosen id (0 if dismissed). Menus need their owner in the
+    /// foreground, so the island activates only for this explicit user action and hands the foreground back to the
+    /// previous window afterwards (FR-ISL-06). Pointer messages are ignored while the menu is open and re-read after.
     /// </summary>
-    private void ShowMenu(int clientX, int clientY)
+    private int RunMenu(int x, int y, uint align, ReadOnlySpan<(int Id, string? Text)> items, int defaultId)
     {
         var menu = CreatePopupMenu();
         if (menu == 0)
         {
-            return;
+            return 0;
         }
 
+        Apply(IslandInput.MenuRequested, "menu");
+        _menuOpen = true;
         try
         {
-            _ = AppendMenuW(menu, MfString, MenuToggle, _state.IsExpanded ? "Collapse" : "Expand");
-            _ = AppendMenuW(menu, MfSeparator, 0, null);
-            _ = AppendMenuW(menu, MfString, MenuExit, "Exit Halo");
+            foreach (var (id, text) in items)
+            {
+                _ = text is null ? AppendMenuW(menu, MfSeparator, 0, null) : AppendMenuW(menu, MfString, (nuint)id, text);
+            }
+
+            if (defaultId != 0)
+            {
+                _ = SetMenuDefaultItem(menu, (uint)defaultId, 0);
+            }
+
             var previous = GetForegroundWindow();
             _ = SetForegroundWindow(_hwnd);
-            var command = TrackPopupMenuEx(menu, TpmReturnCmd | TpmRightButton, _layout.Canvas.Left + clientX, _layout.Canvas.Top + clientY, _hwnd, 0);
+            var command = TrackPopupMenuEx(menu, TpmReturnCmd | TpmRightButton | align, x, y, _hwnd, 0);
             _ = PostMessageW(_hwnd, 0, 0, 0);
             if (previous != 0 && previous != _hwnd && IsWindow(previous))
             {
                 _ = SetForegroundWindow(previous);
             }
 
-            switch (command)
-            {
-                case MenuToggle:
-                    Apply(IslandInput.Toggle, "menu");
-                    break;
-                case MenuExit:
-                    _ = PostMessageW(_hwnd, WmClose, 0, 0);
-                    break;
-            }
+            return command;
         }
         finally
         {
             _ = DestroyMenu(menu);
+            _menuOpen = false;
+            if (!_controller.IsShutDown)
+            {
+                SyncPointer();
+            }
+        }
+    }
+
+    /// <summary>The controller's one-shot timer as a Win32 timer on the UI thread (no extra thread).</summary>
+    private sealed class WindowTimer(IslandWindow owner) : IIslandTimer
+    {
+        public void Start(TimeSpan delay)
+        {
+            // USER_TIMER_MINIMUM is 10 ms; a zero dwell therefore fires on the next timer tick.
+            var ms = (uint)Math.Max(10, Math.Ceiling(delay.TotalMilliseconds));
+            if (owner._hwnd != 0)
+            {
+                _ = SetTimer(owner._hwnd, IntentTimerId, ms, 0);
+            }
+        }
+
+        public void Cancel()
+        {
+            if (owner._hwnd != 0)
+            {
+                _ = KillTimer(owner._hwnd, IntentTimerId);
+            }
         }
     }
 }

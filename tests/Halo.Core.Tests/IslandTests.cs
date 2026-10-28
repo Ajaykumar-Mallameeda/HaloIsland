@@ -83,7 +83,7 @@ public class IslandStateMachineTests
     [Fact]
     public void StartsCompactWithoutFeedback()
     {
-        Assert.Equal(new IslandState(IslandPresentation.Compact, false, false), IslandState.Initial);
+        Assert.Equal(new IslandState(IslandPhase.Collapsed, false, false), IslandState.Initial);
     }
 
     [Fact]
@@ -130,7 +130,7 @@ public class IslandStateMachineTests
     {
         var s = Run(IslandState.Initial, IslandInput.Expand, IslandInput.PointerEntered, IslandInput.PointerPressed, IslandInput.PointerLeft);
 
-        Assert.Equal(new IslandState(IslandPresentation.Expanded, false, false), s);
+        Assert.Equal(new IslandState(IslandPhase.ExpandedPinned, false, false), s);
     }
 
     [Fact]

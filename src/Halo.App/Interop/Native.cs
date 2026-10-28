@@ -15,6 +15,7 @@ internal static unsafe partial class Native
     public const uint WmMouseMove = 0x0200;
     public const uint WmLButtonDown = 0x0201;
     public const uint WmLButtonUp = 0x0202;
+    public const uint WmRButtonDown = 0x0204;
     public const uint WmRButtonUp = 0x0205;
     public const uint WmMouseLeave = 0x02A3;
     public const uint WmCaptureChanged = 0x0215;
@@ -293,6 +294,20 @@ internal static unsafe partial class Native
     [LibraryImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static partial bool DestroyMenu(nint menu);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool SetMenuDefaultItem(nint menu, uint item, uint byPosition);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool GetCursorPos(out Point point);
+
+    [LibraryImport("user32.dll")]
+    public static partial nint WindowFromPoint(Point point);
+
+    [LibraryImport("user32.dll")]
+    public static partial nint GetAncestor(nint hwnd, uint flags);
 
     [LibraryImport("user32.dll")]
     private static partial int SetWindowRgn(nint hwnd, nint region, [MarshalAs(UnmanagedType.Bool)] bool redraw);
