@@ -34,11 +34,17 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
     private const int MenuExit = 2;
     private const int MenuCollapse = 3;
 
+    // Tray menu (FR-APP-01).
+    private const int TrayOpen = 11;
+    private const int TrayCollapse = 12;
+    private const int TrayExit = 13;
+
     private static readonly TimeSpan ClockSlack = TimeSpan.FromMilliseconds(40);
 
     private static IslandWindow? s_current;
 
     private readonly DiagnosticsLog? _log;
+    private readonly IslandFault _fault;
     private readonly IslandController _controller;
     private nint _hwnd;
     private uint _taskbarCreated;
@@ -47,6 +53,7 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
     private TextRenderer? _text;
     private IslandVisuals? _visuals;
     private IslandAutomationProvider? _automation;
+    private TrayIcon? _tray;
     private IslandLayout _layout = null!;
     private ClockReading _clock = null!;
     private bool _tracking;
@@ -54,9 +61,10 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
     private bool _reducedMotion;
     private int _transitionId;
 
-    public IslandWindow(DiagnosticsLog? log)
+    public IslandWindow(DiagnosticsLog? log, IslandFault fault = IslandFault.None)
     {
         _log = log;
+        _fault = fault;
         _controller = new IslandController(new WindowTimer(this), IslandTiming.Default);
     }
 
@@ -88,6 +96,14 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
         _visuals.ShowClock(_clock);
         _automation = new IslandAutomationProvider(_hwnd, this);
         ArmClock();
+        _tray = new TrayIcon(_hwnd);
+        AddTray("initial");
+        if (_fault == IslandFault.Startup)
+        {
+            // Test hook (--diagnostics only): fail after everything is created, to prove nothing is left behind.
+            throw new InvalidOperationException("Injected startup fault.");
+        }
+
         _ = ShowWindow(_hwnd, SwShowNoActivate);
 
         // Completes once the first frame of the visual tree has been committed to DWM.
@@ -109,9 +125,20 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
 
     public void RequestToggle() => Apply(IslandInput.Toggle, "automation");
 
+    /// <summary>
+    /// Releases everything the island owns. After a normal exit WM_DESTROY has already stopped the timers and removed
+    /// the tray icon; after a startup failure, destroying the window here runs that same clean-up.
+    /// </summary>
     public void Dispose()
     {
         _controller.Shutdown();
+        if (_hwnd != 0 && IsWindow(_hwnd))
+        {
+            _ = DestroyWindow(_hwnd);
+        }
+
+        _tray?.Dispose();
+        _tray = null;
         _visuals?.Dispose();
         _visuals = null;
         _text?.Dispose();
@@ -266,6 +293,9 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
                 _ = KillTimer(hwnd, IntentTimerId);
                 Present(_controller.TimerElapsed(), "hover");
                 return 0;
+            case TrayIcon.CallbackMessage:
+                OnTrayEvent((uint)(lParam & 0xFFFF), LowWord(wParam), HighWord(wParam));
+                return 0;
             case WmTimeChange:
                 RefreshClock("time_change");
                 return 0;
@@ -281,9 +311,11 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
                 return 0;
             case WmDpiChanged:
                 Place("dpi_changed");
+                _tray?.UpdateDpi(PrimaryWorkArea().Dpi);
                 return 0;
             case WmDisplayChange:
                 Place("display_changed");
+                _tray?.UpdateDpi(PrimaryWorkArea().Dpi);
                 return null;
             case WmSettingChange when wParam == (nint)SpiSetWorkArea:
                 Place("work_area_changed");
@@ -295,19 +327,26 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
                 _ = DestroyWindow(hwnd);
                 return 0;
             case WmDestroy:
-                // Stop everything that could call back into a closing island: hover timers, clock, UIA.
+                // Stop everything that could call back into a closing island: hover timers, clock, tray, UIA.
                 _controller.Shutdown();
                 _ = KillTimer(hwnd, IntentTimerId);
                 _ = KillTimer(hwnd, ClockTimerId);
+                if (_tray?.Remove() is { } removed)
+                {
+                    // The shell's own answer: true only if it still had the icon.
+                    _log?.Write("tray", ("status", removed ? "removed" : "remove_failed"), ("reason", "exit"), ("hwnd", (long)_hwnd));
+                }
+
                 _automation?.Disconnect();
                 _automation = null;
                 PostQuitMessage(0);
                 return 0;
             default:
-                // Explorer restarted: the work area may have changed (FR-ISL-11).
+                // Explorer restarted: the work area may have changed (FR-ISL-11) and the tray icon is gone.
                 if (msg == _taskbarCreated && _taskbarCreated != 0)
                 {
                     Place("taskbar_created");
+                    AddTray("taskbar_created");
                 }
 
                 return null;
@@ -426,6 +465,56 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
         SetHovered(inside);
     }
 
+    private void AddTray(string reason)
+    {
+        if (_tray is null)
+        {
+            return;
+        }
+
+        var ok = _fault != IslandFault.Tray && _tray.Add(PrimaryWorkArea().Dpi);
+
+        // The island stays fully usable without the icon (right-click menu, --exit), and TaskbarCreated retries.
+        _log?.Write("tray", ("status", ok ? "added" : "failed"), ("reason", reason), ("hwnd", (long)_hwnd));
+    }
+
+    /// <summary>Tray icon events (NOTIFYICON_VERSION_4): left click or Space/Enter toggles, the context menu offers the rest.</summary>
+    private void OnTrayEvent(uint trayEvent, int x, int y)
+    {
+        switch (trayEvent)
+        {
+            case NinSelect:
+                Apply(IslandInput.Toggle, "tray");
+                break;
+            case NinKeySelect:
+                // Enter can deliver NIN_KEYSELECT twice, so the keyboard opens rather than toggles.
+                Apply(IslandInput.Expand, "tray");
+                break;
+            case WmContextMenu:
+                ShowTrayMenu(x, y);
+                break;
+        }
+    }
+
+    private void ShowTrayMenu(int x, int y)
+    {
+        var align = (GetSystemMetrics(SmMenuDropAlignment) != 0 ? TpmRightAlign : 0) | TpmBottomAlign;
+        var command = RunMenu(x, y, align, [(TrayOpen, "Open Halo"), (TrayCollapse, "Collapse Halo"), (0, null), (TrayExit, "Exit Halo")], TrayOpen);
+        switch (command)
+        {
+            case TrayOpen:
+                Apply(IslandInput.Expand, "tray");
+                break;
+            case TrayCollapse:
+                Apply(IslandInput.Collapse, "tray");
+                break;
+            case TrayExit:
+                _log?.Write("exit.request", ("source", "tray"));
+                _ = PostMessageW(_hwnd, WmClose, 0, 0);
+                break;
+        }
+    }
+
     private void ShowIslandMenu(int x, int y)
     {
         // The item reflects the state when the menu opens; it maps to Expand or Collapse, never Toggle, so it does
@@ -517,6 +606,18 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
             }
         }
     }
+}
+
+/// <summary>Fault injection for desktop tests; honoured only together with <c>--diagnostics</c>.</summary>
+internal enum IslandFault
+{
+    None,
+
+    /// <summary>Behave as if the shell refused the tray icon.</summary>
+    Tray,
+
+    /// <summary>Fail after the window, visuals and tray icon exist, before the message loop.</summary>
+    Startup,
 }
 
 /// <summary>

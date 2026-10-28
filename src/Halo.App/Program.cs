@@ -7,7 +7,8 @@ namespace Halo.App;
 /// <summary>
 /// Project Halo entry point. Arguments:
 /// <c>--exit</c> closes a running island; <c>--diagnostics</c> writes privacy-safe JSON events to standard output.
-/// A second launch while the island runs asks it to expand and exits (single instance, FR-APP-04).
+/// A second launch while the island runs asks it to expand and exits (single instance, FR-APP-04). The tray icon
+/// (FR-APP-01) offers Open, Collapse and Exit.
 /// </summary>
 internal static class Program
 {
@@ -37,7 +38,7 @@ internal static class Program
         try
         {
             var log = args.Contains("--diagnostics", StringComparer.Ordinal) ? new DiagnosticsLog(Console.Out) : null;
-            using var window = new IslandWindow(log);
+            using var window = new IslandWindow(log, log is null ? IslandFault.None : FaultFromEnvironment());
             return window.Run();
         }
         catch (Exception ex) when (ex is InvalidOperationException or COMException)
@@ -51,4 +52,12 @@ internal static class Program
             instance.ReleaseMutex();
         }
     }
+
+    /// <summary>Desktop-test fault injection: <c>HALO_TEST_FAULT=tray|startup</c>, read only with --diagnostics.</summary>
+    private static IslandFault FaultFromEnvironment() => Environment.GetEnvironmentVariable("HALO_TEST_FAULT") switch
+    {
+        "tray" => IslandFault.Tray,
+        "startup" => IslandFault.Startup,
+        _ => IslandFault.None,
+    };
 }

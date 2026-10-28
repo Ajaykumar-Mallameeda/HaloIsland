@@ -15,8 +15,8 @@ namespace Halo.App.Tests;
 
 /// <summary>
 /// Starts the real Halo.exe and checks it on the desktop: placement, window styles, input region, click toggling,
-/// focus, UI Automation, single instance, hover-intent timing and clean exit. One class so the tests never run
-/// concurrently.
+/// focus, UI Automation, single instance, hover-intent timing, the tray icon and its menu, injected start-up
+/// failures and clean exit. One class so the tests never run concurrently.
 /// </summary>
 [Trait("Category", "Integration")]
 public sealed class IslandAppTests
@@ -155,6 +155,7 @@ public sealed class IslandAppTests
         Assert.Equal(0, second.ExitCode);
         Assert.Equal("instance", island.WaitFor("transition.start")["source"]!.GetValue<string>());
         Assert.False(island.HasExited);
+        Assert.Single(Process.GetProcessesByName("Halo"));
     }
 
     [Fact]
@@ -291,8 +292,172 @@ public sealed class IslandAppTests
         Assert.Equal(0, FindWindowW("ProjectHalo.Island", null));
     }
 
+    [Fact]
+    public void TrayIconIsAddedWhileRunningAndRemovedOnExit()
+    {
+        using var island = IslandProcess.Start();
+        Assert.Equal("added", island.WaitFor("tray")["status"]!.GetValue<string>());
+
+        // The shell knows the icon (its rectangle is the overflow chevron when the icon is hidden there).
+        Assert.Equal(0, TrayIconRect(island.Hwnd));
+
+        island.Exit();
+
+        // After exit the shell answers "not found" for any dead window, so the proof is its reply to our delete.
+        Assert.Contains(island.Events("tray"), e => e["status"]?.GetValue<string>() == "removed");
+        Assert.DoesNotContain(island.Events("tray"), e => e["status"]?.GetValue<string>() == "remove_failed");
+    }
+
+    /// <summary>
+    /// The real path: Explorer's notification-area button (UIA Invoke = left click, SendInput right click) sends the
+    /// callback, the island shows its menu, and keyboard input picks items.
+    /// </summary>
+    [Fact]
+    public void TrayIconTogglesAndItsMenuOpensCollapsesAndExits()
+    {
+        var layout = ExpectedLayout();
+        using var pointer = new PointerScope(layout);
+        using var automation = new UIA3Automation();
+        using var island = IslandProcess.Start();
+        island.WaitFor("tray");
+        try
+        {
+            // Left click on the icon toggles.
+            FindTrayButton(automation).Patterns.Invoke.Pattern.Invoke();
+            var expand = island.WaitFor("transition.start");
+            Assert.Equal(("expand", "tray"), (expand["dir"]!.GetValue<string>(), expand["source"]!.GetValue<string>()));
+            island.WaitFor("transition.end");
+
+            // Menu: "Collapse Halo" (Down, Down, Enter).
+            OpenTrayMenu(automation);
+            PressKeys(0x28, 0x28, 0x0D);
+            var collapse = island.WaitFor("transition.start", skip: 1);
+            Assert.Equal(("collapse", "tray"), (collapse["dir"]!.GetValue<string>(), collapse["source"]!.GetValue<string>()));
+            island.WaitFor("transition.end", skip: 1);
+
+            // Menu: "Open Halo" (Down, Enter) pins the island open.
+            OpenTrayMenu(automation);
+            PressKeys(0x28, 0x0D);
+            var open = island.WaitFor("transition.start", skip: 2);
+            Assert.Equal(("expand", "tray"), (open["dir"]!.GetValue<string>(), open["source"]!.GetValue<string>()));
+            Assert.Equal("expanded_pinned", island.LastPhase());
+            island.WaitFor("transition.end", skip: 2);
+
+            // Menu: "Exit Halo" (Down ×3 skips the separator, Enter).
+            OpenTrayMenu(automation);
+            PressKeys(0x28, 0x28, 0x28, 0x0D);
+            Assert.True(island.WaitForExit(TimeSpan.FromSeconds(10)), "Halo did not exit from the tray menu");
+            Assert.Equal(0, island.ExitCode);
+            Assert.Contains(island.Events("exit.request"), e => e["source"]?.GetValue<string>() == "tray");
+            Assert.Equal(0, FindWindowW("ProjectHalo.Island", null));
+            Assert.Contains(island.Events("tray"), e => e["status"]?.GetValue<string>() == "removed");
+            Assert.Empty(Process.GetProcessesByName("Halo"));
+
+            // What the user sees: no Halo button left in the notification area.
+            Assert.Null(FindTrayButton(automation, TimeSpan.FromSeconds(2)));
+        }
+        finally
+        {
+            CloseTrayOverflow(automation);
+        }
+    }
+
+    [Fact]
+    public void TrayFailureKeepsTheIslandUsableAndExitsCleanly()
+    {
+        using var island = IslandProcess.Start(fault: "tray");
+
+        Assert.Equal("failed", island.WaitFor("tray")["status"]!.GetValue<string>());
+        Assert.NotEqual(0, TrayIconRect(island.Hwnd));
+        using var automation = new UIA3Automation();
+        automation.FromHandle(island.Hwnd).Patterns.ExpandCollapse.Pattern.Expand();
+        island.WaitFor("transition.end");
+
+        island.Exit();
+        Assert.Equal(0, island.ExitCode);
+        Assert.Single(island.Events("tray")); // never added, so nothing to remove
+        Assert.Empty(Process.GetProcessesByName("Halo"));
+    }
+
+    [Fact]
+    public void StartupFailureLeavesNoWindowTrayIconOrProcess()
+    {
+        using (var failed = IslandProcess.Start(fault: "startup", waitForReady: false))
+        {
+            Assert.True(failed.WaitForExit(TimeSpan.FromSeconds(10)), "Halo kept running after a startup failure");
+            Assert.Equal(1, failed.ExitCode);
+            var tray = failed.Events("tray").Select(e => e["status"]!.GetValue<string>()).ToList();
+            Assert.Equal(["added", "removed"], tray); // the icon existed before the failure and the shell deleted it
+            Assert.Empty(failed.Events("ready"));
+            Assert.Equal(0, FindWindowW("ProjectHalo.Island", null));
+            Assert.Empty(Process.GetProcessesByName("Halo"));
+        }
+
+        // The single-instance mutex was released: a normal launch works straight away.
+        using var next = IslandProcess.Start();
+        Assert.False(next.HasExited);
+    }
+
     private static double Ms(JsonObject later, JsonObject earlier) =>
         (later["qpc"]!.GetValue<long>() - earlier["qpc"]!.GetValue<long>()) * 1000.0 / Stopwatch.Frequency;
+
+    /// <summary>S_OK (0) while the shell has the icon registered.</summary>
+    private static int TrayIconRect(nint hwnd)
+    {
+        var id = new NotifyIconIdentifier { Size = (uint)Marshal.SizeOf<NotifyIconIdentifier>(), Hwnd = hwnd, Id = 1 };
+        return ShellNotifyIconGetRect(ref id, out _);
+    }
+
+    /// <summary>The Halo button in the notification area, opening the overflow flyout when the icon lives there.</summary>
+    private static AutomationElement FindTrayButton(UIA3Automation automation) =>
+        FindTrayButton(automation, TimeSpan.FromSeconds(8)) ?? throw new TimeoutException("The Halo tray button was not found in the notification area.");
+
+    private static AutomationElement? FindTrayButton(UIA3Automation automation, TimeSpan timeout)
+    {
+        var desktop = automation.GetDesktop();
+        var sw = Stopwatch.StartNew();
+        var openedOverflow = false;
+        while (sw.Elapsed < timeout)
+        {
+            foreach (var host in new[] { "TopLevelWindowForOverflowXamlIsland", "Shell_TrayWnd" })
+            {
+                var button = desktop.FindFirstChild(cf => cf.ByClassName(host))?
+                    .FindFirstDescendant(cf => cf.ByAutomationId("NotifyItemIcon").And(cf.ByName("Halo")));
+                if (button is not null && !button.IsOffscreen && button.BoundingRectangle.Width > 0)
+                {
+                    return button;
+                }
+            }
+
+            if (!openedOverflow)
+            {
+                desktop.FindFirstChild(cf => cf.ByClassName("Shell_TrayWnd"))?
+                    .FindFirstDescendant(cf => cf.ByName("Show Hidden Icons"))?.Patterns.Invoke.Pattern.Invoke();
+                openedOverflow = true;
+            }
+
+            Thread.Sleep(150);
+        }
+
+        return null;
+    }
+
+    private static void OpenTrayMenu(UIA3Automation automation)
+    {
+        var r = FindTrayButton(automation).BoundingRectangle;
+        RightClick(r.X + (r.Width / 2), r.Y + (r.Height / 2));
+        Assert.NotEqual(0, WaitForWindow("#32768"));
+        Thread.Sleep(150);
+    }
+
+    private static void CloseTrayOverflow(UIA3Automation automation)
+    {
+        var overflow = automation.GetDesktop().FindFirstChild(cf => cf.ByClassName("TopLevelWindowForOverflowXamlIsland"));
+        if (overflow?.FindFirstDescendant(cf => cf.ByAutomationId("NotifyItemIcon")) is { IsOffscreen: false })
+        {
+            PressKeys(0x1B); // Esc closes the flyout
+        }
+    }
 
     /// <summary>Moves the pointer without clicking (one absolute SendInput move) and waits until it is there.</summary>
     private static void MoveTo(int x, int y)
@@ -399,6 +564,15 @@ public sealed class IslandAppTests
         return 0;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NotifyIconIdentifier
+    {
+        public uint Size;
+        public nint Hwnd;
+        public uint Id;
+        public Guid Item;
+    }
+
     /// <summary>INPUT with a KEYBDINPUT (padded to the size of the union, 40 bytes on x64).</summary>
     [StructLayout(LayoutKind.Sequential)]
     private struct KeyInput
@@ -501,6 +675,9 @@ public sealed class IslandAppTests
 
     [DllImport("shcore.dll")]
     private static extern int GetDpiForMonitor(nint monitor, int type, out uint dpiX, out uint dpiY);
+
+    [DllImport("shell32.dll", EntryPoint = "Shell_NotifyIconGetRect")]
+    private static extern int ShellNotifyIconGetRect(ref NotifyIconIdentifier identifier, out Rect rect);
 #pragma warning restore SYSLIB1054
 
     /// <summary>Points used by the hover tests; parks the pointer away from the island and restores it afterwards.</summary>
@@ -572,7 +749,7 @@ public sealed class IslandAppTests
 
         public int ExitCode => _process.ExitCode;
 
-        public static IslandProcess Start()
+        public static IslandProcess Start(string? fault = null, bool waitForReady = true)
         {
             // A previous failed test could have left an island running; the single-instance check would then exit.
             var stale = FindWindowW("ProjectHalo.Island", null);
@@ -584,7 +761,18 @@ public sealed class IslandAppTests
             }
 
             var info = new ProcessStartInfo(ExePath, "--diagnostics") { UseShellExecute = false, RedirectStandardOutput = true, CreateNoWindow = true };
+            info.Environment.Remove("HALO_TEST_FAULT");
+            if (fault is not null)
+            {
+                info.Environment["HALO_TEST_FAULT"] = fault;
+            }
+
             var island = new IslandProcess(Process.Start(info)!);
+            if (!waitForReady)
+            {
+                return island;
+            }
+
             island.WaitFor("ready");
             island.Hwnd = FindWindowW("ProjectHalo.Island", null);
             Assert.NotEqual(0, island.Hwnd);

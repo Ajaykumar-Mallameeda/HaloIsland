@@ -17,6 +17,7 @@ internal static unsafe partial class Native
     public const uint WmLButtonUp = 0x0202;
     public const uint WmRButtonDown = 0x0204;
     public const uint WmRButtonUp = 0x0205;
+    public const uint WmContextMenu = 0x007B;
     public const uint WmMouseLeave = 0x02A3;
     public const uint WmCaptureChanged = 0x0215;
     public const uint WmPowerBroadcast = 0x0218;
@@ -48,6 +49,22 @@ internal static unsafe partial class Native
     public const uint TpmRightButton = 0x0002;
     public const uint TpmTopAlign = 0x0000;
     public const uint TpmCenterAlign = 0x0004;
+    public const uint TpmRightAlign = 0x0008;
+    public const uint TpmBottomAlign = 0x0020;
+    public const int SmMenuDropAlignment = 40;
+    public const int SmCxSmIcon = 49;
+
+    public const uint NimAdd = 0;
+    public const uint NimModify = 1;
+    public const uint NimDelete = 2;
+    public const uint NimSetVersion = 4;
+    public const uint NifMessage = 0x01;
+    public const uint NifIcon = 0x02;
+    public const uint NifTip = 0x04;
+    public const uint NifShowTip = 0x80;
+    public const uint NotifyIconVersion4 = 4;
+    public const uint NinSelect = 0x0400;
+    public const uint NinKeySelect = 0x0401;
 
     [StructLayout(LayoutKind.Sequential)]
     public struct Rect
@@ -111,6 +128,53 @@ internal static unsafe partial class Native
         public uint Flags;
         public nint Hwnd;
         public uint HoverTime;
+    }
+
+    /// <summary>NOTIFYICONDATAW (shellapi.h), 976 bytes on x64.</summary>
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    public struct NotifyIconData
+    {
+        public uint Size;
+        public nint Hwnd;
+        public uint Id;
+        public uint Flags;
+        public uint CallbackMessage;
+        public nint Icon;
+        public fixed char Tip[128];
+        public uint State;
+        public uint StateMask;
+        public fixed char Info[256];
+        public uint Version;
+        public fixed char InfoTitle[64];
+        public uint InfoFlags;
+        public Guid GuidItem;
+        public nint BalloonIcon;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct IconInfo
+    {
+        public int IsIcon;
+        public uint HotspotX;
+        public uint HotspotY;
+        public nint Mask;
+        public nint Color;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct BitmapInfoHeader
+    {
+        public uint Size;
+        public int Width;
+        public int Height;
+        public ushort Planes;
+        public ushort BitCount;
+        public uint Compression;
+        public uint SizeImage;
+        public int XPelsPerMeter;
+        public int YPelsPerMeter;
+        public uint ClrUsed;
+        public uint ClrImportant;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -308,6 +372,33 @@ internal static unsafe partial class Native
 
     [LibraryImport("user32.dll")]
     public static partial nint GetAncestor(nint hwnd, uint flags);
+
+    [LibraryImport("user32.dll")]
+    public static partial int GetSystemMetrics(int index);
+
+    [LibraryImport("user32.dll")]
+    public static partial int GetSystemMetricsForDpi(int index, uint dpi);
+
+    [LibraryImport("shell32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool Shell_NotifyIconW(uint message, NotifyIconData* data);
+
+    [LibraryImport("user32.dll")]
+    public static partial nint CreateIconIndirect(IconInfo* info);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool DestroyIcon(nint icon);
+
+    [LibraryImport("gdi32.dll")]
+    public static partial nint CreateDIBSection(nint hdc, BitmapInfoHeader* info, uint usage, void** bits, nint section, uint offset);
+
+    [LibraryImport("gdi32.dll")]
+    public static partial nint CreateBitmap(int width, int height, uint planes, uint bitCount, void* bits);
+
+    [LibraryImport("gdi32.dll", EntryPoint = "DeleteObject")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool DeleteGdiObject(nint handle);
 
     [LibraryImport("user32.dll")]
     private static partial int SetWindowRgn(nint hwnd, nint region, [MarshalAs(UnmanagedType.Bool)] bool redraw);

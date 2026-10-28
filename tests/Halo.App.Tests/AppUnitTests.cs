@@ -67,6 +67,25 @@ public class AutomationProviderTests
     }
 }
 
+public class TrayInteropTests
+{
+    [Fact]
+    public unsafe void NotifyIconDataMatchesTheWindowsLayout()
+    {
+        // sizeof(NOTIFYICONDATAW) on x64; a wrong size makes Shell_NotifyIconW fail.
+        Assert.Equal(976, sizeof(Native.NotifyIconData));
+        Assert.Equal(32, sizeof(Native.IconInfo));
+        Assert.Equal(40, sizeof(Native.BitmapInfoHeader));
+    }
+
+    [Fact]
+    public void CallbackMessageDoesNotCollideWithOtherIslandMessages()
+    {
+        Assert.NotEqual(IslandWindow.WmCommandFromInstance, TrayIcon.CallbackMessage);
+        Assert.InRange(TrayIcon.CallbackMessage, Native.WmApp, 0xBFFFu);
+    }
+}
+
 public class DiagnosticsLogTests
 {
     [Fact]
