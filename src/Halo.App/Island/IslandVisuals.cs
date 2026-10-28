@@ -97,6 +97,12 @@ internal sealed class IslandVisuals : IDisposable
     private readonly SpriteVisual _volumeThumb;
     private VolumeReading? _volume;
 
+    // Status cluster (M3-F04/F05): top right of the open clock view, in place of the wordmark.
+    private readonly TextLine _statusGlyphs;
+    private readonly TextLine _statusText;
+    private string _statusGlyphText = string.Empty;
+    private string _statusValue = string.Empty;
+
     public IslandVisuals(Compositor compositor, CompositionTarget target, TextRenderer text, IslandLayout layout)
     {
         ArgumentNullException.ThrowIfNull(target);
@@ -139,6 +145,8 @@ internal sealed class IslandVisuals : IDisposable
         _longDate = new TextLine(this, _clockGroup);
         _wordmark = new TextLine(this, _clockGroup);
         _progressLabel = new TextLine(this, _clockGroup);
+        _statusGlyphs = new TextLine(this, _clockGroup);
+        _statusText = new TextLine(this, _clockGroup);
         _progressTrack = compositor.CreateSpriteVisual();
         _progressTrack.Brush = compositor.CreateColorBrush(Track);
         _progressFill = compositor.CreateSpriteVisual();
@@ -242,6 +250,8 @@ internal sealed class IslandVisuals : IDisposable
         _compactTime.Place(c.Right - layout.Dip(17 + 120), c.Top, layout.Dip(120), c.Height, Format(TextFont, 14, Semibold, TextAlign.Trailing), Primary, smallSize: Px(11));
         _bigTime.Place(e.Left + layout.Dip(24), e.Top + layout.Dip(16), layout.Dip(260), layout.Dip(62), Format(DisplayFont, 46, Semibold, TextAlign.Leading), Primary, smallSize: Px(18));
         _wordmark.Place(e.Right - layout.Dip(24 + 100), e.Top + layout.Dip(26), layout.Dip(100), layout.Dip(20), Format(TextFont, 12, Semibold, TextAlign.Trailing), Tertiary);
+        _statusText.Place(e.Right - layout.Dip(24 + 38), e.Top + layout.Dip(24), layout.Dip(38), layout.Dip(24), Format(TextFont, 12.5, Semibold, TextAlign.Trailing), Secondary);
+        _statusGlyphs.Place(e.Right - layout.Dip(24 + 38 + 3 + 64), e.Top + layout.Dip(24), layout.Dip(64), layout.Dip(24), Format(IconFont, 15, Regular, TextAlign.Trailing), Secondary);
         _longDate.Place(e.Left + layout.Dip(26), e.Top + layout.Dip(78), layout.Dip(368), layout.Dip(24), Format(TextFont, 15, Regular, TextAlign.Leading), Secondary);
         _progressLabel.Place(e.Left + layout.Dip(26), e.Top + layout.Dip(132), layout.Dip(368), layout.Dip(20), Format(TextFont, 12.5, Regular, TextAlign.Leading), Tertiary);
         _progressTrack.Offset = new Vector3(Snap(e.Left + layout.Dip(26)), Snap(e.Top + layout.Dip(116)), 0);
@@ -330,6 +340,16 @@ internal sealed class IslandVisuals : IDisposable
     {
         _volume = reading;
         _ = DrawVolume();
+    }
+
+    /// <summary>
+    /// Shows status icons (icon-font glyphs, for example network and battery) and a short value ("82%") at the top right
+    /// of the open clock view. Both empty brings back the "Halo" wordmark.
+    /// </summary>
+    public void ShowStatus(string glyphs, string text)
+    {
+        (_statusGlyphText, _statusValue) = (glyphs, text);
+        _ = DrawStatus();
     }
 
     /// <summary>Shows the content of a transient alert (null clears it). Only changed lines are redrawn.</summary>
@@ -433,7 +453,16 @@ internal sealed class IslandVisuals : IDisposable
 
     private IEnumerable<TextLine> Lines() => [_compactDate, _compactTime, _bigTime, _longDate, _wordmark, _progressLabel, _alertGlyph, _alertWide, _alertNarrow, _alertValue,
         _artPlaceholder, _mediaTitle, _mediaArtist, _mediaTime, _mediaClock, _compactMediaGlyph, _compactMediaTitle, _buttonPrevious, _buttonPlayPause, _buttonNext,
-        _volumeGlyph, _volumeValue, _volumeNone];
+        _volumeGlyph, _volumeValue, _volumeNone, _statusGlyphs, _statusText];
+
+    private bool DrawStatus()
+    {
+        var any = _statusGlyphText.Length > 0 || _statusValue.Length > 0;
+        var ok = _wordmark.Show(any ? string.Empty : "Halo");
+        ok &= _statusGlyphs.Show(_statusGlyphText);
+        ok &= _statusText.Show(_statusValue);
+        return ok;
+    }
 
     private void PlaceVolume(IslandLayout layout)
     {
@@ -566,7 +595,7 @@ internal sealed class IslandVisuals : IDisposable
             RoundEnds(_progressFill);
         }
 
-        ok &= _wordmark.Show("Halo");
+        ok &= DrawStatus();
         ok &= DrawMedia();
         ok &= DrawVolume();
         if (!ok)
@@ -584,7 +613,7 @@ internal sealed class IslandVisuals : IDisposable
                     & _bigTime.Show(again.TimeWithDesignator, again.Designator.Length) & _longDate.Show(again.LongDate) & _progressLabel.Show(again.DayProgressText);
             }
 
-            _ = _wordmark.Show("Halo");
+            _ = DrawStatus();
             _artShown = -1;
             _ = DrawMedia();
             _ = DrawVolume();

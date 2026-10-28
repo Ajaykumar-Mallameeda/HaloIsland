@@ -96,6 +96,9 @@ internal static unsafe partial class Native
     public const nint WtsSessionUnlock = 0x8;
     public const nint PbtPowerSettingChange = 0x8013;
     public static readonly Guid GuidSessionDisplayStatus = new("2B84C20E-AD23-4ddf-93DB-05FFBD7EFCA5");
+    public const nint PbtApmPowerStatusChange = 0xA;
+    public static readonly Guid GuidAcDcPowerSource = new("5D3E9A59-E9D5-4B00-A6BD-FF34FF516548");
+    public static readonly Guid GuidBatteryPercentageRemaining = new("A7AD8041-B45A-4CAE-87A3-EECBB468A9E1");
     public const uint EventSystemForeground = 0x0003;
     public const uint EventObjectLocationChange = 0x800B;
     public const uint WinEventOutOfContext = 0x0000;
@@ -544,6 +547,10 @@ internal static unsafe partial class Native
     [LibraryImport("user32.dll")]
     public static partial nint RegisterPowerSettingNotification(nint recipient, Guid* powerSetting, uint flags);
 
+    [LibraryImport("kernel32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool GetSystemPowerStatus(out SystemPowerStatus status);
+
     [LibraryImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static partial bool UnregisterPowerSettingNotification(nint handle);
@@ -568,4 +575,16 @@ internal static unsafe partial class Native
     [LibraryImport("gdi32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static partial bool DeleteObject(nint handle);
+}
+
+/// <summary>SYSTEM_POWER_STATUS (only the fields Halo reads are named).</summary>
+[StructLayout(LayoutKind.Sequential)]
+internal struct SystemPowerStatus
+{
+    public byte AcLineStatus;
+    public byte BatteryFlag;
+    public byte BatteryLifePercent;
+    public byte SystemStatusFlag;
+    public int BatteryLifeTime;
+    public int BatteryFullLifeTime;
 }

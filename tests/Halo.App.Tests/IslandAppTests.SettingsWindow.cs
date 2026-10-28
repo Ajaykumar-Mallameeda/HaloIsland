@@ -42,7 +42,7 @@ public sealed partial class IslandAppTests
 
             // Every control has an accessible name and role (FR-APP-02 keyboard/UIA).
             var boxes = window!.FindAllDescendants(cf => cf.ByControlType(ControlType.CheckBox));
-            Assert.Equal(7, boxes.Length);
+            Assert.Equal(8, boxes.Length);
             Assert.All(boxes, b => Assert.False(string.IsNullOrWhiteSpace(b.Name)));
             var sliders = window.FindAllDescendants(cf => cf.ByControlType(ControlType.Slider));
             Assert.Equal(2, sliders.Length);

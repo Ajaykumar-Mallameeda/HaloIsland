@@ -627,6 +627,53 @@ Smoke run `APP-SMOKE-120-195953` (valid, 120 Hz), SMOKE and not a verdict:
 - **Not verified:** a real device switch or unplug (it would disturb the owner's audio; the re-bind path was driven
   by the device message instead); hardware volume keys (the test changes the endpoint the same way an app does);
   per-app volume (out of scope).
+- **Commit:** `6bc1a28`.
+
+### M3-F04 Battery and charger — PASS (transitions verified with synthetic readings)
+
+- **Requirements:** FR-SYS-02 (charger connected or disconnected; no battery → disabled), FR-SYS-03 (low 20 % and
+  critical 10 %, configurable; unknown level → no alert), the M3-F04 contract (show level and charging state).
+- **API:** `GetSystemPowerStatus` for every reading. Notifications only, with no timer:
+  `RegisterPowerSettingNotification` for `GUID_ACDC_POWER_SOURCE` and `GUID_BATTERY_PERCENTAGE_REMAINING`, plus
+  `PBT_APMPOWERSTATUSCHANGE`. Several notifications for one change are collapsed: an identical reading is ignored.
+- **Rules (`Halo.Core/Power/BatteryMonitor`):**
+
+  | Event | Alert |
+  |---|---|
+  | Charger connected / disconnected | "Charging" (or "Plugged in" when full) / "On battery". Normal, 2.5 s, key `power` |
+  | On battery at or below the low threshold | "Battery low". High, 5 s, once per discharge |
+  | On battery at or below critical | "Battery critical". Critical, 8 s, **allowed over full screen**, once per discharge |
+  | Unplugged below a threshold | the battery alert instead of "On battery" |
+  | Start-up | an alert only when already low or critical on battery |
+  | No battery, unknown level | no level alerts |
+
+  An alert is re-armed only by charging or by the level climbing 2 points above its threshold. A level wobbling
+  around the line does not repeat it.
+- **User-visible:** the open clock view shows a battery glyph (0–10 bars, the charging set while plugged in) and
+  "82%" at the top right, in place of the "Halo" wordmark. The UIA description adds "Battery 82 percent,
+  charging". The media view does not show it (its top row is the title).
+- **Settings:**
+  - "Show battery level and charger or low-battery alerts" (`showBattery`, default on);
+  - `batteryLowPercent` (5–50, default 20) and `batteryCriticalPercent` (2–25, default 10) are in the settings
+    file only. If critical is not below low, critical falls back. Off unregisters the notifications.
+- **Files:** `Halo.Core/Power/Battery.cs`, `HaloSettings.cs`, `Halo.App/Interop/Native.cs`, `IslandWindow.cs`,
+  `IslandVisuals.cs` (status cluster), `SettingsWindow.cs`.
+- **Unit tests (27 new, `BatteryTests`):** mapping of 7 raw status combinations (charging, battery, full, no
+  battery, unknown, unknown level, invalid level); glyphs; spoken text; start-up rules; one alert per threshold
+  per discharge, including exactly at 20 % and 10 %; no repeat while the level wobbles, and a repeat after climbing
+  above the hysteresis; charger alerts and "Plugged in"; unplugging while low; no battery; unknown level (no bar);
+  thresholds changed while running; threshold validation, including critical ≥ low. Unit 300/300.
+- **Desktop tests (3 new):**
+  - **Real:** the start-up reading equals the test's own `GetSystemPowerStatus` (this machine: AC, 100 %, not
+    charging), with no alert, and the open island's UIA description has "Battery 100 percent, plugged in";
+  - **SYNTHETIC** (`WmApp+51`, diagnostics only, raw status values through the real path): unplug → power pill;
+    re-plug updates the same pill; 21 → 20 % gives one High battery alert replacing it; 19 % adds nothing; 10 %
+    gives Critical; an identical notification is ignored;
+  - **Off:** no reading and no alerts, even for a synthetic 5 %.
+  Island desktop 44/44.
+- **Runtime check:** screenshot of the open island showing the plugged-in glyph and "100%".
+- **Hardware-dependent and not verified:** a real unplug or plug, a real discharge through the thresholds, a
+  desktop without a battery (unit-tested mapping only), and battery saver.
 - **Commit:** see the next entry.
 
 ## Next recommended action

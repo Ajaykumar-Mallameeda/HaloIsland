@@ -26,6 +26,7 @@ internal sealed unsafe class SettingsWindow : IDisposable
     private const int IdAnnounce = 109;
     private const int IdMedia = 110;
     private const int IdVolume = 111;
+    private const int IdBattery = 112;
     private const int IdClose = 2; // IDCANCEL: Esc and the Close button
     private const int IdDwellValue = 202;
     private const int IdGraceValue = 203;
@@ -126,7 +127,7 @@ internal sealed unsafe class SettingsWindow : IDisposable
             }
 
             var dpi = PrimaryWorkArea().Dpi;
-            var (w, h) = (Scale(440, dpi), Scale(424, dpi));
+            var (w, h) = (Scale(440, dpi), Scale(454, dpi));
             var (work, _) = PrimaryWorkArea();
             var x = work.Left + ((work.Right - work.Left - w) / 2);
             var y = work.Top + ((work.Bottom - work.Top - h) / 2);
@@ -173,6 +174,8 @@ internal sealed unsafe class SettingsWindow : IDisposable
         Add(IdMedia, "BUTTON", "Show what is &playing (title, artist, artwork)", BsAutoCheckBox | WsTabStop, 16, y, 400, 22);
         y += 30;
         Add(IdVolume, "BUTTON", "Show &volume changes and the volume slider", BsAutoCheckBox | WsTabStop, 16, y, 400, 22);
+        y += 30;
+        Add(IdBattery, "BUTTON", "Show &battery level and charger or low-battery alerts", BsAutoCheckBox | WsTabStop, 16, y, 400, 22);
         y += 42;
         Add(IdDefaults, "BUTTON", "Restore &defaults", BsPushButton | WsTabStop, 16, y, 130, 28);
         Add(IdLogFolder, "BUTTON", "Open &log folder", BsPushButton | WsTabStop, 158, y, 130, 28);
@@ -216,6 +219,7 @@ internal sealed unsafe class SettingsWindow : IDisposable
             Check(IdAnnounce, s.AnnounceAlerts);
             Check(IdMedia, s.ShowMedia);
             Check(IdVolume, s.ShowVolume);
+            Check(IdBattery, s.ShowBattery);
             _ = SendMessageW(_controls[IdDwell], TbmSetPos, 1, s.HoverDwellMs);
             _ = SendMessageW(_controls[IdGrace], TbmSetPos, 1, s.LeaveGraceMs);
             _ = EnableWindow(_controls[IdDwell], s.HoverToExpand);
@@ -257,6 +261,7 @@ internal sealed unsafe class SettingsWindow : IDisposable
             AnnounceAlerts = IsChecked(IdAnnounce),
             ShowMedia = IsChecked(IdMedia),
             ShowVolume = IsChecked(IdVolume),
+            ShowBattery = IsChecked(IdBattery),
         };
         _owner.UpdateSettings(s);
         Show(s);
@@ -287,7 +292,7 @@ internal sealed unsafe class SettingsWindow : IDisposable
                 var id = (int)(wParam & 0xFFFF);
                 switch (id)
                 {
-                    case IdHover or IdFullscreen or IdMotion or IdStartExpanded or IdAnnounce or IdMedia or IdVolume:
+                    case IdHover or IdFullscreen or IdMotion or IdStartExpanded or IdAnnounce or IdMedia or IdVolume or IdBattery:
                         Commit();
                         return 0;
                     case IdDefaults:

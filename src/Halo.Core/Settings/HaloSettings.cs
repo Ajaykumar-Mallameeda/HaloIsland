@@ -14,6 +14,10 @@ public sealed record HaloSettings
     public const int MaxDwellMs = 500;
     public const int MinGraceMs = 100;
     public const int MaxGraceMs = 2000;
+    public const int MinBatteryLow = 5;
+    public const int MaxBatteryLow = 50;
+    public const int MinBatteryCritical = 2;
+    public const int MaxBatteryCritical = 25;
 
     public static HaloSettings Defaults { get; } = new();
 
@@ -44,6 +48,15 @@ public sealed record HaloSettings
     /// <summary>Volume pill on changes and the volume row in the expanded island (FR-SYS-01, M3-F03).</summary>
     public bool ShowVolume { get; init; } = true;
 
+    /// <summary>Battery level in the open island and charger / low-battery alerts (FR-SYS-02/03, M3-F04).</summary>
+    public bool ShowBattery { get; init; } = true;
+
+    /// <summary>Low-battery alert threshold in percent, 5–50 (FR-SYS-03).</summary>
+    public int BatteryLowPercent { get; init; } = 20;
+
+    /// <summary>Critical-battery alert threshold in percent, 2–25, and always below the low threshold.</summary>
+    public int BatteryCriticalPercent { get; init; } = 10;
+
     /// <summary>Serialises to the versioned JSON file format (indented, stable key order).</summary>
     public string ToJson()
     {
@@ -61,6 +74,9 @@ public sealed record HaloSettings
             w.WriteBoolean("announceAlerts", AnnounceAlerts);
             w.WriteBoolean("showMedia", ShowMedia);
             w.WriteBoolean("showVolume", ShowVolume);
+            w.WriteBoolean("showBattery", ShowBattery);
+            w.WriteNumber("batteryLowPercent", BatteryLowPercent);
+            w.WriteNumber("batteryCriticalPercent", BatteryCriticalPercent);
             w.WriteEndObject();
         }
 
@@ -140,7 +156,18 @@ public sealed record HaloSettings
                 AnnounceAlerts = Bool("announceAlerts", d.AnnounceAlerts),
                 ShowMedia = Bool("showMedia", d.ShowMedia),
                 ShowVolume = Bool("showVolume", d.ShowVolume),
+                ShowBattery = Bool("showBattery", d.ShowBattery),
+                BatteryLowPercent = Int("batteryLowPercent", d.BatteryLowPercent, MinBatteryLow, MaxBatteryLow),
+                BatteryCriticalPercent = Int("batteryCriticalPercent", d.BatteryCriticalPercent, MinBatteryCritical, MaxBatteryCritical),
             };
+
+            // Critical must stay below low; otherwise it falls back (to the default, or just under low).
+            if (settings.BatteryCriticalPercent >= settings.BatteryLowPercent)
+            {
+                list.Add("batteryCriticalPercent");
+                settings = settings with { BatteryCriticalPercent = Math.Min(d.BatteryCriticalPercent, settings.BatteryLowPercent - 1) };
+            }
+
             return true;
         }
     }

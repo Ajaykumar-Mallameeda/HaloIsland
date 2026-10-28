@@ -7,6 +7,7 @@ using Halo.Core.Clock;
 using Halo.Core.Diagnostics;
 using Halo.Core.Island;
 using Halo.Core.Media;
+using Halo.Core.Power;
 using Halo.Core.Settings;
 using Halo.Core.Shell;
 using Windows.UI.Composition;
@@ -53,6 +54,10 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
     /// over full screen, bits 8+ = duration in ms). Ignored without --diagnostics.</summary>
     private const uint WmTestAlert = WmApp + 50;
 
+    /// <summary>Diagnostics-only test hook: a synthetic power reading through the real path (wParam = ACLineStatus |
+    /// BatteryFlag &lt;&lt; 8 | BatteryLifePercent &lt;&lt; 16). Ignored without --diagnostics or while battery is off.</summary>
+    private const uint WmTestPower = WmApp + 51;
+
     // Island right-click menu.
     private const int MenuExpand = 1;
     private const int MenuExit = 2;
@@ -96,6 +101,10 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
     private bool _volumeDragging;
     private bool _volumeMutePressed;
     private int _volumeSetPercent = -1;
+    private readonly BatteryMonitor _battery = new(BatteryThresholds.Default);
+    private bool _batteryWatching;
+    private nint _acdcNotification;
+    private nint _batteryNotification;
     private IslandLayout _layout = null!;
     private ClockReading _clock = null!;
     private bool _tracking;
@@ -145,7 +154,7 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
 
     public string? AccessibleDescription => State.Alert is { } alert
         ? alert.Content.Spoken
-        : State.IsExpanded ? (_volume?.Current is { } v ? $"{_clock.DayProgressText}, {v.Spoken}" : _clock.DayProgressText) : null;
+        : State.IsExpanded ? ExpandedDescription() : null;
 
     private IslandState State => _controller.State;
 
@@ -514,6 +523,18 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
             case WmPowerBroadcast when wParam == PbtPowerSettingChange && DisplayState(lParam) is { } on:
                 SetClockPaused(_sessionLocked, displayOff: !on, "display");
                 return 1;
+            case WmPowerBroadcast when wParam == PbtPowerSettingChange && IsBatterySetting(lParam):
+            case WmPowerBroadcast when wParam == PbtApmPowerStatusChange:
+                // FR-SYS-02/03: charger and charge changes; the reading itself always comes from GetSystemPowerStatus.
+                if (_batteryWatching)
+                {
+                    ReadPower("system");
+                }
+
+                return 1;
+            case WmTestPower when _log is not null && _batteryWatching:
+                OnPowerReading(PowerReading.FromSystem((byte)(wParam & 0xFF), (byte)((wParam >> 8) & 0xFF), (byte)((wParam >> 16) & 0xFF)), "test");
+                return 0;
             case WmPowerBroadcast when wParam == PbtApmResumeAutomatic:
                 // Displays may have changed while asleep (FR-ISL-11): re-place, re-check full screen, refresh the clock.
                 Place("resume");
@@ -563,6 +584,7 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
                 _ = KillTimer(hwnd, VolumeDeviceTimerId);
                 _volume?.Dispose();
                 _volume = null;
+                StopBattery();
                 _settingsWindow = null;
                 _ = KillTimer(hwnd, IntentTimerId);
                 _ = KillTimer(hwnd, ClockTimerId);
@@ -799,6 +821,18 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
             _log?.Write("volume.device", ("status", "off"), ("reason", reason), ("hresult", 0));
         }
 
+        _battery.Thresholds = new BatteryThresholds(s.BatteryLowPercent, s.BatteryCriticalPercent);
+        if (s.ShowBattery && !_batteryWatching && _hwnd != 0)
+        {
+            StartBattery(reason);
+        }
+        else if (!s.ShowBattery && _batteryWatching)
+        {
+            StopBattery();
+            UpdateStatus();
+            _log?.Write("power", ("battery", 0), ("percent", -1), ("source", "off"), ("charging", 0), ("reason", reason));
+        }
+
         if (_layout is not null && _layout.VolumeRow != s.ShowVolume)
         {
             // The volume row makes the expanded island taller.
@@ -948,6 +982,108 @@ internal sealed unsafe class IslandWindow : IIslandAutomationSource, IDisposable
         {
             _ = KillTimer(_hwnd, MediaTickTimerId);
         }
+    }
+
+    /// <summary>The open island's UIA description: day progress, then battery and volume when they are shown.</summary>
+    private string ExpandedDescription()
+    {
+        var parts = new List<string>(3) { _clock.DayProgressText };
+        if (_batteryWatching && _battery.Current is { HasBattery: true } power)
+        {
+            parts.Add(power.Spoken);
+        }
+
+        if (_volume?.Current is { } v)
+        {
+            parts.Add(v.Spoken);
+        }
+
+        return string.Join(", ", parts);
+    }
+
+    /// <summary>Starts the event-driven battery feed: power-source and charge notifications, then a first reading.</summary>
+    private void StartBattery(string reason)
+    {
+        var acdc = GuidAcDcPowerSource;
+        var charge = GuidBatteryPercentageRemaining;
+        _acdcNotification = RegisterPowerSettingNotification(_hwnd, &acdc, 0);
+        _batteryNotification = RegisterPowerSettingNotification(_hwnd, &charge, 0);
+        _batteryWatching = true;
+        if (_acdcNotification == 0 || _batteryNotification == 0)
+        {
+            // WM_POWERBROADCAST/PBT_APMPOWERSTATUSCHANGE still arrives, so the feature keeps working.
+            _fileLog?.Write(LogLevel.Warning, "power.register_failed", ("acdc", _acdcNotification != 0), ("charge", _batteryNotification != 0));
+        }
+
+        ReadPower(reason);
+    }
+
+    private void StopBattery()
+    {
+        if (_acdcNotification != 0)
+        {
+            _ = UnregisterPowerSettingNotification(_acdcNotification);
+            _acdcNotification = 0;
+        }
+
+        if (_batteryNotification != 0)
+        {
+            _ = UnregisterPowerSettingNotification(_batteryNotification);
+            _batteryNotification = 0;
+        }
+
+        _batteryWatching = false;
+    }
+
+    private void ReadPower(string reason)
+    {
+        if (!GetSystemPowerStatus(out var status))
+        {
+            _log?.Write("power.read_failed");
+            return;
+        }
+
+        OnPowerReading(PowerReading.FromSystem(status.AcLineStatus, status.BatteryFlag, status.BatteryLifePercent), reason);
+    }
+
+    /// <summary>A power reading from Windows (or a test): status cluster, diagnostics, and at most one alert.</summary>
+    private void OnPowerReading(PowerReading reading, string reason)
+    {
+        if (_battery.Current == reading)
+        {
+            return; // several notifications for one change: nothing new
+        }
+
+        var nameBefore = AccessibleName;
+        var alert = _battery.Update(reading);
+        UpdateStatus();
+        _log?.Write("power", ("battery", reading.HasBattery ? 1 : 0), ("percent", reading.Percent ?? -1), ("source", reading.Source.ToString().ToLowerInvariant()), ("charging", reading.Charging ? 1 : 0), ("reason", reason));
+        if (alert is not null)
+        {
+            RaiseAlert(alert, "power");
+        }
+        else if (State.IsExpanded)
+        {
+            _automation?.RaiseChanged(true, true, nameBefore, AccessibleName);
+        }
+    }
+
+    /// <summary>Status icons and value at the top right of the open island (battery now; network in M3-F05).</summary>
+    private void UpdateStatus()
+    {
+        var power = _batteryWatching && _battery.Current is { HasBattery: true } p ? p : (PowerReading?)null;
+        _visuals?.ShowStatus(power?.Glyph ?? string.Empty, power?.ShortText ?? string.Empty);
+    }
+
+    private static bool IsBatterySetting(nint lParam)
+    {
+        if (lParam == 0)
+        {
+            return false;
+        }
+
+        var guid = *(Guid*)lParam;
+        return guid == GuidAcDcPowerSource || guid == GuidBatteryPercentageRemaining;
     }
 
     /// <summary>Shows the bound device's volume (or "No audio output") and logs the binding, never the device's name or ID.</summary>
