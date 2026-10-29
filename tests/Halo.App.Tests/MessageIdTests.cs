@@ -22,6 +22,7 @@ public class MessageIdTests
             NetworkWatcher.ChangedMessage,
             NetworkWatcher.ReadingMessage,
             CameraWatcher.ReportMessage,
+            BrightnessWatcher.ChangedMessage,
         ];
         Assert.Equal(ids.Length, ids.Distinct().Count());
         Assert.All(ids, id => Assert.InRange(id, Native.WmApp, 0xBFFFu));

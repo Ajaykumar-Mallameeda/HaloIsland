@@ -36,7 +36,7 @@
 | J-F04 Bluetooth audio connect/disconnect pills (no battery) | `2de698c` | PASS (real bus read; transitions synthetic) |
 | H-F02 Shelf drag-out (copy or link, never move) | `a4b03d7` | PASS (real drag) |
 | K / C-F08 Camera-in-use indicator (off by default) | `53046ef` | PASS (real passive monitor; transitions synthetic) |
-| J-F03 Brightness | — | Re-checked: no documented power-setting notification for brightness; still needs WMI (a new dependency). NOT BUILT |
+| J-F03 Brightness | WMI `WmiMonitorBrightness` + `WmiMonitorBrightnessEvent` via `System.Management` (owner-approved) | PASS, read-only |
 
 **Second gate on the final HEAD:**
 - locked restore OK;
@@ -185,7 +185,7 @@ Primary sources only. The source table is in RESEARCH_EXPANSION_CAMPAIGN §1.
 |---|---|
 | J-F01 Manual session switching | **PASS**: two real sessions (test MediaPlayer + one hosted by Windows PowerShell), switched through UIA |
 | J-F02 Seeking | **PASS**: only when the session allows it. A real UIA seek to 50 % moved the player's position |
-| J-F03 Brightness | **NOT BUILT**: needs `System.Management` (a new dependency) or hand-written WMI COM |
+| J-F03 Brightness | **PASS**: built-in screen level pill; read-only; unit +2, desktop +2 |
 | J-F04 Bluetooth headphones | **PASS, connection only** (added after the first gate): "Connected/Disconnected · name" pills from the endpoint's documented device properties. The real bus was read; the transitions were synthetic. **Battery never shown**: no documented API |
 | K / C-F08 Camera and microphone | Camera (added after the first gate): **PASS, off by default**. Media Foundation's passive sensor activity reports; only "in use or not" is kept. The real monitor was started; transitions were synthetic; no camera was opened. Turning it on is the owner's choice (K-1). Microphone: **BLOCKED**, no documented API |
 | H-F02 Shelf | **PASS**: pin on request only, copy back to the real clipboard, file references, "missing" flag, clear-all deletes the file. **Drag-out** (added after the first gate): copy or link only, never move. A real drag into a drop target delivered the file, and the original stayed |
@@ -309,7 +309,6 @@ Primary sources only. The source table is in RESEARCH_EXPANSION_CAMPAIGN §1.
 | E-1 | Entra app registration and owner sign-in | Live Outlook mail and calendar |
 | K-1 | Turn on the camera-in-use indicator (built, off by default) | Camera indicator in daily use |
 | O-F02 | Keyboard-state indicators | Caps Lock and input-language pills |
-| — | Approve `System.Management` | Brightness indicator (J-F03) |
 | D7 | Second monitor; clean PC or VM | Multi-monitor and mixed DPI; install tests |
 
 ## 16. Final working-tree state

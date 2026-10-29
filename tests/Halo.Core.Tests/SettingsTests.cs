@@ -180,12 +180,12 @@ public sealed class SettingsTests : IDisposable
     {
         var json = HaloSettings.Defaults.ToJson();
 
-        foreach (var key in new[] { "schemaVersion", "hoverToExpand", "hoverDwellMs", "leaveGraceMs", "startExpanded", "reduceMotion", "hideInFullscreen", "announceAlerts", "showMedia", "showVolume", "showBattery", "batteryLowPercent", "batteryCriticalPercent", "showNetwork", "showPreviews", "showReminders", "hotkey", "theme", "accentBars", "pillShowsActivity", "pillShowsMedia", "pillShowsDate", "pillShowsBattery", "islandOffsetDip", "showCameraActivity" })
+        foreach (var key in new[] { "schemaVersion", "hoverToExpand", "hoverDwellMs", "leaveGraceMs", "startExpanded", "reduceMotion", "hideInFullscreen", "announceAlerts", "showMedia", "showVolume", "showBattery", "batteryLowPercent", "batteryCriticalPercent", "showNetwork", "showPreviews", "showReminders", "hotkey", "theme", "accentBars", "pillShowsActivity", "pillShowsMedia", "pillShowsDate", "pillShowsBattery", "islandOffsetDip", "showCameraActivity", "showBrightness" })
         {
             Assert.Contains($"\"{key}\"", json, StringComparison.Ordinal);
         }
 
-        Assert.Equal(25, json.Count(c => c == ':'));
+        Assert.Equal(26, json.Count(c => c == ':'));
     }
 
     [Fact]

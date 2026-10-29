@@ -1354,12 +1354,19 @@ All of these use the shared vocabulary (B-F01/B-F02), and none adds a motion of 
     and toggles without taking focus;
   - the settings window now has 3 sliders.
 
-### J-F03 Brightness indicator — NOT BUILT
+### J-F03 Brightness indicator — PASS (built-in screen, read-only)
 
-- The supported route for internal panels is WMI (`WmiMonitorBrightness` / `WmiMonitorBrightnessEvent`).
-- From .NET 10 this needs either the `System.Management` package, a new dependency, or hand-written WMI COM interop.
-  Neither was added without approval.
-- External monitors expose no supported brightness API (DDC/CI is outside the brief).
+- **Dependency:** `System.Management` 10.0.14 (MIT, Microsoft; pulls `System.CodeDom` 10.0.14), approved by the owner
+  on 2026-10-29. Halo.App only; Halo.Core stays BCL-only.
+- **How it works:** `BrightnessWatcher` reads `WmiMonitorBrightness.CurrentBrightness` (root\wmi) at start-up and
+  subscribes to `WmiMonitorBrightnessEvent`; each change is posted to the UI thread (`WmApp + 11`).
+  `BrightnessMonitor` (Core) keeps the start-up reading silent and shows a level pill on each change
+  ("Brightness N percent" for UIA, 1.5 s).
+- **Never writes:** Halo does not call `WmiSetBrightness`; the level only changes when the user changes it.
+- External monitors expose no supported brightness API, so they show nothing (`brightness.watch` = `not_supported`).
+- Setting "Show brightness changes (built-in screen)", default on.
+- **Tests:** unit +2 (silent start, clamping, reset); desktop +2 (real WMI read of this PC's panel, synthetic change
+  shows a pill, the setting turns the watcher off). Full desktop suite 86/86.
 
 ### J-F04 Bluetooth headphone status — PASS (connection only; battery never shown)
 
@@ -1479,8 +1486,7 @@ The expansion campaign's report is in [`EXPANSION_CAMPAIGN_REPORT.md`](EXPANSION
    - L-1, whether to package Halo as MSIX ([`PACKAGING_FEASIBILITY.md`](PACKAGING_FEASIBILITY.md));
    - E-1, an Entra app registration and sign-in for Outlook mail and calendar;
    - K-1, the camera-in-use indicator;
-   - O-F02, the keyboard indicators;
-   - whether `System.Management` may be added for the brightness indicator (J-F03).
+   - O-F02, the keyboard indicators.
 3. **Next engineering items:**
    - Outlook token source (system browser + PKCE, Credential Manager) once E-1 is done, then wire
      `MailWatcher`/`CalendarWatcher` into the island;

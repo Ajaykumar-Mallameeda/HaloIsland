@@ -106,6 +106,9 @@ public sealed record HaloSettings
     /// </summary>
     public bool ShowCameraActivity { get; init; }
 
+    /// <summary>J-F03: a brightness pill when the built-in panel's brightness changes (read-only; nothing on external monitors).</summary>
+    public bool ShowBrightness { get; init; } = true;
+
     /// <summary>Serialises to the versioned JSON file format (indented, stable key order).</summary>
     public string ToJson()
     {
@@ -138,6 +141,7 @@ public sealed record HaloSettings
             w.WriteBoolean("pillShowsBattery", PillShowsBattery);
             w.WriteNumber("islandOffsetDip", IslandOffsetDip);
             w.WriteBoolean("showCameraActivity", ShowCameraActivity);
+            w.WriteBoolean("showBrightness", ShowBrightness);
             w.WriteEndObject();
         }
 
@@ -265,6 +269,7 @@ public sealed record HaloSettings
                 PillShowsBattery = Bool("pillShowsBattery", d.PillShowsBattery),
                 IslandOffsetDip = Int("islandOffsetDip", d.IslandOffsetDip, MinOffsetDip, MaxOffsetDip),
                 ShowCameraActivity = Bool("showCameraActivity", d.ShowCameraActivity),
+                ShowBrightness = Bool("showBrightness", d.ShowBrightness),
             };
 
             // Critical must stay below low; otherwise it falls back (to the default, or just under low).

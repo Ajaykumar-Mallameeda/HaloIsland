@@ -9,5 +9,7 @@
     <!-- S2 UI automation in the spike harness only (MIT; validated in PROTOTYPE_S1_S2_REPORT §8.13). -->
     <PackageVersion Include="FlaUI.Core" Version="5.0.0" />
     <PackageVersion Include="FlaUI.UIA3" Version="5.0.0" />
+    <!-- J-F03 brightness through WMI (MIT, Microsoft; approved by the owner 2026-10-29). Halo.App only. -->
+    <PackageVersion Include="System.Management" Version="10.0.14" />
   </ItemGroup>
 </Project>

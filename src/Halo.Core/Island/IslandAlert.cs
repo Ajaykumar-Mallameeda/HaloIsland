@@ -30,6 +30,9 @@ public enum AlertKind
 
     /// <summary>Halo's own state changes (quiet mode ended, summaries).</summary>
     Halo,
+
+    /// <summary>Built-in panel brightness changes (J-F03).</summary>
+    Brightness,
 }
 
 /// <summary>What a transient alert shows: an icon glyph, one short line and an optional 0–1 level bar.</summary>

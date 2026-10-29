@@ -16,6 +16,9 @@
     <ProjectReference Include="..\Halo.Core\Halo.Core.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="System.Management" />
+  </ItemGroup>
+  <ItemGroup>
     <InternalsVisibleTo Include="Halo.App.Tests" />
   </ItemGroup>
 </Project>

@@ -79,6 +79,9 @@ internal sealed unsafe partial class IslandWindow : IDisposable
     /// <summary>Diagnostics-only test hook: a synthetic camera report (wParam 1 = in use by another process).</summary>
     private const uint WmTestCamera = WmApp + 58;
 
+    /// <summary>Diagnostics-only test hook: a synthetic brightness level (wParam = percent).</summary>
+    private const uint WmTestBrightness = WmApp + 59;
+
     // Island right-click menu.
     private const int MenuExpand = 1;
     private const int MenuExit = 2;
@@ -635,6 +638,13 @@ internal sealed unsafe partial class IslandWindow : IDisposable
                 }
 
                 return 0;
+            case BrightnessWatcher.ChangedMessage when _brightness is not null:
+                OnBrightness(_brightness.Latest, "system");
+                return 0;
+            case WmTestBrightness when _log is not null && _brightness is not null:
+                // Diagnostics only: a synthetic level (the real brightness is never changed by Halo or its tests).
+                OnBrightness((int)wParam, "test");
+                return 0;
             case CameraWatcher.ReportMessage when _camera is not null:
                 OnCameraReport(_camera.Latest, "system");
                 return 0;
@@ -705,6 +715,8 @@ internal sealed unsafe partial class IslandWindow : IDisposable
                 _shelfWindow = null;
                 _camera?.Dispose();
                 _camera = null;
+                _brightness?.Dispose();
+                _brightness = null;
                 _controller.Shutdown();
                 _motion.Shutdown();
                 _ = KillTimer(hwnd, SaveTimerId);
@@ -1036,6 +1048,7 @@ internal sealed unsafe partial class IslandWindow : IDisposable
         ApplyHotkey(reason);
         ApplyTheme(reason);
         ApplyCamera(reason);
+        ApplyBrightness(reason);
         UpdateStatus(); // pill content options (I-F02)
 
         if (_layout is not null)
@@ -1188,6 +1201,46 @@ internal sealed unsafe partial class IslandWindow : IDisposable
     private readonly Halo.Core.Audio.AudioDeviceMonitor _audioDevice = new();
     private readonly Halo.Core.Privacy.CameraActivityMonitor _cameraMonitor = new((uint)Environment.ProcessId);
     private CameraWatcher? _camera;
+    private BrightnessWatcher? _brightness;
+    private readonly Halo.Core.Display.BrightnessMonitor _brightnessMonitor = new();
+
+    /// <summary>J-F03: start or stop the WMI brightness feed with the setting. Not supported → nothing is shown.</summary>
+    private void ApplyBrightness(string reason)
+    {
+        if (_settings.ShowBrightness && _brightness is null && _hwnd != 0)
+        {
+            _brightness = new BrightnessWatcher(_hwnd);
+            var ok = _brightness.Start();
+            _log?.Write("brightness.watch", ("status", ok ? "running" : "not_supported"), ("hresult", _brightness.LastHResult), ("reason", reason));
+            if (ok)
+            {
+                _ = _brightnessMonitor.Update(_brightness.Latest); // the start-up level: recorded, not shown
+                _log?.Write("brightness", ("percent", _brightness.Latest), ("reason", "startup"));
+            }
+        }
+        else if (!_settings.ShowBrightness && _brightness is not null)
+        {
+            _brightness.Dispose();
+            _brightness = null;
+            _brightnessMonitor.Reset();
+            Present(_controller.DropAlerts(AlertKind.Brightness), "settings");
+            _log?.Write("brightness.watch", ("status", "off"), ("hresult", 0), ("reason", reason));
+        }
+    }
+
+    private void OnBrightness(int percent, string reason)
+    {
+        if (percent < 0)
+        {
+            return;
+        }
+
+        _log?.Write("brightness", ("percent", percent), ("reason", reason));
+        if (_brightnessMonitor.Update(percent) is { } alert)
+        {
+            RaiseAlert(alert, "brightness");
+        }
+    }
 
     /// <summary>K / C-F08: start or stop the passive camera activity reports with the setting (off by default).</summary>
     private void ApplyCamera(string reason)
@@ -1639,6 +1692,7 @@ internal sealed unsafe partial class IslandWindow : IDisposable
         AlertKind.Reminder => "reminder",
         AlertKind.Notification => "notification",
         AlertKind.Halo => "halo",
+        AlertKind.Brightness => "brightness",
         _ => "test",
     };
 

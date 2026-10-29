@@ -42,6 +42,7 @@ internal sealed unsafe class SettingsWindow : IDisposable
     private const int IdOffsetValue = 125;
     private const int OffsetStep = 20;
     private const int IdCamera = 126;
+    private const int IdBrightness = 127;
     private const int IdClose = 2; // IDCANCEL: Esc and the Close button
     private const int IdDwellValue = 202;
     private const int IdGraceValue = 203;
@@ -229,6 +230,8 @@ internal sealed unsafe class SettingsWindow : IDisposable
         Add(IdOffset, TrackbarClass, string.Empty, WsTabStop | TbsNoTicks, 580, r, 140, 28);
         Add(IdOffsetValue, "STATIC", string.Empty, 0, 724, r + 4, 60, 20);
         r += 44;
+        Add(IdBrightness, "BUTTON", "Show &brightness changes (built-in screen)", BsAutoCheckBox | WsTabStop, 450, r, 330, 22);
+        r += 30;
         Add(IdCamera, "BUTTON", "Show when an app uses the &camera (off by default)", BsAutoCheckBox | WsTabStop, 450, r, 330, 22);
         r += 24;
         Add(0, "STATIC", "Reads Windows' camera activity reports. Only \u201cin use or not\u201d is kept; no app names.", 0, 468, r, 320, 34);
@@ -291,6 +294,7 @@ internal sealed unsafe class SettingsWindow : IDisposable
             Check(IdPillDate, s.PillShowsDate);
             Check(IdPillBattery, s.PillShowsBattery);
             Check(IdCamera, s.ShowCameraActivity);
+            Check(IdBrightness, s.ShowBrightness);
             _ = SendMessageW(_controls[IdOffset], TbmSetPos, 1, s.IslandOffsetDip);
             _ = SetWindowTextW(_controls[IdOffsetValue], s.IslandOffsetDip == 0 ? "Centre" : s.IslandOffsetDip < 0 ? $"{-s.IslandOffsetDip} left" : $"{s.IslandOffsetDip} right");
             _ = SetWindowTextW(_controls[IdHotkeyStatus], s.Hotkey == HotkeyChoice.Off ? string.Empty : _owner.HotkeyStatus == "in_use" ? "In use by another app" : "Ready");
@@ -347,6 +351,7 @@ internal sealed unsafe class SettingsWindow : IDisposable
             PillShowsDate = IsChecked(IdPillDate),
             PillShowsBattery = IsChecked(IdPillBattery),
             ShowCameraActivity = IsChecked(IdCamera),
+            ShowBrightness = IsChecked(IdBrightness),
             IslandOffsetDip = Math.Clamp(Position(IdOffset, OffsetStep), HaloSettings.MinOffsetDip, HaloSettings.MaxOffsetDip),
         };
         _owner.UpdateSettings(s);
@@ -381,7 +386,7 @@ internal sealed unsafe class SettingsWindow : IDisposable
                     case IdHover or IdFullscreen or IdMotion or IdStartExpanded or IdAnnounce or IdMedia or IdVolume or IdBattery or IdNetwork or IdReminders or IdPreviews:
                         Commit();
                         return 0;
-                    case IdAccent or IdPillActivity or IdPillMedia or IdPillDate or IdPillBattery or IdCamera:
+                    case IdAccent or IdPillActivity or IdPillMedia or IdPillDate or IdPillBattery or IdCamera or IdBrightness:
                         Commit();
                         return 0;
                     case IdHotkey or IdTheme when ((wParam >> 16) & 0xFFFF) == 1: // CBN_SELCHANGE
