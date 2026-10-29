@@ -19,6 +19,8 @@ public sealed record HaloSettings
     public const int MaxBatteryLow = 50;
     public const int MinBatteryCritical = 2;
     public const int MaxBatteryCritical = 25;
+    public const int MinOffsetDip = -800;
+    public const int MaxOffsetDip = 800;
 
     public static HaloSettings Defaults { get; } = new();
 
@@ -92,6 +94,12 @@ public sealed record HaloSettings
     /// <summary>Battery percent beside the time in the pill (machines with a battery only).</summary>
     public bool PillShowsBattery { get; init; }
 
+    /// <summary>
+    /// I-F04: horizontal position on the primary display, in DIP from the centre (0 = centred). Clamped to the work
+    /// area when applied, so a large value on a small screen puts the island at the edge, never off screen.
+    /// </summary>
+    public int IslandOffsetDip { get; init; }
+
     /// <summary>Serialises to the versioned JSON file format (indented, stable key order).</summary>
     public string ToJson()
     {
@@ -122,6 +130,7 @@ public sealed record HaloSettings
             w.WriteBoolean("pillShowsMedia", PillShowsMedia);
             w.WriteBoolean("pillShowsDate", PillShowsDate);
             w.WriteBoolean("pillShowsBattery", PillShowsBattery);
+            w.WriteNumber("islandOffsetDip", IslandOffsetDip);
             w.WriteEndObject();
         }
 
@@ -247,6 +256,7 @@ public sealed record HaloSettings
                 PillShowsMedia = Bool("pillShowsMedia", d.PillShowsMedia),
                 PillShowsDate = Bool("pillShowsDate", d.PillShowsDate),
                 PillShowsBattery = Bool("pillShowsBattery", d.PillShowsBattery),
+                IslandOffsetDip = Int("islandOffsetDip", d.IslandOffsetDip, MinOffsetDip, MaxOffsetDip),
             };
 
             // Critical must stay below low; otherwise it falls back (to the default, or just under low).

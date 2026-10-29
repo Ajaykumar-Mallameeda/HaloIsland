@@ -896,7 +896,7 @@ internal sealed unsafe partial class IslandWindow : IDisposable
     private void Place(string reason)
     {
         var (work, dpi) = PrimaryWorkArea();
-        var layout = IslandLayout.Compute(new PixelRect(work.Left, work.Top, work.Right - work.Left, work.Bottom - work.Top), (int)dpi, _settings.ShowVolume);
+        var layout = IslandLayout.Compute(new PixelRect(work.Left, work.Top, work.Right - work.Left, work.Bottom - work.Top), (int)dpi, _settings.ShowVolume, _settings.IslandOffsetDip);
         if (layout == _layout)
         {
             _log?.Write("placement.unchanged", ("reason", reason));
@@ -1017,9 +1017,10 @@ internal sealed unsafe partial class IslandWindow : IDisposable
         ApplyTheme(reason);
         UpdateStatus(); // pill content options (I-F02)
 
-        if (_layout is not null && _layout.VolumeRow != s.ShowVolume)
+        if (_layout is not null)
         {
-            // The volume row makes the expanded island taller.
+            // The volume row makes the expanded island taller; the offset moves it (I-F04). Place does nothing when
+            // the result is the same layout.
             Place("settings");
         }
 

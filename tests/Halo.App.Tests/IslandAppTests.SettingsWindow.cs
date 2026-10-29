@@ -45,7 +45,7 @@ public sealed partial class IslandAppTests
             Assert.Equal(16, boxes.Length);
             Assert.All(boxes, b => Assert.False(string.IsNullOrWhiteSpace(b.Name)));
             var sliders = window.FindAllDescendants(cf => cf.ByControlType(ControlType.Slider));
-            Assert.Equal(2, sliders.Length);
+            Assert.Equal(3, sliders.Length);
             // The dialog's own buttons by control ID (the title bar has its own "Close" button too).
             Assert.Equal("Restore defaults", window.FindFirstDescendant(cf => cf.ByAutomationId("107"))?.Name);
             Assert.Equal("Close", window.FindFirstDescendant(cf => cf.ByAutomationId("2"))?.Name);

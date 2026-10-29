@@ -58,7 +58,14 @@ public sealed record IslandLayout(PixelRect Canvas, RoundedBox Compact, RoundedB
     /// <summary>Spare room around the expanded shape so the pressed-state scale never clips.</summary>
     public const double CanvasMarginDip = 8;
 
-    public static IslandLayout Compute(PixelRect workArea, int dpi, bool volumeRow = false)
+    /// <param name="workArea">The chosen display's work area in physical pixels.</param>
+    /// <param name="dpi">That display's DPI.</param>
+    /// <param name="volumeRow">The expanded shape has the volume row.</param>
+    /// <param name="offsetDip">
+    /// I-F04: horizontal offset from the centre in DIP (negative = left). The canvas is clamped so the whole island
+    /// always stays inside the work area, whatever the offset or the display size.
+    /// </param>
+    public static IslandLayout Compute(PixelRect workArea, int dpi, bool volumeRow = false, int offsetDip = 0)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(dpi, 48);
         var scale = dpi / 96.0;
@@ -70,7 +77,9 @@ public sealed record IslandLayout(PixelRect Canvas, RoundedBox Compact, RoundedB
             throw new ArgumentException("The work area is smaller than the island canvas.", nameof(workArea));
         }
 
-        var canvas = new PixelRect(workArea.Left + ((workArea.Width - width) / 2), workArea.Top, width, height);
+        var centred = workArea.Left + ((workArea.Width - width) / 2);
+        var left = Math.Clamp(centred + Px(offsetDip, scale), workArea.Left, workArea.Right - width);
+        var canvas = new PixelRect(left, workArea.Top, width, height);
         return new IslandLayout(
             canvas,
             Shape(width, CompactWidthDip, CompactHeightDip, CompactHeightDip, scale),

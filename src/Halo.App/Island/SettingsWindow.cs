@@ -38,6 +38,9 @@ internal sealed unsafe class SettingsWindow : IDisposable
     private const int IdPillMedia = 121;
     private const int IdPillDate = 122;
     private const int IdPillBattery = 123;
+    private const int IdOffset = 124;
+    private const int IdOffsetValue = 125;
+    private const int OffsetStep = 20;
     private const int IdClose = 2; // IDCANCEL: Esc and the Close button
     private const int IdDwellValue = 202;
     private const int IdGraceValue = 203;
@@ -220,6 +223,10 @@ internal sealed unsafe class SettingsWindow : IDisposable
         Add(IdPillDate, "BUTTON", "The dat&e", BsAutoCheckBox | WsTabStop, 466, r, 300, 22);
         r += 30;
         Add(IdPillBattery, "BUTTON", "Battery &percent beside the time", BsAutoCheckBox | WsTabStop, 450, r, 320, 22);
+        r += 44;
+        Add(0, "STATIC", "Hori&zontal position:", 0, 450, r + 4, 130, 20);
+        Add(IdOffset, TrackbarClass, string.Empty, WsTabStop | TbsNoTicks, 580, r, 140, 28);
+        Add(IdOffsetValue, "STATIC", string.Empty, 0, 724, r + 4, 60, 20);
         foreach (var label in new[] { "Dark", "Light", "Match Windows" })
         {
             _ = SendMessageText(_controls[IdTheme], CbAddString, 0, label);
@@ -232,6 +239,7 @@ internal sealed unsafe class SettingsWindow : IDisposable
 
         SetRange(IdDwell, HaloSettings.MinDwellMs, HaloSettings.MaxDwellMs, DwellStep);
         SetRange(IdGrace, HaloSettings.MinGraceMs, HaloSettings.MaxGraceMs, GraceStep);
+        SetRange(IdOffset, HaloSettings.MinOffsetDip, HaloSettings.MaxOffsetDip, OffsetStep);
 
         void Add(int id, string cls, string text, long style, int x, int top, int width, int height)
         {
@@ -277,6 +285,8 @@ internal sealed unsafe class SettingsWindow : IDisposable
             Check(IdPillMedia, s.PillShowsMedia);
             Check(IdPillDate, s.PillShowsDate);
             Check(IdPillBattery, s.PillShowsBattery);
+            _ = SendMessageW(_controls[IdOffset], TbmSetPos, 1, s.IslandOffsetDip);
+            _ = SetWindowTextW(_controls[IdOffsetValue], s.IslandOffsetDip == 0 ? "Centre" : s.IslandOffsetDip < 0 ? $"{-s.IslandOffsetDip} left" : $"{s.IslandOffsetDip} right");
             _ = SetWindowTextW(_controls[IdHotkeyStatus], s.Hotkey == HotkeyChoice.Off ? string.Empty : _owner.HotkeyStatus == "in_use" ? "In use by another app" : "Ready");
             _ = SendMessageW(_controls[IdDwell], TbmSetPos, 1, s.HoverDwellMs);
             _ = SendMessageW(_controls[IdGrace], TbmSetPos, 1, s.LeaveGraceMs);
@@ -330,6 +340,7 @@ internal sealed unsafe class SettingsWindow : IDisposable
             PillShowsMedia = IsChecked(IdPillMedia),
             PillShowsDate = IsChecked(IdPillDate),
             PillShowsBattery = IsChecked(IdPillBattery),
+            IslandOffsetDip = Math.Clamp(Position(IdOffset, OffsetStep), HaloSettings.MinOffsetDip, HaloSettings.MaxOffsetDip),
         };
         _owner.UpdateSettings(s);
         Show(s);

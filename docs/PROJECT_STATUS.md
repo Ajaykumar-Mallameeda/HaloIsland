@@ -1328,12 +1328,21 @@ All of these use the shared vocabulary (B-F01/B-F02), and none adds a motion of 
   §6.1 and D-F01. There is one priority table, and exposing it as free settings would let users bypass the
   quiet-mode and full-screen rules, which the brief forbids.
 
-### I-F04 Position and display choice — NOT BUILT (multi-monitor BLOCKED, D7)
+### I-F04 Position and display choice — PASS for the primary display; display choice BLOCKED (D7)
 
-- The island stays centred on the primary display's work area (FR-ISL-01).
-- `IslandLayout.Compute` already takes any work area, so a display choice is a small change once a second monitor
-  is available to verify it on.
-- A horizontal offset was **not** added in this campaign.
+- **Setting:** Settings › "Horizontal position" is a slider from 800 DIP left to 800 DIP right in steps of 20,
+  centred by default, and applied live.
+- **Clamping:** `IslandLayout.Compute(..., offsetDip)` clamps the canvas to the work area, so the island never
+  leaves the screen, including on a smaller display or one at negative coordinates.
+- **Input:** shapes are canvas-relative, so hit-testing, the input region and the UIA bounds move with it.
+- **Choosing a display:** the layout already takes any monitor's work area. Picking a display is **not built**,
+  because it cannot be verified with one monitor (D7).
+- **Tests:**
+  - unit, +5: centred at zero, the offset scales with DPI, clamping on large values and on a monitor at negative
+    coordinates, bounds and default;
+  - desktop, +1: at −240 DIP the window sits at the expected pixel, takes clicks there and not at the old centre,
+    and toggles without taking focus;
+  - the settings window now has 3 sliders.
 
 ### J-F03 Brightness indicator — NOT BUILT
 
@@ -1412,7 +1421,6 @@ The expansion campaign's report is in [`EXPANSION_CAMPAIGN_REPORT.md`](EXPANSION
    - Outlook token source (system browser + PKCE, Credential Manager) once E-1 is done, then wire
      `MailWatcher`/`CalendarWatcher` into the island;
    - Bluetooth audio connection pill (J-F04, no battery level);
-   - horizontal position offset (I-F04);
    - drag-out from the shelf (OLE `IDataObject`).
 4. **Measurements on a quiet desktop:** idle smoke, PB-04 with music, PB-07 as a frame time, and PB-05 for the new
    motions.

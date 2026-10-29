@@ -158,7 +158,8 @@ Primary sources only. The source table is in RESEARCH_EXPANSION_CAMPAIGN §1.
 - **Partial or not built:**
   - per-activity customisation is partial (I-F03): sources on or off and previews, but no free priority or
     duration settings, because those would bypass the safety rules;
-  - position and display choice are not built (I-F04, needs a second monitor).
+  - **position (I-F04, added after the first gate):** a horizontal position slider for the primary display,
+    clamped to the work area. Choosing a display is not built, because it needs a second monitor.
 
 ## 9. Advanced media and hardware
 
