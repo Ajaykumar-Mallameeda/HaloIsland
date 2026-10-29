@@ -1,0 +1,32 @@
+name: Feature request
+description: Suggest a new activity, behaviour or improvement.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: Describe the situation on your desktop that Halo does not handle well today.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behaviour
+      description: How should it look and behave in the thin line, the pill and the expanded island?
+    validations:
+      required: true
+  - type: textarea
+    id: data-source
+    attributes:
+      label: Windows data source (if known)
+      description: Which documented Windows API or setting would provide the information? Halo only uses documented APIs.
+  - type: textarea
+    id: privacy
+    attributes:
+      label: Privacy considerations
+      description: Does this need access to personal content, the network or other apps? Should it be off by default?
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered

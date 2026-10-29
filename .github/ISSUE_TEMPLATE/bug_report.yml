@@ -1,0 +1,66 @@
+name: Bug report
+description: Something in Halo does not work as expected.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. **Security vulnerabilities must not be reported here**; see SECURITY.md.
+        Please remove personal information (names, file names, notification or task text) from logs and screenshots.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you see, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Start Halo
+        2. Start a Pomodoro timer
+        3. ...
+    validations:
+      required: true
+  - type: input
+    id: commit
+    attributes:
+      label: Halo commit
+      description: Output of `git rev-parse --short HEAD` in your clone.
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version and build
+      description: For example "Windows 11 24H2, build 26100.2314" (run `winver`).
+    validations:
+      required: true
+  - type: input
+    id: display
+    attributes:
+      label: Displays and scaling
+      description: Number of monitors, resolution, scaling (for example 125 %) and refresh rate.
+  - type: dropdown
+    id: run-mode
+    attributes:
+      label: How do you run Halo?
+      options:
+        - Unpackaged Release build (Halo.exe)
+        - Unpackaged Debug build
+        - Development MSIX I built myself
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Diagnostic log excerpt (optional)
+      description: From `%LOCALAPPDATA%\ProjectHalo\logs\halo.log`. Read it first and remove anything you do not want to share.
+      render: text
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots (optional)
+      description: Crop to the island and remove personal content.
