@@ -1,6 +1,6 @@
 # Project Status — Project Halo
 
-Last updated: 2026-10-29 (expansion campaign in progress; see §9 for its features, §8 for M1–M3)
+Last updated: 2026-10-29 (Visual Experience 2.0 done, see the section before "Next recommended action"; §9 for the expansion campaign, §8 for M1–M3)
 
 ## Current phase
 
@@ -1496,6 +1496,32 @@ Also done in this round:
 - the camera indicator was turned on in the owner's settings;
 - a development MSIX was built and signed ([`PACKAGING_FEASIBILITY.md`](PACKAGING_FEASIBILITY.md) §5). Installing
   it needs one elevated step.
+
+### Visual Experience 2.0 — PASS (functional and visual); high contrast and a live media session not checked by eye
+
+Design and evidence: [`VISUAL_EXPERIENCE_2.md`](VISUAL_EXPERIENCE_2.md). Commits `6526551` (design tokens and tones) and
+`d2432eb` (flush-top surface, page frame, activity visuals, in-island feature pages).
+
+- **What changed:**
+  - a flush-top silhouette with concave shoulders, a surface gradient and a rim light;
+  - a header row, chevrons and centred, animated page dots on every page;
+  - tone accents for every activity and alert;
+  - timer and focus rings;
+  - a media card with a cover accent;
+  - labelled chips;
+  - the Clock (Do Not Disturb, Settings), Pomodoro, To-do and Shelf pages **inside the island**. The tray menu is unchanged.
+- **Tests:** unit 533/533, island desktop 86/86, spike desktop 5/5, clean Release build with 0 warnings.
+- **Expectations changed:** the geometry (flush top, 460 × 196 expanded, 320 × 42 alert, the region includes the
+  shoulders) and the always-present feature pages. All are documented in VISUAL_EXPERIENCE_2 §2–§3.
+- **Smoke:** before `APP-SMOKE-120-161942`, after `APP-SMOKE-120-165727`, both valid (VISUAL_EXPERIENCE_2 §8).
+  First frame 285 → 310 ms, idle CPU unchanged, private memory 21.3 → 24.2 MB. No budget changed.
+- **Environment note:** the desktop suites need to run outside the command sandbox, because `SendInput` is blocked
+  inside it. This was proven on the unchanged `b1712b1`.
+- **Open:**
+  - water reminder (not built: it is not an existing feature; owner decision);
+  - high contrast and a live media session checked by eye;
+  - page-slide frame pacing (no harness marker);
+  - 60 Hz.
 
 ## Next recommended action
 

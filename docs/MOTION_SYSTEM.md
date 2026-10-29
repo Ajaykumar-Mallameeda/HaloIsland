@@ -27,7 +27,8 @@ Only these motions exist. A feature that needs movement uses one of them, and no
 | **Level** | A bar or ring value changes (volume, battery, timer, media progress on a seek) | 240 ms | 0 | same | instant |
 | **Emphasis** | The last 10 s of a timer: one gentle brightness step, never flashing | 400 ms, once per second | 0 | same | none (the text says "seconds left") |
 | **Arrival** | A completion (timer done) or a new activity: the pill grows 4 % and returns once | 260 ms | 0 | same | none |
-| **Feedback** | Hover fill/edge colour; press scale 96.5 % | 140 ms / 90–180 ms | 0 | same | press scale off |
+| **Feedback** | Hover fill/edge colour; press scale 96.5 % (island) and 94 % (chips, chevrons, tiles); one 260 ms pulse of the media play disc on play/pause | 140 ms / 90–180 ms | 0 | same | press scale and pulse off |
+| **Page slide** (VX 2.0) | The open island's body on a page change: from ±28 DIP (direction of the step) and transparent to in place; the page dots morph; the header title and glyph Swap | 250 ms offset, 160 ms fade; dots 220 ms | 0 | same | none (instant) |
 
 Longest sequence: morph plus fade-in, 370 ms. No motion repeats without a new event, except Emphasis, which runs at most 10 times (one per second).
 
@@ -35,11 +36,15 @@ Longest sequence: morph plus fade-in, 370 ms. No motion repeats without a new ev
 
 | Shape | Width × height | Corner radius |
 |---|---|---|
-| Compact | 236 × 38 | 19 (pill) |
-| Alert / activity pill | 300 × 44 | 22 (pill) |
-| Expanded | 420 × 172 (+40 with the volume row) | 30 |
+| Compact | 236 × 36 | 18 (pill) |
+| Alert / activity pill | 320 × 42 | 21 (pill) |
+| Expanded | 460 × 196 (+40 with the volume row) | 34 |
 
 Radius is capped at half the height, so compact and alert shapes are exact pills at any scale.
+
+Visual Experience 2.0 ([VISUAL_EXPERIENCE_2.md](VISUAL_EXPERIENCE_2.md)): every shape is flush with the top of the work area
+(no gap). The drawn rectangle starts above the window by its radius, so only the lower corners show, and 10 DIP concave
+shoulders follow the shape through every morph (expression animations, no managed code per frame).
 
 ## 3. Rules
 
