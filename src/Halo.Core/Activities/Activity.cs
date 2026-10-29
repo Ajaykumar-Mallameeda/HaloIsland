@@ -43,6 +43,9 @@ public sealed record IslandActivity(string Id, ActivityKind Kind, AlertPriority 
     /// <summary>Icon-font glyph.</summary>
     public string Glyph { get; init; } = string.Empty;
 
+    /// <summary>What the activity means for colour; neutral = the usual tone of its kind (see HaloDesign.ToneOf).</summary>
+    public Theming.Tone Tone { get; init; }
+
     /// <summary>Short compact text ("04:59", "3 tasks"). Never logged.</summary>
     public string CompactText { get; init; } = string.Empty;
 

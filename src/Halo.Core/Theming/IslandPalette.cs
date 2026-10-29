@@ -65,6 +65,24 @@ public sealed record IslandPalette(
     Rgba Track,
     Rgba Bar)
 {
+    /// <summary>Top stop of the surface gradient (Visual Experience 2.0): depth without a visible band.</summary>
+    public Rgba SurfaceTop { get; init; } = Fill;
+
+    /// <summary>Bottom stop of the surface gradient.</summary>
+    public Rgba SurfaceBottom { get; init; } = Fill;
+
+    /// <summary>The rim light along the island's lower edge (fades out towards the top edge of the screen).</summary>
+    public Rgba Rim { get; init; } = Edge;
+
+    /// <summary>Raised surfaces inside the island: chips, panels, the chevrons.</summary>
+    public Rgba Elevated { get; init; } = Track;
+
+    /// <summary>A raised surface under the pointer or pressed.</summary>
+    public Rgba ElevatedActive { get; init; } = Edge;
+
+    /// <summary>High contrast: flat surfaces, a visible outline, and the system highlight for every accent.</summary>
+    public bool HighContrast { get; init; }
+
     public static IslandPalette Dark { get; } = new(
         Rgba.Opaque(0, 0, 0),
         Rgba.Opaque(22, 22, 24),
@@ -74,7 +92,14 @@ public sealed record IslandPalette(
         new Rgba(184, 255, 255, 255),
         new Rgba(140, 255, 255, 255),
         new Rgba(46, 255, 255, 255),
-        new Rgba(230, 255, 255, 255));
+        new Rgba(230, 255, 255, 255))
+    {
+        SurfaceTop = Rgba.Opaque(0, 0, 0),
+        SurfaceBottom = Rgba.Opaque(14, 14, 17),
+        Rim = new Rgba(46, 255, 255, 255),
+        Elevated = new Rgba(30, 255, 255, 255),
+        ElevatedActive = new Rgba(52, 255, 255, 255),
+    };
 
     public static IslandPalette Light { get; } = new(
         Rgba.Opaque(246, 246, 248),
@@ -85,7 +110,14 @@ public sealed record IslandPalette(
         new Rgba(196, 0, 0, 0),
         new Rgba(150, 0, 0, 0),
         new Rgba(36, 0, 0, 0),
-        new Rgba(220, 20, 20, 22));
+        new Rgba(220, 20, 20, 22))
+    {
+        SurfaceTop = Rgba.Opaque(250, 250, 252),
+        SurfaceBottom = Rgba.Opaque(238, 238, 242),
+        Rim = new Rgba(40, 0, 0, 0),
+        Elevated = new Rgba(16, 0, 0, 0),
+        ElevatedActive = new Rgba(32, 0, 0, 0),
+    };
 
     /// <summary>The palette for the settings and the system state.</summary>
     /// <param name="mode">The user's theme choice.</param>
@@ -96,7 +128,13 @@ public sealed record IslandPalette(
     {
         if (highContrast is { } hc)
         {
-            return new IslandPalette(hc.Window, hc.Window, hc.WindowText, hc.Highlight, hc.WindowText, hc.WindowText, hc.WindowText, hc.GrayText, hc.Highlight);
+            return new IslandPalette(hc.Window, hc.Window, hc.WindowText, hc.Highlight, hc.WindowText, hc.WindowText, hc.WindowText, hc.GrayText, hc.Highlight)
+            {
+                Rim = hc.WindowText,
+                Elevated = hc.Window,
+                ElevatedActive = hc.Window,
+                HighContrast = true,
+            };
         }
 
         var light = mode == ThemeMode.Light || (mode == ThemeMode.System && systemIsLight);

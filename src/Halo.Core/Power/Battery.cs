@@ -158,23 +158,23 @@ public sealed class BatteryMonitor(BatteryThresholds thresholds)
         if (p <= Thresholds.Critical && !_criticalShown)
         {
             (_criticalShown, _lowShown) = (true, true);
-            return new IslandAlert(BatteryKey, AlertKind.Battery, AlertPriority.Critical, Content(r, "Battery critical"), TimeSpan.FromSeconds(8), TimeSpan.FromMinutes(1), AllowedWhenSuppressed: true);
+            return new IslandAlert(BatteryKey, AlertKind.Battery, AlertPriority.Critical, Content(r, "Battery critical", Theming.Tone.Critical), TimeSpan.FromSeconds(8), TimeSpan.FromMinutes(1), AllowedWhenSuppressed: true);
         }
 
         if (p <= Thresholds.Low && !_lowShown)
         {
             _lowShown = true;
-            return new IslandAlert(BatteryKey, AlertKind.Battery, AlertPriority.High, Content(r, "Battery low"), TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(30));
+            return new IslandAlert(BatteryKey, AlertKind.Battery, AlertPriority.High, Content(r, "Battery low", Theming.Tone.Warning), TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(30));
         }
 
         return null;
     }
 
     private static IslandAlert Power(PowerReading r, string text) =>
-        new(PowerKey, AlertKind.Power, AlertPriority.Normal, Content(r, text), TimeSpan.FromMilliseconds(2500), TimeSpan.FromSeconds(3));
+        new(PowerKey, AlertKind.Power, AlertPriority.Normal, Content(r, text, r.Source == PowerSource.Ac ? Theming.Tone.Charging : Theming.Tone.Neutral), TimeSpan.FromMilliseconds(2500), TimeSpan.FromSeconds(3));
 
-    private static AlertContent Content(PowerReading r, string text) =>
+    private static AlertContent Content(PowerReading r, string text, Theming.Tone tone) =>
         r.Percent is { } p
-            ? new AlertContent(r.Glyph, text, p / 100.0, p.ToString(CultureInfo.InvariantCulture)) { Accessible = string.Create(CultureInfo.InvariantCulture, $"{text}, {p} percent") }
-            : new AlertContent(r.Glyph, text);
+            ? new AlertContent(r.Glyph, text, p / 100.0, p.ToString(CultureInfo.InvariantCulture)) { Accessible = string.Create(CultureInfo.InvariantCulture, $"{text}, {p} percent"), Tone = tone }
+            : new AlertContent(r.Glyph, text) { Tone = tone };
 }

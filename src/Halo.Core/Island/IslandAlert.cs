@@ -45,6 +45,9 @@ public sealed record AlertContent(string Glyph, string Text, double? Level = nul
     /// <summary>What a screen reader hears instead of <see cref="Text"/> (for example "Volume 64 percent"), or null.</summary>
     public string? Accessible { get; init; }
 
+    /// <summary>What the alert means for colour; neutral = the usual tone of its kind (see HaloDesign.ToneOf).</summary>
+    public Theming.Tone Tone { get; init; }
+
     /// <summary>The text announced and exposed to UI Automation. Never logged.</summary>
     public string Spoken => Accessible ?? Text;
 

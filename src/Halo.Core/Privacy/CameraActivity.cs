@@ -32,7 +32,7 @@ public sealed class CameraActivityMonitor(uint ownProcessId)
         StreamCount = uses.Count(u => u.Streaming && u.ProcessId != ownProcessId);
         InUse = StreamCount > 0;
         return InUse && !was
-            ? new IslandAlert(AlertKey, AlertKind.Halo, AlertPriority.High, new AlertContent(CameraGlyph, "Camera on") { Accessible = "An app started using the camera" }, TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(10))
+            ? new IslandAlert(AlertKey, AlertKind.Halo, AlertPriority.High, new AlertContent(CameraGlyph, "Camera on") { Accessible = "An app started using the camera", Tone = Theming.Tone.Camera }, TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(10))
             {
                 AllowedInQuietMode = true, // a privacy signal, not a distraction
             }
@@ -44,6 +44,7 @@ public sealed class CameraActivityMonitor(uint ownProcessId)
         ? new IslandActivity(ActivityId, ActivityKind.System, AlertPriority.Normal)
         {
             Glyph = CameraGlyph,
+            Tone = Theming.Tone.Camera,
             CompactText = "Camera on",
             Title = "Camera in use",
             Subtitle = StreamCount == 1 ? "An app is using a camera" : $"{StreamCount} camera streams in use",

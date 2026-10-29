@@ -72,7 +72,7 @@ public sealed class AudioDeviceMonitor
         Key,
         AlertKind.Volume,
         AlertPriority.Normal,
-        new AlertContent(Headphones, $"{state} · {name}") { Accessible = spoken },
+        new AlertContent(Headphones, $"{state} · {name}") { Accessible = spoken, Tone = Theming.Tone.Bluetooth },
         TimeSpan.FromSeconds(3),
         TimeSpan.FromSeconds(5));
 }

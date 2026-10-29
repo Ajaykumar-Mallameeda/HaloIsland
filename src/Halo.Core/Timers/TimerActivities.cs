@@ -105,6 +105,7 @@ public static class TimerActivities
         return new IslandActivity(FocusId, ActivityKind.Focus, AlertPriority.Normal)
         {
             Glyph = session.Phase == FocusPhase.Work ? FocusGlyph : BreakGlyph,
+            Tone = ToneOf(session.Phase),
             CompactText = CountdownTimer.Format(remaining),
             Title = CountdownTimer.Format(remaining),
             Subtitle = $"{phase} · {position}{(paused ? " · paused" : string.Empty)}",
@@ -137,11 +138,20 @@ public static class TimerActivities
         new AlertContent(ended.Next == FocusPhase.Work ? FocusGlyph : BreakGlyph, ended.Next == FocusPhase.Work ? "Back to focus" : PhaseName(ended.Next) + " time")
         {
             Accessible = ended.Next == FocusPhase.Work ? "Break over, focus started" : PhaseName(ended.Next) + " started",
+            Tone = ToneOf(ended.Next),
         },
         TimeSpan.FromSeconds(4),
         TimeSpan.FromSeconds(30))
     {
         AllowedInQuietMode = true,
+    };
+
+    /// <summary>The colour of a focus phase: red for work, green for a short break, blue for a long one.</summary>
+    public static Theming.Tone ToneOf(FocusPhase phase) => phase switch
+    {
+        FocusPhase.ShortBreak => Theming.Tone.ShortBreak,
+        FocusPhase.LongBreak => Theming.Tone.LongBreak,
+        _ => Theming.Tone.Focus,
     };
 
     public static string PhaseName(FocusPhase phase) => phase switch
