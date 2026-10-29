@@ -5,7 +5,7 @@
 | Date | 2026-10-29 |
 | Repository | `C:\dev\Notch\advanced-windows-island` (canonical). The OneDrive copy was not touched: clean, still at `9f7d5fb` |
 | Starting point | `4f26bc9` (M3 gate), branch `main`, clean tree, no remotes |
-| End point | the commit that adds this report (`docs: record the expansion campaign report and final gate`, the last line of `git log`), clean tree, no remotes, **nothing pushed** |
+| End point | the last commit in §14 (`docs: record the post-gate features and the final numbers`), clean tree, no remotes, **nothing pushed** |
 | Machine | 1920×1080 @ 120 Hz, 125 %, one display, Windows 11 (build 26300) |
 | Detail | Per-feature records: [`PROJECT_STATUS.md`](PROJECT_STATUS.md) §9 · research: [`RESEARCH_EXPANSION_CAMPAIGN.md`](RESEARCH_EXPANSION_CAMPAIGN.md) · motion: [`MOTION_SYSTEM.md`](MOTION_SYSTEM.md) · packaging: [`PACKAGING_FEASIBILITY.md`](PACKAGING_FEASIBILITY.md) |
 
@@ -22,11 +22,29 @@
   - light, dark and system themes, with pill content choices;
   - a clipboard and file shelf;
   - activity animations.
-- **Tests:** they went from 319 unit and 52 desktop tests to **462 unit** and **79 desktop** tests,
+- **Tests:** they went from 319 unit and 52 desktop tests to **480 unit** and **84 desktop** tests,
   all passing at the final gate.
 - **Blocked:** live Outlook use (needs the owner's app registration and sign-in), MSIX packaging and
   notification mirroring (owner decision), and the microphone indicator (no documented API).
 - **Not done:** a Narrator check by ear (needs a person).
+
+## Added after the first gate ("continue")
+
+| Feature | Commit | State |
+|---|---|---|
+| I-F04 Horizontal position (primary display) | `9631a75` | PASS |
+| J-F04 Bluetooth audio connect/disconnect pills (no battery) | `2de698c` | PASS (real bus read; transitions synthetic) |
+| H-F02 Shelf drag-out (copy or link, never move) | `a4b03d7` | PASS (real drag) |
+| K / C-F08 Camera-in-use indicator (off by default) | `53046ef` | PASS (real passive monitor; transitions synthetic) |
+| J-F03 Brightness | — | Re-checked: no documented power-setting notification for brightness; still needs WMI (a new dependency). NOT BUILT |
+
+**Second gate on the final HEAD:**
+- locked restore OK;
+- clean `--no-incremental` Release build: 0 warnings, 0 errors;
+- unit **480/480**;
+- island desktop **84/84**;
+- spike desktop **5/5**;
+- smoke `APP-SMOKE-120-130250` valid.
 
 ## 1. Starting state
 
@@ -176,8 +194,8 @@ Primary sources only. The source table is in RESEARCH_EXPANSION_CAMPAIGN §1.
 
 | Suite | Start | End |
 |---|---|---|
-| Unit (Core + App + spikes) | 319 | **462** passed, 0 failed |
-| Island desktop (`Category=Integration`) | 52 | **79** passed, 0 failed |
+| Unit (Core + App + spikes) | 319 | **480** passed, 0 failed |
+| Island desktop (`Category=Integration`) | 52 | **84** passed, 0 failed |
 | Spike desktop | 5 | **5/5** |
 | Locked restore / clean Release build | OK / 0 warnings | locked restore OK / `--no-incremental` Release build 0 warnings, 0 errors |
 
@@ -193,7 +211,10 @@ Primary sources only. The source table is in RESEARCH_EXPANSION_CAMPAIGN §1.
 | I-F05 shortcut | 3 | 3 |
 | J media | ≈11 | 2 |
 | I-F01/I-F02 themes and pill | 17 | 3 |
-| H shelf | 5 | 1 |
+| H shelf (pin, copy, drag-out) | 5 | 2 |
+| I-F04 position (after the first gate) | 5 | 1 |
+| J-F04 Bluetooth audio (after the first gate) | 11 | 1 |
+| K camera indicator, message IDs (after the first gate) | 5 | 2 |
 
 **Intermittents (audit trail):**
 - One tasks-window failure. It was first blamed on a stale window handle, which was wrong. The failing call is
@@ -214,18 +235,21 @@ Primary sources only. The source table is in RESEARCH_EXPANSION_CAMPAIGN §1.
 | Themes | Captured pixels of the light theme | High contrast (unit only) |
 | Outlook | — | **All of it** (fake HTTP, fixtures) |
 | Battery, network | Start-up readings | Transitions (synthetic, as in M3) |
+| Bluetooth audio | The real endpoint's bus (`intelaudio`) read from its property store | Connect and disconnect (no headset available) |
+| Camera indicator | The real Media Foundation monitor started (passive) | In-use transitions (a camera is never opened) |
+| Shelf drag-out | A real `SendInput` drag into a WPF drop target (copy; the original stays) | — |
 
 ## 12. Performance
 
-Run `APP-SMOKE-120-034653` (`Halo.Spikes.Harness app-check`, 120 Hz, valid by the harness's own checks):
+`Halo.Spikes.Harness app-check` runs at 120 Hz; each is valid by the harness's own checks:
 
-| Measurement | M3 gate (`APP-SMOKE-120-013355`) | Now |
-|---|---|---|
-| Start → first frame, p50 of 5 | 230.5 ms | **266.0 ms** (it now also loads `state.json`, `tasks.json` and `shelf.json` and reads the theme) |
-| Idle 90 s: CPU / attributed frames | 15.6 ms / 160 (baseline failed; not attributable) | **15.6 ms / 1** (the one minute-clock update) |
-| Private memory / working set | 19.3 / 73.6 MB | **20.1 / 77.5 MB** |
-| Transitions (20, UIA-driven) | 17/20 valid; 1 long frame; p95 8.9 ms | **20/20 valid**; 1 with one long frame; p95 8.9 ms; max 16.9 ms |
-| Exit p50; Halo processes left | 75.7 ms; 0 | **76.2 ms; 0** |
+| Measurement | M3 gate (`…-013355`) | First gate (`…-034653`) | Final (`APP-SMOKE-120-130250`) |
+|---|---|---|---|
+| Start → first frame, p50 of 5 | 230.5 ms | 266.0 ms | **277.1 ms** (it now also loads `state.json`, `tasks.json` and `shelf.json` and reads the theme) |
+| Idle 90 s: CPU / attributed frames | 15.6 ms / 160 (baseline failed; not attributable) | 15.6 ms / 1 | **31.3 ms / 1** (two scheduler ticks; the one frame is the minute clock) |
+| Private memory / working set | 19.3 / 73.6 MB | 20.1 / 77.5 MB | **20.4 / 77.7 MB** |
+| Transitions (20, UIA-driven) | 17/20 valid; 1 long frame; p95 8.9 ms | 20/20; 1 long; p95 8.9 ms | **20/20 valid**; 1 with one long frame; p95 8.8 ms; max 16.5 ms |
+| Exit p50; Halo processes left | 75.7 ms; 0 | 76.2 ms; 0 | **73.2 ms; 0** |
 
 - **Budgets:** no budget was changed, and these are **SMOKE observations, not verdicts**.
 - **Not measured** (still open): PB-02, the PB-03 interpretation (owner decision E2), formal PB-05 (including the
@@ -268,7 +292,12 @@ Run `APP-SMOKE-120-034653` (`Halo.Spikes.Harness app-check`, 120 Hz, valid by th
 | `f20c7bb` | feat: add light, dark and system themes and pill content choices |
 | `92ca359` | feat: animate media, volume, battery and network changes |
 | `74cd792` | feat: add a user-controlled clipboard and file shelf |
-| (this report) | `docs: record the expansion campaign report and final gate` |
+| `5ed31aa` | docs: record the expansion campaign report and final gate |
+| `9631a75` | feat: let the user move the island along the top of the screen |
+| `2de698c` | feat: show when Bluetooth audio connects or disconnects |
+| `a4b03d7` | feat: drag pinned files out of the shelf as copies |
+| `53046ef` | feat: add an opt-in camera-in-use indicator from Windows' activity reports |
+| (this update) | `docs: record the post-gate features and the final numbers` |
 
 ## 15. Remaining blockers and owner decisions
 
@@ -278,7 +307,7 @@ Run `APP-SMOKE-120-034653` (`Halo.Spikes.Harness app-check`, 120 Hz, valid by th
 | E1–E3 | Earlier owner decisions (PROJECT_STATUS §5) | ADR approval, PB-03 wording, outstanding perf runs |
 | L-1 | Package Halo as MSIX, and choose a signing route | Notification mirroring (O-F01), toasts, Start with Windows, clean install tests (L-F02/L-F03) |
 | E-1 | Entra app registration and owner sign-in | Live Outlook mail and calendar |
-| K-1 | Accept the camera-in-use indicator's disclosure | Camera indicator |
+| K-1 | Turn on the camera-in-use indicator (built, off by default) | Camera indicator in daily use |
 | O-F02 | Keyboard-state indicators | Caps Lock and input-language pills |
 | — | Approve `System.Management` | Brightness indicator (J-F03) |
 | D7 | Second monitor; clean PC or VM | Multi-monitor and mixed DPI; install tests |

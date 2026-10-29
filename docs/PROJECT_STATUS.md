@@ -1447,6 +1447,25 @@ decision E2.
 - no remotes, and nothing was pushed;
 - the OneDrive copy is clean at `9f7d5fb`, untouched.
 
+### Second gate after the "continue" features — PASS
+
+On the final HEAD:
+- locked restore passed;
+- clean Release build: 0 warnings;
+- unit **480/480**;
+- island desktop **84/84**;
+- spike desktop **5/5**.
+
+Smoke `APP-SMOKE-120-130250` (valid; SMOKE only):
+
+| Measurement | Value |
+|---|---|
+| Start → first frame p50 | 277.1 ms |
+| Idle 90 s | 31.3 ms CPU (2 ticks), 1 attributed frame |
+| Private memory | 20.4 MB |
+| Transitions | 20/20 valid; p95 8.8 ms; max 16.5 ms |
+| Exit p50 | 73.2 ms; 0 processes left |
+
 ## Next recommended action
 
 The expansion campaign's report is in [`EXPANSION_CAMPAIGN_REPORT.md`](EXPANSION_CAMPAIGN_REPORT.md).
