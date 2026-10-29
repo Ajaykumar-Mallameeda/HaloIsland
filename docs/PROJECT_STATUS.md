@@ -1382,14 +1382,35 @@ All of these use the shared vocabulary (B-F01/B-F02), and none adds a motion of 
     path, and the name never reaches the log.
   - island desktop total 81/81.
 
-### K / C-F08 Camera and microphone indicators — camera: documented API, NOT BUILT (owner decision K-1); microphone: BLOCKED
+### K / C-F08 Camera and microphone indicators — camera: PASS, **off by default**; microphone: BLOCKED
 
-- **Camera:** Media Foundation's sensor activity monitor (`MFCreateSensorActivityMonitor`) is documented and
-  reports which processes stream a camera (RESEARCH S8). It reveals other apps' activity, so it stays off until
-  the owner accepts that disclosure. Testing it would need a camera actually streaming, and Halo never starts one.
-- **Microphone:** no documented API was found. The registry keys that tools read (`CapabilityAccessManager`) are not
-  a documented interface, so nothing was built.
-- **Never used:** process-name heuristics or undocumented sources.
+- **Camera source:** Media Foundation's documented sensor activity monitor (`MFCreateSensorActivityMonitor`,
+  mfsensorgroup.dll; interface IDs and vtables taken from the installed Windows SDK 10.0.26100 `mfidl.h`).
+  - It is a passive report of which processes stream a camera. Starting it never opens or starts a camera.
+  - Media Foundation runs in lite mode (`MFStartup` / `MFShutdown`) only while the setting is on.
+- **What is kept:** only "another app is streaming a camera" and the number of streams.
+  - Process IDs are used once, to leave Halo itself out, then dropped.
+  - Friendly names and symbolic links are never read.
+  - No history is recorded.
+- **Island:**
+  - a "Camera on" pill when use starts, allowed in quiet mode because it is a privacy signal;
+  - a "Camera in use" activity while it lasts, also in the island's UIA name;
+  - it ends when streaming stops.
+  - Windows' own privacy indicator remains the authority.
+- **Setting:** "Show when an app uses the camera", **off by default**, with the explanation next to the box. Owner
+  decision K-1 is now only whether to turn it on.
+- **Microphone: BLOCKED.**
+  - No documented API reports microphone use.
+  - `CapabilityAccessManager` registry keys are not a documented interface.
+  - Process-name heuristics are not allowed.
+- **Tests:**
+  - unit, +4: on once, ends when streaming stops, Halo excluded, no app identity in any text, off by default;
+  - App unit, +1: every island window message ID is distinct (guards the collision found while building this);
+  - desktop, +2:
+    - off by default starts nothing;
+    - when enabled, the **real** monitor starts. The first attempt failed with `MF_E_SHUTDOWN` until `MFStartup`
+      was added;
+    - the in-use transitions are **synthetic** reports. The camera was never activated.
 
 ### Expansion campaign gate — PASS (functional); Narrator by ear NOT RUN
 

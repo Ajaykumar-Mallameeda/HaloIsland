@@ -169,7 +169,7 @@ Primary sources only. The source table is in RESEARCH_EXPANSION_CAMPAIGN §1.
 | J-F02 Seeking | **PASS**: only when the session allows it. A real UIA seek to 50 % moved the player's position |
 | J-F03 Brightness | **NOT BUILT**: needs `System.Management` (a new dependency) or hand-written WMI COM |
 | J-F04 Bluetooth headphones | **PASS, connection only** (added after the first gate): "Connected/Disconnected · name" pills from the endpoint's documented device properties. The real bus was read; the transitions were synthetic. **Battery never shown**: no documented API |
-| K / C-F08 Camera and microphone | Camera: documented API, held for owner consent (K-1). Microphone: **BLOCKED**, no documented API |
+| K / C-F08 Camera and microphone | Camera (added after the first gate): **PASS, off by default**. Media Foundation's passive sensor activity reports; only "in use or not" is kept. The real monitor was started; transitions were synthetic; no camera was opened. Turning it on is the owner's choice (K-1). Microphone: **BLOCKED**, no documented API |
 | H-F02 Shelf | **PASS**: pin on request only, copy back to the real clipboard, file references, "missing" flag, clear-all deletes the file. **Drag-out** (added after the first gate): copy or link only, never move. A real drag into a drop target delivered the file, and the original stayed |
 
 ## 10. Tests
@@ -245,7 +245,8 @@ Run `APP-SMOKE-120-034653` (`Halo.Spikes.Harness app-check`, 120 Hz, valid by th
   media titles never reach `halo.log`.
 - **Never added:**
   - clipboard listeners or keyboard hooks;
-  - camera or microphone access;
+  - any camera or microphone **access**. The optional, off-by-default camera indicator only reads Windows'
+    activity reports and never opens a camera;
   - changes to Windows settings;
   - telemetry;
   - automatic sending, deleting, accepting or modifying of anything.

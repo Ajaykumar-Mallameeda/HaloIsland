@@ -132,6 +132,13 @@ off.
   unchanged). Tokens, when added, belong in Windows Credential Manager, never in files or logs (ADR-001 §8).
 - **Keyboard:** the shortcut uses `RegisterHotKey` only. No hook exists and no keystrokes are seen.
 - **Windows settings:** quiet mode is Halo's own. Windows' Do Not Disturb and Focus settings are never changed.
+- **Camera indicator (opt-in, off by default):**
+  - reads Media Foundation's passive sensor activity reports. It never opens a camera, captures frames or bypasses
+    Windows' own indicator;
+  - keeps only "another app is streaming" and the stream count;
+  - process IDs are used once to exclude Halo and then dropped; app names are never read;
+  - no history is kept.
+- **Microphone use:** not monitored. No documented API exists.
 
 ## 7. Licensing, intellectual property and reverse-engineering boundary
 

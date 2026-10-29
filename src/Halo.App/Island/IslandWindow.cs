@@ -76,6 +76,9 @@ internal sealed unsafe partial class IslandWindow : IDisposable
     /// <summary>Diagnostics-only test hook: a synthetic default audio device (wParam 1 = Bluetooth, 0 = wired).</summary>
     private const uint WmTestAudioDevice = WmApp + 57;
 
+    /// <summary>Diagnostics-only test hook: a synthetic camera report (wParam 1 = in use by another process).</summary>
+    private const uint WmTestCamera = WmApp + 58;
+
     // Island right-click menu.
     private const int MenuExpand = 1;
     private const int MenuExit = 2;
@@ -632,6 +635,13 @@ internal sealed unsafe partial class IslandWindow : IDisposable
                 }
 
                 return 0;
+            case CameraWatcher.ReportMessage when _camera is not null:
+                OnCameraReport(_camera.Latest, "system");
+                return 0;
+            case WmTestCamera when _log is not null && _camera is not null:
+                // Diagnostics only: a synthetic report (wParam 1 = another process streams, 0 = none). Never a real camera.
+                OnCameraReport(wParam == 1 ? [new Halo.Core.Privacy.CameraUse(1, true)] : [], "test");
+                return 0;
             case WmTestAudioDevice when _log is not null && _volume is not null:
                 // Diagnostics only: a synthetic default-device change (wParam 1 = Bluetooth, 0 = wired), fixed name.
                 OnAudioDevice(new Halo.Core.Audio.AudioDeviceInfo(wParam == 1, wParam == 1 ? "Test Headphones" : "Speakers"), "test");
@@ -693,6 +703,8 @@ internal sealed unsafe partial class IslandWindow : IDisposable
                 _tasksWindow = null;
                 _shelfWindow?.Dispose();
                 _shelfWindow = null;
+                _camera?.Dispose();
+                _camera = null;
                 _controller.Shutdown();
                 _motion.Shutdown();
                 _ = KillTimer(hwnd, SaveTimerId);
@@ -1023,6 +1035,7 @@ internal sealed unsafe partial class IslandWindow : IDisposable
 
         ApplyHotkey(reason);
         ApplyTheme(reason);
+        ApplyCamera(reason);
         UpdateStatus(); // pill content options (I-F02)
 
         if (_layout is not null)
@@ -1173,6 +1186,62 @@ internal sealed unsafe partial class IslandWindow : IDisposable
     }
 
     private readonly Halo.Core.Audio.AudioDeviceMonitor _audioDevice = new();
+    private readonly Halo.Core.Privacy.CameraActivityMonitor _cameraMonitor = new((uint)Environment.ProcessId);
+    private CameraWatcher? _camera;
+
+    /// <summary>K / C-F08: start or stop the passive camera activity reports with the setting (off by default).</summary>
+    private void ApplyCamera(string reason)
+    {
+        if (_settings.ShowCameraActivity && _camera is null && _hwnd != 0)
+        {
+            _camera = new CameraWatcher(_hwnd);
+            var started = _camera.Start();
+            _log?.Write("camera.watch", ("status", started ? "running" : "failed"), ("hresult", _camera.LastHResult), ("reason", reason));
+            if (!started)
+            {
+                _fileLog?.Write(LogLevel.Warning, "camera.unavailable", ("hresult", _camera.LastHResult));
+            }
+        }
+        else if (!_settings.ShowCameraActivity && _camera is not null)
+        {
+            _camera.Dispose();
+            _camera = null;
+            _cameraMonitor.Reset();
+            _ = _board.Remove(Halo.Core.Privacy.CameraActivityMonitor.ActivityId);
+            Present(_controller.DropAlerts(AlertKind.Halo), "settings");
+            _log?.Write("camera.watch", ("status", "off"), ("hresult", 0), ("reason", reason));
+            if (_stateStore is not null)
+            {
+                SyncActivities("settings");
+            }
+        }
+    }
+
+    private void OnCameraReport(IReadOnlyList<Halo.Core.Privacy.CameraUse> uses, string reason)
+    {
+        var was = _cameraMonitor.InUse;
+        var alert = _cameraMonitor.Update(uses);
+        if (was != _cameraMonitor.InUse)
+        {
+            _log?.Write("camera", ("in_use", _cameraMonitor.InUse ? 1 : 0), ("streams", _cameraMonitor.StreamCount), ("reason", reason));
+        }
+
+        if (_cameraMonitor.Activity() is { } activity)
+        {
+            _ = _board.Upsert(activity);
+        }
+        else
+        {
+            _ = _board.Remove(Halo.Core.Privacy.CameraActivityMonitor.ActivityId);
+        }
+
+        if (alert is not null)
+        {
+            RaiseAlert(alert, "camera");
+        }
+
+        SyncActivities("camera");
+    }
 
     /// <summary>J-F04: a pill when the default output moves to or from a Bluetooth device (never a battery level).</summary>
     private void OnAudioDevice(Halo.Core.Audio.AudioDeviceInfo? device, string reason)

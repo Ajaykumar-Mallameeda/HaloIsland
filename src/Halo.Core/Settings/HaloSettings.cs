@@ -100,6 +100,12 @@ public sealed record HaloSettings
     /// </summary>
     public int IslandOffsetDip { get; init; }
 
+    /// <summary>
+    /// K / C-F08: mirror Windows' camera activity in the island ("Camera on"). Off by default: it reads Windows'
+    /// reports of which processes stream a camera (only "in use or not" is kept).
+    /// </summary>
+    public bool ShowCameraActivity { get; init; }
+
     /// <summary>Serialises to the versioned JSON file format (indented, stable key order).</summary>
     public string ToJson()
     {
@@ -131,6 +137,7 @@ public sealed record HaloSettings
             w.WriteBoolean("pillShowsDate", PillShowsDate);
             w.WriteBoolean("pillShowsBattery", PillShowsBattery);
             w.WriteNumber("islandOffsetDip", IslandOffsetDip);
+            w.WriteBoolean("showCameraActivity", ShowCameraActivity);
             w.WriteEndObject();
         }
 
@@ -257,6 +264,7 @@ public sealed record HaloSettings
                 PillShowsDate = Bool("pillShowsDate", d.PillShowsDate),
                 PillShowsBattery = Bool("pillShowsBattery", d.PillShowsBattery),
                 IslandOffsetDip = Int("islandOffsetDip", d.IslandOffsetDip, MinOffsetDip, MaxOffsetDip),
+                ShowCameraActivity = Bool("showCameraActivity", d.ShowCameraActivity),
             };
 
             // Critical must stay below low; otherwise it falls back (to the default, or just under low).
