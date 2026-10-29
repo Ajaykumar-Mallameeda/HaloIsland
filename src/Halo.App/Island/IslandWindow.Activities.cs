@@ -488,6 +488,7 @@ internal sealed partial class IslandWindow
     {
         var pages = Pages;
         _visuals?.ShowPage(IslandPages.Resolve(_page, pages), pages, animate && State.IsExpanded, _reducedMotion);
+        RefreshPageContent();
     }
 
     /// <summary>Opening the island shows the default page: the primary activity, else what is playing, else the clock.</summary>
@@ -521,25 +522,6 @@ internal sealed partial class IslandWindow
         ApplyPage(animate: true);
         UpdateMediaTick();
         PublishAutomation();
-    }
-
-    /// <summary>The activity action button under a client point while the activity page is on screen.</summary>
-    private int? ActivityButtonAt(int x, int y)
-    {
-        if (!State.IsExpanded || !State.Visible || CurrentPage != IslandPage.Activity || _board.Primary is not { } primary)
-        {
-            return null;
-        }
-
-        foreach (var square in ActivityLayout.Actions(_layout, primary.Actions.Count))
-        {
-            if (square.Contains(x, y))
-            {
-                return square.Index;
-            }
-        }
-
-        return null;
     }
 
     private int? PageDotAt(int x, int y)

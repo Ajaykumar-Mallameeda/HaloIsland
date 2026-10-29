@@ -122,7 +122,7 @@ internal sealed unsafe partial class IslandWindow : IDisposable
     private bool _mediaUnavailableLogged;
     private MediaCommand? _pressedMedia;
     private SeekBand? _seekBand;
-    private int? _pressedAction;
+    private string? _pressedControl;
     private int? _pressedDot;
     private string? _pressedMediaSession;
     private VolumeWatcher? _volume;
@@ -434,17 +434,19 @@ internal sealed unsafe partial class IslandWindow : IDisposable
             case WmCaptureChanged when _volumeDragging || _volumeMutePressed:
                 (_volumeDragging, _volumeMutePressed) = (false, false);
                 return 0;
-            case WmLButtonDown when ActivityButtonAt(LowWord(lParam), HighWord(lParam)) is { } action:
-                // An activity action (pause, dismiss…): like the media buttons, it never toggles the island.
-                _pressedAction = action;
+            case WmLButtonDown when PageControlAt(LowWord(lParam), HighWord(lParam)) is { } control:
+                // A chip, chevron, task check or shelf tile: like the media buttons, it never toggles the island.
+                _pressedControl = control.Id;
+                _visuals?.PressControl(control.Id, true, _reducedMotion);
                 _ = SetCapture(hwnd);
                 return 0;
-            case WmLButtonUp when _pressedAction is { } pressedAction:
-                _pressedAction = null;
+            case WmLButtonUp when _pressedControl is { } pressedControl:
+                _pressedControl = null;
+                _visuals?.PressControl(pressedControl, false, _reducedMotion);
                 _ = ReleaseCapture();
-                if (ActivityButtonAt(LowWord(lParam), HighWord(lParam)) == pressedAction)
+                if (PageControlAt(LowWord(lParam), HighWord(lParam)) is { } released && string.Equals(released.Id, pressedControl, StringComparison.Ordinal))
                 {
-                    RunPrimaryAction(pressedAction, "pointer");
+                    RunPageControl(released, "pointer");
                 }
 
                 return 0;
@@ -461,8 +463,13 @@ internal sealed unsafe partial class IslandWindow : IDisposable
                 }
 
                 return 0;
-            case WmCaptureChanged when _pressedAction is not null || _pressedDot is not null:
-                (_pressedAction, _pressedDot) = (null, null);
+            case WmCaptureChanged when _pressedControl is not null || _pressedDot is not null:
+                if (_pressedControl is { } cancelled)
+                {
+                    _visuals?.PressControl(cancelled, false, _reducedMotion);
+                }
+
+                (_pressedControl, _pressedDot) = (null, null);
                 return 0;
             case WmMouseWheel when State.IsExpanded && State.Visible:
                 // FR-ISL-08: the wheel steps through the pages of the open island.
@@ -789,7 +796,7 @@ internal sealed unsafe partial class IslandWindow : IDisposable
 
         if (transition.AlertChanged)
         {
-            _visuals?.ShowAlert(state.Alert?.Content, _reducedMotion);
+            _visuals?.ShowAlert(state.Alert, _reducedMotion);
             if (transition.Previous.Alert is { } before && state.Alert is { } after && !transition.PresentationChanged
                 && !string.Equals(before.Key, after.Key, StringComparison.Ordinal))
             {
@@ -948,15 +955,20 @@ internal sealed unsafe partial class IslandWindow : IDisposable
 
     private void ApplyRegion(bool union)
     {
+        // Visual Experience 2.0: the drawn shape starts above the window (only its lower corners show), and the strip
+        // along the top edge covers the concave shoulders, which would otherwise be clipped by the region.
         static (int, int, int, int, int) Shape(RoundedBox r) =>
             ((int)Math.Floor(r.Left), (int)Math.Floor(r.Top), (int)Math.Ceiling(r.Right), (int)Math.Ceiling(r.Bottom), (int)Math.Round(r.Radius));
+        var s = (int)_layout.Shoulder;
+        (int, int, int, int, int) Strip(RoundedBox r) => ((int)Math.Floor(r.Left) - s, (int)Math.Floor(r.Top), (int)Math.Ceiling(r.Right) + s, (int)Math.Floor(r.Top) + s, 0);
         if (union)
         {
-            SetRoundedRegion(_hwnd, Shape(_layout.Compact), Shape(_layout.Expanded));
+            SetRoundedRegion(_hwnd, Shape(_layout.Compact.Drawn()), Shape(_layout.Expanded.Drawn()), Strip(_layout.Expanded));
         }
         else
         {
-            SetRoundedRegion(_hwnd, Shape(_layout.ShapeFor(State.Presentation)));
+            var shape = _layout.ShapeFor(State.Presentation);
+            SetRoundedRegion(_hwnd, Shape(shape.Drawn()), Strip(shape));
         }
     }
 
@@ -1776,7 +1788,7 @@ internal sealed unsafe partial class IslandWindow : IDisposable
     };
 
     /// <summary>True when a client-area point lies inside the shape of the current (target) presentation.</summary>
-    private bool InsideTarget(int clientX, int clientY) => _layout.ShapeFor(State.Presentation).Contains(clientX, clientY);
+    private bool InsideTarget(int clientX, int clientY) => _layout.ShapeFor(State.Presentation).ContainsSquareTop(clientX, clientY);
 
     private void SetHovered(bool hovered)
     {

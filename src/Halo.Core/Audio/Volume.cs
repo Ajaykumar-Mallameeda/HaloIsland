@@ -61,12 +61,12 @@ public sealed record VolumeRow(double MuteX, double MuteY, double MuteSize, doub
     public const double HeightDip = 40;
 
     /// <summary>Row centre below the expanded shape's top edge (under the clock's progress text and the media buttons).</summary>
-    public const double CenterDip = 180;
+    public const double CenterDip = IslandLayout.ExpandedHeightDip + 18;
 
     public const double MuteSizeDip = 32;
     public const double MuteCenterXDip = 40;
     public const double TrackLeftDip = 68;
-    public const double TrackWidthDip = 284;
+    public const double TrackWidthDip = 324;
     public const double HitHeightDip = 28;
 
     /// <summary>The row for a layout, or null when the layout has no volume row.</summary>

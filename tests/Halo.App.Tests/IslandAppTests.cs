@@ -572,8 +572,13 @@ public sealed partial class IslandAppTests
         return IslandLayout.Compute(new PixelRect(info.Work.Left, info.Work.Top, info.Work.Right - info.Work.Left, info.Work.Bottom - info.Work.Top), (int)dpi, volumeRow);
     }
 
-    private static void AssertRegion(nint hwnd, RoundedBox expected)
+    private static void AssertRegion(nint hwnd, RoundedBox shape)
     {
+        // Visual Experience 2.0: the region is the flush-top silhouette. The drawn shape starts above the window by its
+        // radius, and a strip along the top covers the concave shoulders on both sides.
+        var shoulder = ExpectedLayout().Shoulder;
+        var drawn = shape.Drawn();
+        var expected = new RoundedBox(shape.Left - shoulder, drawn.Top, shape.Width + (2 * shoulder), drawn.Height, shape.Radius);
         Assert.NotEqual(0, GetWindowRgnBox(hwnd, out var box));
         Assert.InRange(box.Left, (int)Math.Floor(expected.Left) - 1, (int)Math.Floor(expected.Left) + 1);
         Assert.InRange(box.Top, (int)Math.Floor(expected.Top) - 1, (int)Math.Floor(expected.Top) + 1);

@@ -57,6 +57,7 @@ internal sealed partial class IslandWindow
     {
         _shelf.Clear();
         _log?.Write("shelf.clear", ("count", 0));
+        RefreshPageContent();
         try
         {
             _shelfStore?.Delete(); // "clear all" leaves nothing behind, backup included
@@ -72,6 +73,7 @@ internal sealed partial class IslandWindow
 
     private void SaveShelf()
     {
+        RefreshPageContent();
         try
         {
             _ = _shelfStore?.Save(_shelf);

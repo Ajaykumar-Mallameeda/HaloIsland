@@ -52,6 +52,12 @@ public enum AccessibleCommand
 
     /// <summary>Seek the media session (J-F02): the slider's value is the position in percent.</summary>
     Seek,
+
+    /// <summary>
+    /// A control of the page on screen (Visual Experience 2.0): chevrons, focus presets, Do Not Disturb, task and shelf
+    /// buttons. <see cref="AccessibleNode.Argument"/> is its index in <c>PageControls.For</c> for the current state.
+    /// </summary>
+    PageControl,
 }
 
 /// <summary>
@@ -101,6 +107,25 @@ public sealed record IslandAccessibilityInput(IslandLayout Layout, IslandState S
 
     /// <summary>When the media progress label is computed.</summary>
     public DateTimeOffset Now { get; init; }
+
+    /// <summary>Halo's Do Not Disturb is on.</summary>
+    public bool QuietOn { get; init; }
+
+    /// <summary>Tasks done today and still pending (the to-do page's readout).</summary>
+    public int TasksDone { get; init; }
+
+    public int TasksPending { get; init; }
+
+    /// <summary>Task text is hidden because previews are off: only counts are shown and exposed.</summary>
+    public bool TasksHidden { get; init; }
+
+    /// <summary>Rows of the to-do page (empty while previews are hidden).</summary>
+    public IReadOnlyList<(string Id, string Text)> TaskRows { get; init; } = [];
+
+    public int ShelfCount { get; init; }
+
+    /// <summary>Tiles of the shelf page.</summary>
+    public IReadOnlyList<(string Id, string Name)> ShelfTiles { get; init; } = [];
 }
 
 /// <summary>
@@ -119,6 +144,9 @@ public static class IslandAccessibility
 {
     public const string AlertId = "Halo.Alert";
     public const string TimeId = "Halo.Time";
+
+    /// <summary>The date and time in the header row of every page except the clock page.</summary>
+    public const string HeaderTimeId = "Halo.Header.Time";
     public const string DateId = "Halo.Date";
     public const string DayProgressId = "Halo.DayProgress";
     public const string BatteryId = "Halo.Battery";
@@ -132,7 +160,10 @@ public static class IslandAccessibility
     public const string MuteId = "Halo.Volume.Mute";
     public const string VolumeId = "Halo.Volume";
     public const string ActivityId = "Halo.Activity";
-    public const string ActivityActionPrefix = "Halo.Activity.Action.";
+    public const string ActivityActionPrefix = PageControls.ActivityActionPrefix;
+    public const string FocusId = "Halo.Focus";
+    public const string TasksId = "Halo.Tasks";
+    public const string ShelfId = "Halo.Shelf";
     public const string PagePrefix = "Halo.Page.";
 
     public static IReadOnlyList<AccessibleNode> Children(IslandAccessibilityInput input)
@@ -161,25 +192,19 @@ public static class IslandAccessibility
         var page = IslandPages.Resolve(input.Page, pages);
         if (page == IslandPage.Activity && input.Activity is { } activity)
         {
-            nodes.Add(new AccessibleNode(ActivityId, activity.Level is null ? AccessibleRole.Text : AccessibleRole.ProgressBar, activity.Accessible.Length > 0 ? activity.Accessible : activity.Title, Box(layout, 24, 16, 290, 120))
+            nodes.Add(new AccessibleNode(ActivityId, activity.Level is null ? AccessibleRole.Text : AccessibleRole.ProgressBar, activity.Accessible.Length > 0 ? activity.Accessible : activity.Title, ActivityLayout.Box(layout, 40, 40, 380, 84))
             {
                 Value = activity.Level is { } level ? Math.Round(Math.Clamp(level, 0, 1) * 100) : null,
             });
-            var squares = ActivityLayout.Actions(layout, activity.Actions.Count);
-            foreach (var square in squares)
-            {
-                var action = activity.Actions[square.Index];
-                nodes.Add(new AccessibleNode(ActivityActionPrefix + action.Id, AccessibleRole.Button, action.Label, square.Bounds, AccessibleCommand.ActivityAction) { Argument = square.Index });
-            }
         }
         else if (page == IslandPage.Media && input.Media is { } media)
         {
-            nodes.Add(new AccessibleNode(MediaId, AccessibleRole.Text, media.AccessibleSummary, Box(layout, 112, 24, 284, 48)));
+            nodes.Add(new AccessibleNode(MediaId, AccessibleRole.Text, media.AccessibleSummary, ActivityLayout.Box(layout, 40, 40, 380, 76)));
             if (media.Timeline is { } timeline)
             {
                 var fraction = Math.Clamp(timeline.FractionAt(input.Now, media.IsPlaying), 0, 1);
                 // J-F02: a seekable session makes the position a slider; otherwise it is a read-only progress bar.
-                nodes.Add(new AccessibleNode(MediaProgressId, media.CanSeek ? AccessibleRole.Slider : AccessibleRole.ProgressBar, "Track position " + timeline.LabelAt(input.Now, media.IsPlaying), Box(layout, 112, 82, 284, 32), media.CanSeek ? AccessibleCommand.Seek : AccessibleCommand.None)
+                nodes.Add(new AccessibleNode(MediaProgressId, media.CanSeek ? AccessibleRole.Slider : AccessibleRole.ProgressBar, "Track position " + timeline.LabelAt(input.Now, media.IsPlaying), ActivityLayout.Box(layout, MediaControls.ColumnLeftDip, MediaControls.ProgressCenterDip - 12, MediaControls.ColumnWidthDip, 24), media.CanSeek ? AccessibleCommand.Seek : AccessibleCommand.None)
                 {
                     Value = Math.Round(fraction * 100),
                 });
@@ -197,23 +222,65 @@ public static class IslandAccessibility
                 nodes.Add(new AccessibleNode(id, AccessibleRole.Button, name, new RoundedBox(button.CenterX - (button.Size / 2), button.CenterY - (button.Size / 2), button.Size, button.Size, 0), command));
             }
         }
+        else if (page == IslandPage.Focus)
+        {
+            nodes.Add(new AccessibleNode(FocusId, AccessibleRole.Text, "Pomodoro: 25 minutes of focus, then a 5-minute break", ActivityLayout.Box(layout, 40, 40, 380, 84)));
+        }
+        else if (page == IslandPage.Tasks)
+        {
+            var summary = input.TasksHidden
+                ? $"{input.TasksPending} tasks pending, previews hidden"
+                : $"{input.TasksDone} of {input.TasksDone + input.TasksPending} tasks done today";
+            nodes.Add(new AccessibleNode(TasksId, AccessibleRole.Text, summary, ActivityLayout.Box(layout, 40, 40, 190, 76)));
+        }
+        else if (page == IslandPage.Shelf)
+        {
+            var count = input.ShelfCount;
+            nodes.Add(new AccessibleNode(ShelfId, AccessibleRole.Text, count == 0 ? "Nothing on the shelf" : count == 1 ? "1 item on the shelf" : $"{count} items on the shelf", ActivityLayout.Box(layout, 40, 40, 380, 90)));
+        }
         else
         {
-            nodes.Add(new AccessibleNode(TimeId, AccessibleRole.Text, input.Clock.TimeWithDesignator, Box(layout, 24, 16, 260, 62)));
-            nodes.Add(new AccessibleNode(DateId, AccessibleRole.Text, input.Clock.LongDate, Box(layout, 26, 78, 368, 24)));
-            nodes.Add(new AccessibleNode(DayProgressId, AccessibleRole.ProgressBar, input.Clock.DayProgressText, Box(layout, 26, 112, 368, 40))
+            nodes.Add(new AccessibleNode(TimeId, AccessibleRole.Text, input.Clock.TimeWithDesignator, ActivityLayout.Box(layout, 40, 36, 240, 66)));
+            nodes.Add(new AccessibleNode(DateId, AccessibleRole.Text, input.Clock.LongDate, ActivityLayout.Box(layout, 42, 102, 240, 24)));
+            nodes.Add(new AccessibleNode(DayProgressId, AccessibleRole.ProgressBar, input.Clock.DayProgressText, ActivityLayout.Box(layout, 42, 130, 240, 36))
             {
                 Value = Math.Floor(input.Clock.DayFraction * 100),
             });
-            if (input.Network is { State: not NetworkState.Unknown } net)
-            {
-                nodes.Add(new AccessibleNode(NetworkId, AccessibleRole.Text, net.Spoken, new RoundedBox(e.Right - layout.Dip(24 + 38 + 3 + 64), e.Top + layout.Dip(24), layout.Dip(40), layout.Dip(24), 0)));
-            }
+        }
 
-            if (input.Power is { HasBattery: true } power)
-            {
-                nodes.Add(new AccessibleNode(BatteryId, AccessibleRole.Text, power.Spoken, new RoundedBox(e.Right - layout.Dip(24 + 62), e.Top + layout.Dip(24), layout.Dip(62), layout.Dip(24), 0)));
-            }
+        // The header row: date and time (not on the clock page, which shows them large), then the status cluster.
+        if (page != IslandPage.Clock)
+        {
+            // The header row shows the date and time on every page except the clock page, which shows them large.
+            nodes.Add(new AccessibleNode(HeaderTimeId, AccessibleRole.Text, $"{input.Clock.TimeWithDesignator}, {input.Clock.LongDate}", ActivityLayout.Box(layout, 130, 8, 200, 26)));
+        }
+
+        if (input.Network is { State: not NetworkState.Unknown } net)
+        {
+            nodes.Add(new AccessibleNode(NetworkId, AccessibleRole.Text, net.Spoken, new RoundedBox(e.Right - layout.Dip(24 + 40 + 3 + 64), e.Top + layout.Dip(8), layout.Dip(40), layout.Dip(26), 0)));
+        }
+
+        if (input.Power is { HasBattery: true } power)
+        {
+            nodes.Add(new AccessibleNode(BatteryId, AccessibleRole.Text, power.Spoken, new RoundedBox(e.Right - layout.Dip(24 + 64), e.Top + layout.Dip(8), layout.Dip(64), layout.Dip(26), 0)));
+        }
+
+        // Every chip, chevron, check button and tile of the page, from the same list that draws and hit-tests them.
+        var context = new PageContext
+        {
+            Activity = input.Activity,
+            QuietOn = input.QuietOn,
+            TaskRows = input.TaskRows,
+            ShelfTiles = input.ShelfTiles,
+            PageCount = pages.Count,
+        };
+        var controls = PageControls.For(layout, page, context);
+        for (var i = 0; i < controls.Count; i++)
+        {
+            var c = controls[i];
+            nodes.Add(c.Command == PageCommand.ActivityAction
+                ? new AccessibleNode(c.Id, AccessibleRole.Button, c.Spoken, c.Bounds, AccessibleCommand.ActivityAction) { Argument = c.Argument }
+                : new AccessibleNode(c.Id, c.Toggled is null ? AccessibleRole.Button : AccessibleRole.ToggleButton, c.Spoken, c.Bounds, AccessibleCommand.PageControl) { Argument = i, Toggled = c.Toggled });
         }
 
         foreach (var dot in ActivityLayout.Dots(layout, pages.Count))

@@ -28,12 +28,15 @@ public readonly record struct MediaButton(MediaCommand Command, double CenterX, 
 public static class MediaControls
 {
     public const double ButtonDip = 36;
-    public const double SpacingDip = 56;
-    public const double RowCenterDip = 136;
+    public const double SpacingDip = 54;
+    public const double RowCenterDip = 156;
 
-    /// <summary>Content column of the media card: from 112 DIP to 396 DIP inside the expanded shape.</summary>
-    public const double ColumnLeftDip = 112;
-    public const double ColumnWidthDip = 284;
+    /// <summary>
+    /// The progress row of the media card (Visual Experience 2.0): the bar runs from 92 DIP to 368 DIP between the
+    /// elapsed and remaining times, and the transport row is centred under it.
+    /// </summary>
+    public const double ColumnLeftDip = 92;
+    public const double ColumnWidthDip = 276;
 
     public static IReadOnlyList<MediaButton> Layout(IslandLayout layout, MediaSnapshot? media)
     {
@@ -66,7 +69,7 @@ public static class MediaControls
 
         if (media.SessionCount > 1)
         {
-            // J-F01: at the right end of the row, clear of Next (296–332 DIP vs 360–396 DIP).
+            // J-F01: at the right end of the row, clear of Next (266–302 DIP vs 332–368 DIP).
             buttons.Add(new MediaButton(MediaCommand.SwitchSource, e.Left + layout.Dip(ColumnLeftDip + ColumnWidthDip - (ButtonDip / 2)), centerY, size));
         }
 
@@ -86,8 +89,8 @@ public static class MediaControls
         return new SeekBand(e.Left + layout.Dip(ColumnLeftDip), layout.Dip(ColumnWidthDip), e.Top + layout.Dip(ProgressCenterDip), layout.Dip(12));
     }
 
-    /// <summary>Centre of the media progress bar below the expanded shape's top (IslandVisuals places it at 86–90 DIP).</summary>
-    public const double ProgressCenterDip = 88;
+    /// <summary>Centre of the media progress bar below the expanded shape's top.</summary>
+    public const double ProgressCenterDip = 130;
 
     /// <summary>The button under a canvas point, if any.</summary>
     public static MediaCommand? HitTest(IReadOnlyList<MediaButton> buttons, double x, double y)

@@ -233,7 +233,7 @@ public class AlertTests
         var a = layout.Alert;
         var e = layout.Expanded;
 
-        Assert.Equal(375, a.Width); // 300 DIP × 1.25
+        Assert.Equal(400, a.Width); // 320 DIP × 1.25
         Assert.Equal(a.Height / 2, a.Radius);
         Assert.Equal(layout.Compact.Top, a.Top);
         Assert.True(a.Left >= e.Left && a.Right <= e.Right && a.Bottom <= e.Bottom);

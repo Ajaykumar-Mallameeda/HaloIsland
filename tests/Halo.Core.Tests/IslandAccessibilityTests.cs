@@ -72,9 +72,15 @@ public class IslandAccessibilityTests
         };
         var nodes = IslandAccessibility.Children(input);
 
+        // Information in reading order; the page controls and page dots (Visual Experience 2.0) are checked below.
         Assert.Equal(
             [IslandAccessibility.TimeId, IslandAccessibility.DateId, IslandAccessibility.DayProgressId, IslandAccessibility.NetworkId, IslandAccessibility.BatteryId, IslandAccessibility.MuteId, IslandAccessibility.VolumeId],
-            nodes.Select(n => n.Id));
+            nodes.Where(n => n.Command is not (AccessibleCommand.PageControl or AccessibleCommand.ShowPage)).Select(n => n.Id));
+        Assert.Equal(
+            [PageControls.PreviousId, PageControls.NextId, "Halo.Quiet", "Halo.Settings"],
+            nodes.Where(n => n.Command == AccessibleCommand.PageControl).Select(n => n.Id));
+        var quiet = nodes.Single(n => n.Id == "Halo.Quiet");
+        Assert.Equal((AccessibleRole.ToggleButton, false), (quiet.Role, quiet.Toggled));
         Assert.Equal("4:05 PM", nodes[0].Name);
         Assert.Equal("Wednesday, October 28", nodes[1].Name);
         Assert.Equal(67, nodes[2].Value);
@@ -173,7 +179,7 @@ public class IslandAccessibilityTests
         Assert.DoesNotContain(nodes, n => n.Id == IslandAccessibility.MediaId); // one page at a time, like the screen
 
         var pages = nodes.Where(n => n.Command == AccessibleCommand.ShowPage).ToList();
-        Assert.Equal(["Activity, shown", "Show now playing", "Show clock"], pages.Select(p => p.Name));
+        Assert.Equal(["Activity, shown", "Show now playing", "Show clock", "Show focus timer", "Show to-do list", "Show shelf"], pages.Select(p => p.Name));
         Assert.All(pages, p => Assert.True(p.Bounds.Width >= Layout.Dip(24))); // FR-A11Y-07
 
         var mediaPage = IslandAccessibility.Children(Input(Expanded) with { Activity = timer, Media = media, Page = IslandPage.Media });
@@ -183,9 +189,55 @@ public class IslandAccessibilityTests
     }
 
     [Fact]
-    public void TheClockOnlyIslandHasNoPageButtons()
+    public void HalosOwnFeaturePagesAreAlwaysThere()
     {
-        Assert.DoesNotContain(IslandAccessibility.Children(Input(Expanded)), n => n.Command == AccessibleCommand.ShowPage);
+        // Visual Experience 2.0: the clock, focus timer, to-do list and shelf live in the island itself.
+        var pages = IslandAccessibility.Children(Input(Expanded)).Where(n => n.Command == AccessibleCommand.ShowPage).Select(n => n.Name);
+        Assert.Equal(["Clock, shown", "Show focus timer", "Show to-do list", "Show shelf"], pages);
+    }
+
+    [Fact]
+    public void TheFocusPageOffersThePresetsAsButtons()
+    {
+        var nodes = IslandAccessibility.Children(Input(Expanded) with { Page = IslandPage.Focus });
+        Assert.Contains(nodes, n => n.Id == IslandAccessibility.FocusId && n.Role == AccessibleRole.Text);
+        var buttons = nodes.Where(n => n.Command == AccessibleCommand.PageControl && n.Id.StartsWith("Halo.Focus.", StringComparison.Ordinal)).ToList();
+        Assert.Equal(["Halo.Focus.Start", "Halo.Focus.Break", "Halo.Focus.Timer"], buttons.Select(b => b.Id));
+        Assert.All(buttons, b => Assert.True(b.Bounds.Width >= Layout.Dip(24) && b.Bounds.Height >= Layout.Dip(24)));
+    }
+
+    [Fact]
+    public void TaskRowsAreOnlyExposedWhilePreviewsAreAllowed()
+    {
+        var shown = IslandAccessibility.Children(Input(Expanded) with { Page = IslandPage.Tasks, TasksDone = 1, TasksPending = 2, TaskRows = [("a", "Buy milk"), ("b", "Call Sam")] });
+        Assert.Equal("1 of 3 tasks done today", shown.Single(n => n.Id == IslandAccessibility.TasksId).Name);
+        Assert.Equal(["Mark done: Buy milk", "Mark done: Call Sam"], shown.Where(n => n.Id.StartsWith("Halo.Tasks.Done.", StringComparison.Ordinal)).Select(n => n.Name));
+
+        var hidden = IslandAccessibility.Children(Input(Expanded) with { Page = IslandPage.Tasks, TasksPending = 2, TasksHidden = true });
+        Assert.Equal("2 tasks pending, previews hidden", hidden.Single(n => n.Id == IslandAccessibility.TasksId).Name);
+        Assert.DoesNotContain(hidden, n => n.Id.StartsWith("Halo.Tasks.Done.", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ShelfTilesCopyTheirItem()
+    {
+        var nodes = IslandAccessibility.Children(Input(Expanded) with { Page = IslandPage.Shelf, ShelfCount = 5, ShelfTiles = [("1", "notes.txt"), ("2", "Hello")] });
+        Assert.Equal("5 items on the shelf", nodes.Single(n => n.Id == IslandAccessibility.ShelfId).Name);
+        Assert.Equal(["Copy notes.txt", "Copy Hello"], nodes.Where(n => n.Id.StartsWith("Halo.Shelf.Item.", StringComparison.Ordinal)).Select(n => n.Name));
+    }
+
+    [Fact]
+    public void PageControlArgumentsIndexTheControlList()
+    {
+        // UIA posts the index; the window resolves it against PageControls.For for the same state.
+        var input = Input(Expanded) with { Page = IslandPage.Clock, QuietOn = true };
+        var controls = PageControls.For(Layout, IslandPage.Clock, new PageContext { QuietOn = true, PageCount = 4 });
+        foreach (var node in IslandAccessibility.Children(input).Where(n => n.Command == AccessibleCommand.PageControl))
+        {
+            Assert.Equal(node.Id, controls[node.Argument].Id);
+        }
+
+        Assert.True(IslandAccessibility.Children(input).Single(n => n.Id == "Halo.Quiet").Toggled);
     }
 
     [Fact]

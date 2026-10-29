@@ -220,6 +220,7 @@ internal sealed partial class IslandWindow
         SaveTasks();
         _tasksWindow?.Refresh();
         CheckReminders("change");
+        RefreshPageContent();
     }
 
     private void SaveTasks()

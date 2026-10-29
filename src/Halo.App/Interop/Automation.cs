@@ -206,6 +206,9 @@ internal enum AutomationRequest
 
     /// <summary>Seek the media session (value = percent).</summary>
     Seek = 18,
+
+    /// <summary>A control of the page on screen (value = its index in the page's controls).</summary>
+    PageControl = 19,
 }
 
 /// <summary>
@@ -735,7 +738,11 @@ internal sealed class IslandAutomationElement(IslandAutomationProvider root, str
         root.Post(Request(node, AccessibleRole.Button), node.Argument);
     }
 
-    public void Toggle() => root.Post(Request(Node(), AccessibleRole.ToggleButton));
+    public void Toggle()
+    {
+        var node = Node();
+        root.Post(Request(node, AccessibleRole.ToggleButton), node.Argument);
+    }
 
     public void SetValue(double value)
     {
@@ -769,6 +776,7 @@ internal sealed class IslandAutomationElement(IslandAutomationProvider root, str
             AccessibleCommand.ActivityAction => AutomationRequest.ActivityAction,
             AccessibleCommand.ShowPage => AutomationRequest.ShowPage,
             AccessibleCommand.MediaSwitch => AutomationRequest.MediaSwitch,
+            AccessibleCommand.PageControl => AutomationRequest.PageControl,
             _ => throw new InvalidOperationException("The element has no action."),
         };
     }

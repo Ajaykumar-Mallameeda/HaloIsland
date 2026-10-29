@@ -13,10 +13,11 @@ public class IslandLayoutTests
         var layout = IslandLayout.Compute(WorkArea125, 120);
 
         Assert.Equal(1.25, layout.Scale);
-        Assert.Equal(545, layout.Canvas.Width); // (420 + 2 × 8) × 1.25 = 545
-        Assert.Equal(233, layout.Canvas.Height); // (6 + 172 + 8) × 1.25 = 232.5 → 233
+        // Visual Experience 2.0 (flush top, 460 × 196 expanded, 14 DIP margin for the shoulders).
+        Assert.Equal(610, layout.Canvas.Width); // (460 + 2 × 14) × 1.25 = 610
+        Assert.Equal(263, layout.Canvas.Height); // (0 + 196 + 14) × 1.25 = 262.5 → 263
         Assert.Equal(0, layout.Canvas.Top);
-        Assert.Equal((1920 - 545) / 2, layout.Canvas.Left);
+        Assert.Equal((1920 - 610) / 2, layout.Canvas.Left);
     }
 
     [Fact]
@@ -27,15 +28,44 @@ public class IslandLayoutTests
         foreach (var shape in new[] { layout.Compact, layout.Expanded })
         {
             Assert.Equal(layout.Canvas.Width / 2.0, shape.CenterX, 0.5);
-            Assert.Equal(8, shape.Top); // 6 DIP × 1.25 = 7.5 → 8
+            Assert.Equal(0, shape.Top); // flush with the top of the work area
             Assert.True(shape.Right <= layout.Canvas.Width && shape.Bottom <= layout.Canvas.Height);
+
+            // Room for the shoulders on both sides.
+            Assert.True(shape.Left - layout.Shoulder >= 0 && shape.Right + layout.Shoulder <= layout.Canvas.Width);
         }
 
         Assert.Equal(295, layout.Compact.Width);
-        Assert.Equal(48, layout.Compact.Height);
-        Assert.Equal(24, layout.Compact.Radius, 6); // a pill: radius = half the compact height in DIP
-        Assert.Equal(525, layout.Expanded.Width);
-        Assert.Equal(215, layout.Expanded.Height);
+        Assert.Equal(45, layout.Compact.Height);
+        Assert.Equal(22.5, layout.Compact.Radius, 6); // a pill: radius = half the compact height
+        Assert.Equal(575, layout.Expanded.Width);
+        Assert.Equal(245, layout.Expanded.Height);
+        Assert.Equal(13, layout.Shoulder); // 10 DIP × 1.25 = 12.5 → 13
+    }
+
+    [Fact]
+    public void TheDrawnShapeStartsAboveTheWindowSoOnlyItsLowerCornersShow()
+    {
+        var layout = IslandLayout.Compute(WorkArea125, 120);
+        foreach (var shape in new[] { layout.Compact, layout.Expanded, layout.Alert })
+        {
+            var drawn = shape.Drawn();
+            Assert.Equal(shape.Bottom, drawn.Bottom, 6);
+            Assert.Equal(-Math.Min(shape.Radius, shape.Height / 2), drawn.Top, 6);
+            Assert.Equal((shape.Left, shape.Width, shape.Radius), (drawn.Left, drawn.Width, drawn.Radius));
+        }
+    }
+
+    [Fact]
+    public void TopCornersAreSquareForHitTesting()
+    {
+        var box = new RoundedBox(0, 0, 200, 40, 20);
+        Assert.False(box.Contains(1, 1)); // the plain rounded box excludes its top-left corner
+        Assert.True(box.ContainsSquareTop(1, 1)); // the flush-top island includes it
+        Assert.True(box.ContainsSquareTop(199, 0));
+        Assert.False(box.ContainsSquareTop(1, 39)); // lower corners stay round
+        Assert.False(box.ContainsSquareTop(100, 41));
+        Assert.False(box.ContainsSquareTop(-1, 5));
     }
 
     [Theory]

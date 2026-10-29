@@ -64,6 +64,13 @@ internal sealed partial class IslandWindow
             Activity = AccessibleActivity(),
             Page = CurrentPage,
             Now = DateTimeOffset.Now,
+            QuietOn = _quietMode.IsActive(DateTimeOffset.UtcNow),
+            TasksDone = TasksDoneToday(),
+            TasksPending = _tasks.PendingCount,
+            TasksHidden = !ShowPrivate && _tasks.PendingCount > 0,
+            TaskRows = PageContextNow().TaskRows,
+            ShelfCount = _shelf.Items.Count,
+            ShelfTiles = PageContextNow().ShelfTiles,
         };
         var snapshot = new AutomationSnapshot(
             state.IsExpanded,
@@ -109,6 +116,9 @@ internal sealed partial class IslandWindow
                 return;
             case AutomationRequest.ShowPage:
                 ShowPageAt(value, "automation");
+                return;
+            case AutomationRequest.PageControl:
+                RunPageControlAt(value, "automation");
                 return;
         }
 

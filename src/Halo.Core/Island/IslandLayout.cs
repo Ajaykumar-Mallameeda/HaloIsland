@@ -34,6 +34,22 @@ public readonly record struct RoundedBox(double Left, double Top, double Width, 
 
         return (qx * qx) + (qy * qy) <= r * r;
     }
+
+    /// <summary>
+    /// Hit test for the flush-top island (Visual Experience 2.0): the top corners are square because the shape meets the
+    /// top edge of the work area, so the band from the top to the start of the lower corners counts as inside.
+    /// </summary>
+    public bool ContainsSquareTop(double x, double y)
+    {
+        var r = Math.Min(Radius, Math.Min(Width / 2, Height / 2));
+        return (x >= Left && x <= Right && y >= Top && y <= Top + r) || Contains(x, y);
+    }
+
+    /// <summary>
+    /// The rounded rectangle actually drawn: the visible box extended upwards by its radius, so its top corners lie above
+    /// the window and only the lower corners show. The top edge of the work area clips it.
+    /// </summary>
+    public RoundedBox Drawn() => this with { Top = Top - Math.Min(Radius, Height / 2), Height = Height + Math.Min(Radius, Height / 2) };
 }
 
 /// <summary>
@@ -44,19 +60,26 @@ public readonly record struct RoundedBox(double Left, double Top, double Width, 
 /// <param name="VolumeRow">The expanded shape has the volume row at the bottom (M3-F03), which makes it taller.</param>
 public sealed record IslandLayout(PixelRect Canvas, RoundedBox Compact, RoundedBox Expanded, RoundedBox Alert, double Scale, bool VolumeRow = false)
 {
-    public const double TopGapDip = 6;
+    /// <summary>
+    /// Visual Experience 2.0: the island is flush with the top edge of the work area (no gap), joined to it by concave
+    /// shoulders, like a notch that grows out of the screen edge.
+    /// </summary>
+    public const double TopGapDip = 0;
     public const double CompactWidthDip = 236;
-    public const double CompactHeightDip = 38;
-    public const double ExpandedWidthDip = 420;
-    public const double ExpandedHeightDip = 172;
-    public const double ExpandedRadiusDip = 30;
+    public const double CompactHeightDip = 36;
+    public const double ExpandedWidthDip = 460;
+    public const double ExpandedHeightDip = 196;
+    public const double ExpandedRadiusDip = 34;
 
     /// <summary>Transient alert pill: wider than compact, far smaller than expanded, inside the expanded shape.</summary>
-    public const double AlertWidthDip = 300;
-    public const double AlertHeightDip = 44;
+    public const double AlertWidthDip = 320;
+    public const double AlertHeightDip = 42;
 
-    /// <summary>Spare room around the expanded shape so the pressed-state scale never clips.</summary>
-    public const double CanvasMarginDip = 8;
+    /// <summary>Spare room around the expanded shape for its shoulders and so the pressed-state scale never clips.</summary>
+    public const double CanvasMarginDip = 14;
+
+    /// <summary>Width (and height) of each concave shoulder in pixels at this layout's scale.</summary>
+    public double Shoulder => Math.Round(Theming.HaloDesign.ShoulderDip * Scale, MidpointRounding.AwayFromZero);
 
     /// <param name="workArea">The chosen display's work area in physical pixels.</param>
     /// <param name="dpi">That display's DPI.</param>

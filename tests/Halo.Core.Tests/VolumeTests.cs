@@ -87,7 +87,7 @@ public class VolumeTests
         var plain = IslandLayout.Compute(WorkArea, 120);
         Assert.False(plain.VolumeRow);
         Assert.Null(VolumeRow.For(plain));
-        Assert.Equal(233, plain.Canvas.Height); // (6 + 172 + 8) × 1.25
+        Assert.Equal(263, plain.Canvas.Height); // (0 + 196 + 14) × 1.25
     }
 
     [Theory]

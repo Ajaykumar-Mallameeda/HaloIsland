@@ -119,6 +119,12 @@ public sealed record MediaTimeline(TimeSpan Position, TimeSpan Duration, DateTim
 
     public double FractionAt(DateTimeOffset now, bool playing) => PositionAt(now, playing).TotalSeconds / Duration.TotalSeconds;
 
+    /// <summary>Elapsed time, "1:23" (the left label of the media card).</summary>
+    public string ElapsedAt(DateTimeOffset now, bool playing) => Format(PositionAt(now, playing));
+
+    /// <summary>Remaining time, "-2:22" (the right label of the media card).</summary>
+    public string RemainingAt(DateTimeOffset now, bool playing) => "-" + Format(Duration - PositionAt(now, playing));
+
     /// <summary>"1:23 / 3:45" (hours when needed).</summary>
     public string LabelAt(DateTimeOffset now, bool playing) => $"{Format(PositionAt(now, playing))} / {Format(Duration)}";
 
