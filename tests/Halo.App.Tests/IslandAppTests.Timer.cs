@@ -40,6 +40,7 @@ public sealed partial class IslandAppTests
 
         var done = island.WaitFor("timer", skip: 1);
         Assert.Equal("completed", done["state"]!.GetValue<string>());
+        WaitForKindAlert(island, "timer", "shown"); // logged just after "completed"; the reader may not have it yet
         Assert.Equal("timer", island.Events("alert").Last(a => a["state"]!.GetValue<string>() == "shown")["kind"]!.GetValue<string>());
         Assert.True(WaitUntil(() => notes.Contains("Timer finished"), 5000), string.Join(" | ", notes));
         Assert.True(WaitUntil(() => element.Name.Contains("Timer finished", StringComparison.Ordinal)), element.Name);

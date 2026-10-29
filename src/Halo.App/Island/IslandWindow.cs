@@ -638,6 +638,9 @@ internal sealed unsafe partial class IslandWindow : IDisposable
                 }
 
                 return 0;
+            case BrightnessWatcher.ChangedMessage when _brightness is not null && wParam == BrightnessWatcher.StartedFlag:
+                OnBrightnessStarted();
+                return 0;
             case BrightnessWatcher.ChangedMessage when _brightness is not null:
                 OnBrightness(_brightness.Latest, "system");
                 return 0;
@@ -1202,6 +1205,7 @@ internal sealed unsafe partial class IslandWindow : IDisposable
     private readonly Halo.Core.Privacy.CameraActivityMonitor _cameraMonitor = new((uint)Environment.ProcessId);
     private CameraWatcher? _camera;
     private BrightnessWatcher? _brightness;
+    private string _brightnessReason = "startup";
     private readonly Halo.Core.Display.BrightnessMonitor _brightnessMonitor = new();
 
     /// <summary>J-F03: start or stop the WMI brightness feed with the setting. Not supported → nothing is shown.</summary>
@@ -1210,13 +1214,8 @@ internal sealed unsafe partial class IslandWindow : IDisposable
         if (_settings.ShowBrightness && _brightness is null && _hwnd != 0)
         {
             _brightness = new BrightnessWatcher(_hwnd);
-            var ok = _brightness.Start();
-            _log?.Write("brightness.watch", ("status", ok ? "running" : "not_supported"), ("hresult", _brightness.LastHResult), ("reason", reason));
-            if (ok)
-            {
-                _ = _brightnessMonitor.Update(_brightness.Latest); // the start-up level: recorded, not shown
-                _log?.Write("brightness", ("percent", _brightness.Latest), ("reason", "startup"));
-            }
+            _brightnessReason = reason;
+            _brightness.StartInBackground(); // WMI start-up is slow; OnBrightnessStarted follows
         }
         else if (!_settings.ShowBrightness && _brightness is not null)
         {
@@ -1225,6 +1224,23 @@ internal sealed unsafe partial class IslandWindow : IDisposable
             _brightnessMonitor.Reset();
             Present(_controller.DropAlerts(AlertKind.Brightness), "settings");
             _log?.Write("brightness.watch", ("status", "off"), ("hresult", 0), ("reason", reason));
+        }
+    }
+
+    private void OnBrightnessStarted()
+    {
+        var watcher = _brightness!;
+        if (!watcher.TakeStartReport())
+        {
+            return;
+        }
+
+        var ok = watcher.Supported;
+        _log?.Write("brightness.watch", ("status", ok ? "running" : "not_supported"), ("hresult", watcher.LastHResult), ("reason", _brightnessReason));
+        if (ok)
+        {
+            _ = _brightnessMonitor.Update(watcher.Latest); // the start-up level: recorded, not shown
+            _log?.Write("brightness", ("percent", watcher.Latest), ("reason", "startup"));
         }
     }
 
