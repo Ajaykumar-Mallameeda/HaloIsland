@@ -1,0 +1,47 @@
+# Restores, builds Release and runs the unit tests on Windows.
+# Desktop tests (Category=Integration) are not run here: they inject real mouse input and need an
+# interactive desktop, which hosted runners do not provide. Run them locally (see CONTRIBUTING.md).
+# This workflow publishes no artifacts or releases and needs no secrets.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+  TESTINGPLATFORM_TELEMETRY_OPTOUT: '1'
+  DOTNET_NOLOGO: '1'
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: '1'
+
+jobs:
+  build-and-test:
+    name: Build and unit tests
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up .NET (from global.json)
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Restore (locked)
+        run: dotnet restore Halo.slnx --locked-mode
+
+      - name: Build Release
+        run: dotnet build Halo.slnx -c Release --no-restore
+
+      - name: Unit tests
+        run: dotnet test --solution Halo.slnx -c Release --no-build -- --filter-not-trait "Category=Integration"
