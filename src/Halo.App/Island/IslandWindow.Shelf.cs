@@ -67,8 +67,8 @@ internal sealed partial class IslandWindow
         }
     }
 
-    internal void LogShelf(string action, bool ok, ShelfKind kind) =>
-        _log?.Write("shelf." + action, ("kind", kind == ShelfKind.File ? "file" : "text"), ("result", ok ? "done" : "failed"));
+    internal void LogShelf(string action, bool ok, ShelfKind kind, string effect = "") =>
+        _log?.Write("shelf." + action, ("kind", kind == ShelfKind.File ? "file" : "text"), ("result", ok ? "done" : "failed"), ("effect", effect.Length > 0 ? effect : "none"));
 
     private void SaveShelf()
     {

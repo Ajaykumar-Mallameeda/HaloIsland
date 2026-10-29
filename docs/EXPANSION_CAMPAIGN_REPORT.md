@@ -170,7 +170,7 @@ Primary sources only. The source table is in RESEARCH_EXPANSION_CAMPAIGN §1.
 | J-F03 Brightness | **NOT BUILT**: needs `System.Management` (a new dependency) or hand-written WMI COM |
 | J-F04 Bluetooth headphones | **PASS, connection only** (added after the first gate): "Connected/Disconnected · name" pills from the endpoint's documented device properties. The real bus was read; the transitions were synthetic. **Battery never shown**: no documented API |
 | K / C-F08 Camera and microphone | Camera: documented API, held for owner consent (K-1). Microphone: **BLOCKED**, no documented API |
-| H-F02 Shelf | **PASS**: pin on request only, copy back to the real clipboard, file references, "missing" flag, clear-all deletes the file. **Drag-out not built** |
+| H-F02 Shelf | **PASS**: pin on request only, copy back to the real clipboard, file references, "missing" flag, clear-all deletes the file. **Drag-out** (added after the first gate): copy or link only, never move. A real drag into a drop target delivered the file, and the original stayed |
 
 ## 10. Tests
 
@@ -196,8 +196,9 @@ Primary sources only. The source table is in RESEARCH_EXPANSION_CAMPAIGN §1.
 | H shelf | 5 | 1 |
 
 **Intermittents (audit trail):**
-- One tasks-window failure: `PostMessage` to a closing window from a previous instance. The harness now takes the
-  window of its own process ID.
+- One tasks-window failure. It was first blamed on a stale window handle, which was wrong. The failing call is
+  `AllowSetForegroundWindow`: a tray-menu test run alone lacks the foreground rights that earlier tests give it in
+  the full suite. This is a harness limitation, not a Halo defect, and full suites pass.
 - The historical media-test failure from M3 did not recur in this campaign's runs.
 
 ## 11. Real versus simulated coverage

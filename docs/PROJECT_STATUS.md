@@ -1281,10 +1281,10 @@ All of these use the shared vocabulary (B-F01/B-F02), and none adds a motion of 
     for file lists;
   - watching the clipboard would need `AddClipboardFormatListener`. Halo does **not** register one, so nothing is
     captured in the background;
-  - dragging out of the shelf would need a full OLE `IDataObject` drag source. It was not built; Copy puts a file
-    drop list on the clipboard, so Paste in File Explorer gives the same result.
+  - dragging out uses the shell's own data object for the file (`IShellItem` → `BHID_DataObject`) with
+    `DoDragDrop`. Halo implements only a small `IDropSource`.
 
-### H-F02 Local shelf — PASS (drag-out not built)
+### H-F02 Local shelf — PASS (drag-out added after the first gate)
 
 - **Pinning:** tray › "Shelf…" opens a native window. **"Pin copied text or files"** reads the clipboard once,
   only when pressed.
@@ -1301,6 +1301,11 @@ All of these use the shared vocabulary (B-F01/B-F02), and none adds a motion of 
   - the same item pinned again moves to the top;
   - `shelf.json` uses the atomic store and stays on this PC;
   - diagnostics hold the kind and counts only, never content or paths.
+- **Drag-out:**
+  - press on a pinned file in the list and move past the system drag threshold (`DragDetect`);
+  - only copy and link are offered, **never move**, so a drop cannot move or delete the original;
+  - a click still just selects the item;
+  - the effect is logged as a token.
 - **Tests:**
   - unit +5 (`ShelfTests`): order and duplicates, long and Unicode text, the bound and clear, missing files, and
     persistence that skips invalid or relative entries;
@@ -1309,13 +1314,18 @@ All of these use the shared vocabulary (B-F01/B-F02), and none adds a motion of 
     - pin text, then Copy puts it back;
     - pin a file; after it is deleted it shows as missing and is not recreated;
     - Clear all removes `shelf.json`;
-    - the log and the diagnostics contain neither the text nor the file name.
-- **Harness fix (audit trail):**
-  - **symptom:** `TheTasksWindowAddsAndCompletesTasks` failed once at `PostMessageW` to the island, after a
-    tray-menu test. It passed in the next 6 runs;
-  - **likely cause:** `IslandProcess.Start` took the first window of Halo's class, which can belong to a previous
-    instance that is still closing;
-  - **fix:** the harness now takes the window owned by the new process ID. No assertion changed.
+    - the log and the diagnostics contain neither the text nor the file name;
+  - desktop drag test, +1: a real `SendInput` drag from the shelf's list into a WPF drop target in the test process
+    delivered `[path]` with effect `copy`, and the original file was still there. Island desktop 82/82.
+- **Harness note (audit trail, corrected):**
+  - **symptom:** `TheTasksWindowAddsAndCompletesTasks` failed once, after a tray-menu test.
+  - **First diagnosis, wrong:** a stale window handle. The harness was changed to take the island window owned by
+    the new process ID. The change is harmless and was kept.
+  - **Actual cause, found later:** the failing line is `AllowSetForegroundWindow` in `OpenTrayMenuDirect`. When a
+    tray-menu test runs alone or in a small batch, the test process does not hold the foreground rights it passes
+    on to Halo for the menu. In the full suite, an earlier test window gives it those rights. Reproduced twice with
+    the shelf test run on its own; the full suites pass.
+  - **This is a harness limitation, not a Halo defect.** Tray-menu tests should be run inside the full suite.
 
 ### I-F03 Per-activity customisation — PARTIAL
 
@@ -1434,6 +1444,5 @@ The expansion campaign's report is in [`EXPANSION_CAMPAIGN_REPORT.md`](EXPANSION
 3. **Next engineering items:**
    - Outlook token source (system browser + PKCE, Credential Manager) once E-1 is done, then wire
      `MailWatcher`/`CalendarWatcher` into the island;
-   - drag-out from the shelf (OLE `IDataObject`).
 4. **Measurements on a quiet desktop:** idle smoke, PB-04 with music, PB-07 as a frame time, and PB-05 for the new
    motions.

@@ -95,6 +95,57 @@ internal sealed unsafe class ShelfWindow : IDisposable
 
     private static int Scale(int dip, uint dpi) => (int)Math.Round(dip * dpi / 96.0);
 
+    [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvStdcall)])]
+    private static nint ListProc(nint hwnd, uint msg, nint wParam, nint lParam, nuint id, nuint data)
+    {
+        try
+        {
+            if (msg == WmLButtonDown && s_current is { } window && window.OnListButtonDown(hwnd, lParam))
+            {
+                return 0;
+            }
+
+            if (msg == 0x0082 /* WM_NCDESTROY */)
+            {
+                _ = RemoveWindowSubclass(hwnd, &ListProc, id);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or InvalidOperationException or ArgumentException or COMException or UnauthorizedAccessException)
+        {
+            // A failed drag never takes the island down (NFR-05).
+        }
+
+        return DefSubclassProc(hwnd, msg, wParam, lParam);
+    }
+
+    /// <summary>
+    /// A press on the list: selects the item under the pointer and, when it is an existing file and the pointer moves
+    /// past the system drag threshold, drags it out. Returns false to let the list handle the press normally.
+    /// </summary>
+    private bool OnListButtonDown(nint list, nint lParam)
+    {
+        var index = (int)(SendMessageW(list, 0x01A9 /* LB_ITEMFROMPOINT */, 0, lParam) & 0xFFFF);
+        var outside = ((SendMessageW(list, 0x01A9, 0, lParam) >> 16) & 0xFFFF) != 0;
+        if (outside || index < 0 || index >= _rowIds.Count || _owner.Shelf.Find(_rowIds[index]) is not { Kind: ShelfKind.File } item || ShelfList.IsMissing(item))
+        {
+            return false;
+        }
+
+        _ = SendMessageW(list, LbSetCurSel, index, 0);
+        UpdateButtons();
+        _ = SetFocus(list);
+        var point = new Point { X = (short)(lParam & 0xFFFF), Y = (short)((lParam >> 16) & 0xFFFF) };
+        _ = ClientToScreen(list, &point);
+        if (!DragDetect(list, point))
+        {
+            return true; // a click: the item is selected, nothing else happens
+        }
+
+        var effect = DragOut.Run(item.Value);
+        _owner.LogShelf("drag", effect is not "failed", ShelfKind.File, effect);
+        return true;
+    }
+
     private void Create()
     {
         s_current = this;
@@ -148,6 +199,9 @@ internal sealed unsafe class ShelfWindow : IDisposable
         Add(IdRemove, "BUTTON", "&Remove", BsPushButton | WsTabStop, 390, 312, 98, 28);
         Add(IdClear, "BUTTON", "Clear &all", BsPushButton | WsTabStop, 16, 350, 100, 28);
         Add(IdClose, "BUTTON", "Close", BsPushButton | WsTabStop, 408, 350, 80, 28);
+
+        // Drag a pinned file out of the list (press on it and move): copy or link only, never move.
+        _ = SetWindowSubclass(_controls[IdList], &ListProc, 1, 0);
         Fill(null);
         _ = ShowWindow(Hwnd, SwShow);
         _ = SetForegroundWindow(Hwnd);
@@ -267,4 +321,25 @@ internal sealed unsafe class ShelfWindow : IDisposable
                 return null;
         }
     }
+
+#pragma warning disable SYSLIB1054
+    [DllImport("comctl32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetWindowSubclass(nint hwnd, delegate* unmanaged[Stdcall]<nint, uint, nint, nint, nuint, nuint, nint> proc, nuint id, nuint data);
+
+    [DllImport("comctl32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool RemoveWindowSubclass(nint hwnd, delegate* unmanaged[Stdcall]<nint, uint, nint, nint, nuint, nuint, nint> proc, nuint id);
+
+    [DllImport("comctl32.dll")]
+    private static extern nint DefSubclassProc(nint hwnd, uint msg, nint wParam, nint lParam);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool DragDetect(nint hwnd, Point point);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool ClientToScreen(nint hwnd, Point* point);
+#pragma warning restore SYSLIB1054
 }
