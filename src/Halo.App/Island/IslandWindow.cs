@@ -73,6 +73,9 @@ internal sealed unsafe partial class IslandWindow : IDisposable
     /// <summary>Diagnostics-only test hook: a synthetic network reading (wParam = NetworkState | NetworkKind &lt;&lt; 8).</summary>
     private const uint WmTestNetwork = WmApp + 52;
 
+    /// <summary>Diagnostics-only test hook: a synthetic default audio device (wParam 1 = Bluetooth, 0 = wired).</summary>
+    private const uint WmTestAudioDevice = WmApp + 57;
+
     // Island right-click menu.
     private const int MenuExpand = 1;
     private const int MenuExit = 2;
@@ -629,6 +632,10 @@ internal sealed unsafe partial class IslandWindow : IDisposable
                 }
 
                 return 0;
+            case WmTestAudioDevice when _log is not null && _volume is not null:
+                // Diagnostics only: a synthetic default-device change (wParam 1 = Bluetooth, 0 = wired), fixed name.
+                OnAudioDevice(new Halo.Core.Audio.AudioDeviceInfo(wParam == 1, wParam == 1 ? "Test Headphones" : "Speakers"), "test");
+                return 0;
             case WmTestNetwork when _log is not null && _network is not null:
                 OnNetworkReading(new NetworkReading((NetworkState)(wParam & 0xFF), (NetworkKind)((wParam >> 8) & 0xFF)), "test");
                 return 0;
@@ -960,6 +967,7 @@ internal sealed unsafe partial class IslandWindow : IDisposable
             _ = KillTimer(_hwnd, VolumeDeviceTimerId);
             _volume.Dispose();
             _volume = null;
+            _audioDevice.Reset();
             _visuals?.ShowVolume(null);
             _log?.Write("volume.device", ("status", "off"), ("reason", reason), ("hresult", 0));
             Present(_controller.DropAlerts(AlertKind.Volume), "settings"); // a turned-off feature leaves no pill behind
@@ -1162,6 +1170,18 @@ internal sealed unsafe partial class IslandWindow : IDisposable
         }
 
         return new Halo.Core.Theming.HighContrastColors(Sys(5), Sys(8), Sys(13), Sys(17)); // window, window text, highlight, gray text
+    }
+
+    private readonly Halo.Core.Audio.AudioDeviceMonitor _audioDevice = new();
+
+    /// <summary>J-F04: a pill when the default output moves to or from a Bluetooth device (never a battery level).</summary>
+    private void OnAudioDevice(Halo.Core.Audio.AudioDeviceInfo? device, string reason)
+    {
+        if (_audioDevice.Update(device) is { } alert)
+        {
+            _log?.Write("audio.device", ("bluetooth", device?.IsBluetooth == true ? 1 : 0), ("change", device?.IsBluetooth == true ? "connected" : "disconnected"), ("reason", reason));
+            RaiseAlert(alert, "audio");
+        }
     }
 
     private void SaveSettings()
@@ -1446,7 +1466,8 @@ internal sealed unsafe partial class IslandWindow : IDisposable
         }
 
         _visuals?.ShowVolume(_volume.Current);
-        _log?.Write("volume.device", ("status", _volume.HasDevice ? "bound" : "none"), ("reason", reason), ("hresult", _volume.LastHResult));
+        _log?.Write("volume.device", ("status", _volume.HasDevice ? "bound" : "none"), ("reason", reason), ("hresult", _volume.LastHResult), ("bluetooth", _volume.Device?.IsBluetooth == true ? 1 : 0), ("bus", _volume.BusToken));
+        OnAudioDevice(_volume.Device, reason);
         if (_volume.Current is { } v)
         {
             _log?.Write("volume", ("percent", v.Percent), ("muted", v.Muted ? 1 : 0), ("source", "bind"));

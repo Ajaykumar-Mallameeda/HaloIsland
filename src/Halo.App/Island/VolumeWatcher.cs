@@ -58,6 +58,12 @@ internal sealed class VolumeWatcher : IDisposable
 
     public bool HasDevice => _volume is not null;
 
+    /// <summary>The bound device's bus and name (J-F04), or null without a device. The name is never logged.</summary>
+    public Halo.Core.Audio.AudioDeviceInfo? Device { get; private set; }
+
+    /// <summary>The bound endpoint's bus as a diagnostics token ("hdaudio", "bthenum", "usb"…; "unknown" if unreadable).</summary>
+    public string BusToken { get; private set; } = "none";
+
     /// <summary>Creates the device enumerator and binds the default device. False if Core Audio is unavailable.</summary>
     public bool Start()
     {
@@ -175,6 +181,9 @@ internal sealed class VolumeWatcher : IDisposable
         }
 
         _ = device.GetId(out var id);
+        var (enumerator, name) = CoreAudio.DeviceNames(device);
+        Device = Halo.Core.Audio.AudioDeviceInfo.From(enumerator, name);
+        BusToken = enumerator is { Length: > 0 and <= 16 } e && e.All(char.IsAsciiLetterOrDigit) ? e.ToLowerInvariant() : enumerator is null ? "unknown" : "other";
         lock (_gate)
         {
             _device = device;
@@ -194,6 +203,8 @@ internal sealed class VolumeWatcher : IDisposable
             (volume, device) = (_volume, _device);
             (_volume, _device, _deviceId, _pending) = (null, null, null, null);
             Current = null;
+            Device = null;
+            BusToken = "none";
         }
 
         if (volume is not null)

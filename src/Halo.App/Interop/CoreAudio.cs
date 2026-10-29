@@ -181,6 +181,56 @@ internal static class CoreAudio
         return (device, volume, 0);
     }
 
+    /// <summary>
+    /// Reads the endpoint's PKEY_Device_EnumeratorName and PKEY_Device_FriendlyName (documented device properties) from
+    /// its property store. Returns nulls when a value is missing or the store cannot be opened.
+    /// </summary>
+    public static unsafe (string? Enumerator, string? FriendlyName) DeviceNames(IMMDevice device)
+    {
+        ArgumentNullException.ThrowIfNull(device);
+        if (device.OpenPropertyStore(0 /* STGM_READ */, out var store) < 0 || store == 0)
+        {
+            return (null, null);
+        }
+
+        try
+        {
+            var deviceKeys = new Guid("a45c254e-df1c-4efd-8020-67d146a850e0");
+            return (ReadString(store, new PropertyKey { FormatId = deviceKeys, PropertyId = 24 }), ReadString(store, new PropertyKey { FormatId = deviceKeys, PropertyId = 14 }));
+        }
+        finally
+        {
+            _ = Marshal.Release(store);
+        }
+
+        static string? ReadString(nint store, PropertyKey key)
+        {
+            // IPropertyStore::GetValue is slot 5 (IUnknown 0-2, GetCount 3, GetAt 4). PROPVARIANT is 24 bytes on x64.
+            var value = stackalloc byte[24];
+            new Span<byte>(value, 24).Clear();
+            var getValue = (delegate* unmanaged[Stdcall]<nint, PropertyKey*, byte*, int>)(*(nint**)store)[5];
+            if (getValue(store, &key, value) < 0)
+            {
+                return null;
+            }
+
+            try
+            {
+                const ushort VtLpwstr = 31;
+                return *(ushort*)value == VtLpwstr && *(nint*)(value + 8) is var p && p != 0 ? new string((char*)p) : null;
+            }
+            finally
+            {
+                _ = PropVariantClear(value);
+            }
+        }
+    }
+
+    [DllImport("ole32.dll")]
+#pragma warning disable SYSLIB1054
+    private static extern unsafe int PropVariantClear(byte* value);
+#pragma warning restore SYSLIB1054
+
     public static void Release(object? com)
     {
         if (com is not null && Marshal.IsComObject(com))

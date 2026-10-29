@@ -168,7 +168,7 @@ Primary sources only. The source table is in RESEARCH_EXPANSION_CAMPAIGN §1.
 | J-F01 Manual session switching | **PASS**: two real sessions (test MediaPlayer + one hosted by Windows PowerShell), switched through UIA |
 | J-F02 Seeking | **PASS**: only when the session allows it. A real UIA seek to 50 % moved the player's position |
 | J-F03 Brightness | **NOT BUILT**: needs `System.Management` (a new dependency) or hand-written WMI COM |
-| J-F04 Bluetooth headphones | **NOT BUILT**: no documented battery API for classic Bluetooth audio; connection-only is possible later |
+| J-F04 Bluetooth headphones | **PASS, connection only** (added after the first gate): "Connected/Disconnected · name" pills from the endpoint's documented device properties. The real bus was read; the transitions were synthetic. **Battery never shown**: no documented API |
 | K / C-F08 Camera and microphone | Camera: documented API, held for owner consent (K-1). Microphone: **BLOCKED**, no documented API |
 | H-F02 Shelf | **PASS**: pin on request only, copy back to the real clipboard, file references, "missing" flag, clear-all deletes the file. **Drag-out not built** |
 

@@ -1351,12 +1351,26 @@ All of these use the shared vocabulary (B-F01/B-F02), and none adds a motion of 
   Neither was added without approval.
 - External monitors expose no supported brightness API (DDC/CI is outside the brief).
 
-### J-F04 Bluetooth headphone status — NOT BUILT
+### J-F04 Bluetooth headphone status — PASS (connection only; battery never shown)
 
-- Connection state could come from the audio endpoint's documented device properties.
-- **Battery level is not exposed** by a documented API for classic Bluetooth audio devices, so it would have to be
-  omitted. It is never inferred.
-- Not started for lack of time; the volume feature already follows the default output device when it changes.
+- **How it works:** when the default output device is bound, Halo reads the endpoint's documented
+  `PKEY_Device_EnumeratorName` and `PKEY_Device_FriendlyName` from its property store. The bus is BTHENUM,
+  BTHLEDEVICE or BTHHFENUM for Bluetooth.
+- **Pills:**
+  - "Connected · <name>" when the default output becomes a Bluetooth device;
+  - "Disconnected · <name>" when it moves away from one, or there is no output at all;
+  - nothing at start-up, on a re-bind of the same device, or for wired-to-wired switches.
+- **Battery:** **never** shown or inferred, because Windows documents no battery API for classic Bluetooth audio.
+- **Privacy:** the device name appears on screen only. Diagnostics carry a bus token (`intelaudio` on this machine)
+  and 0 or 1, never the name.
+- **Setting:** part of "Show volume changes"; turning it off resets the state.
+- **Tests:**
+  - unit, +11: classification, the connect/disconnect sequence, silent first reading, reset, name cleaning, no
+    level bar;
+  - desktop, +1: the **real** endpoint's bus is read (`intelaudio`, not "unknown"). Connect and disconnect are
+    **synthetic**, because no Bluetooth headset is available to the tests; the pills go through the real alert
+    path, and the name never reaches the log.
+  - island desktop total 81/81.
 
 ### K / C-F08 Camera and microphone indicators — camera: documented API, NOT BUILT (owner decision K-1); microphone: BLOCKED
 
@@ -1420,7 +1434,6 @@ The expansion campaign's report is in [`EXPANSION_CAMPAIGN_REPORT.md`](EXPANSION
 3. **Next engineering items:**
    - Outlook token source (system browser + PKCE, Credential Manager) once E-1 is done, then wire
      `MailWatcher`/`CalendarWatcher` into the island;
-   - Bluetooth audio connection pill (J-F04, no battery level);
    - drag-out from the shelf (OLE `IDataObject`).
 4. **Measurements on a quiet desktop:** idle smoke, PB-04 with music, PB-07 as a frame time, and PB-05 for the new
    motions.
