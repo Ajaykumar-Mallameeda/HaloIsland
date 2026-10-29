@@ -104,3 +104,18 @@ desktop.ini
 
 # --- Spike / performance measurement output (summaries are copied into docs/ by hand) ---
 perf-results/
+
+# --- Release packaging and signing output (source-only repository) ---
+*.msixbundle
+*.appxbundle
+*.appinstaller
+*.cer
+*.crt
+*.der
+*.pvk
+*.spc
+
+# --- Traces and personal captures ---
+*.etl
+/Screenshot*.png
+/Recording*.mp4

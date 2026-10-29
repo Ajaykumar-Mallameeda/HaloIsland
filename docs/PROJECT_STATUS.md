@@ -184,7 +184,7 @@ What the evidence covers:
 | **E3** | Close the outstanding gate items (ADR §13.1): WPR CSwitch trace for PB-02, a C-based 60 Hz negative control, S1-C-120 session 3, manual S2-11M | Schedule together: about 1 h of machine time and 10 min attended |
 | D1 | Approve ADR-001 | After E1–E3 |
 | D7 | External monitor; spare PC or VM | Still needed for multi-monitor, mixed-DPI and clean-install tests |
-| D9 | Project licence | Before any public release |
+| D9 | Project licence | **Decided 2026-10-29: MIT** ([`LICENSE`](../LICENSE)) |
 
 Earlier decisions Q1–Q8 were answered on 2026-10-27, and the PB-02 rule change (option b) on 2026-10-28.
 
