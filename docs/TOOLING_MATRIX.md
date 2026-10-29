@@ -33,26 +33,3 @@ Last updated: 2026-10-27 (Phase 4, S1/S2 gate).
 | PresentMon / WPA | — | **Not installed, not approved** | — | Considered only if a calibration fails or a method is unsuitable, after documenting provenance, licence, data collected and owner approval (report §8.14). PresentMon cannot observe layered-window (technique A) updates |
 | UI automation (S2) | FlaUI.Core / FlaUI.UIA3 5.0.0 (MIT), Interop.UIAutomationClient 10.19041.0 (MIT) | **Validated and used** (harness and `tests/Halo.App.Tests`; test-only, never shipped) | P4 S2, M2 | Licence read from each package's `LICENSE.txt`; SHA-256 recorded (report §8.13). The Alt-Tab switcher exposed no list items to UIA in the DEV runs and for A/B; it did for C on 2026-10-28, so S2-07 stays manual when the positive control is missing |
 | Accessibility tooling | Accessibility Insights for Windows; Narrator; Axe.Windows | Narrator built in; Accessibility Insights and Axe.Windows not installed | — | M5. S2-12 uses FlaUI UIA3 only |
-
-Analysis scripts used in Phase 1 are versioned in `tools/re-analysis/` (our own code; they read but
-never execute target files).
-
-## REA verification record (2026-10-27)
-
-| Step | Result |
-|---|---|
-| `npx -y rea-agents@6.8.0 doctor --client claude_code` | `healthy: true`; `environment_healthy: false` only because optional engines and other clients are absent |
-| MCP server connection (`claude mcp list`) | `rea … ✔ Connected` |
-| Live server identity (`binary_session`) | rea 6.8.0, MCP protocol 2025-11-25, client claude-code 2.1.311, skill expected v49 |
-| Tool inventory | 229 tools; 4 provider candidates (ghidra, ida, kuna: `not_configured`; hopper: `unsupported_host`) |
-| Skill discovery | `reverse-engineer-anything` listed and loaded in-session |
-| `open_binary` on `nusa.exe.bin` | Succeeded (format pe, x86_64, SHA-256 matches) |
-| `search_strings` (target-bound) | **Failed** `provider_unavailable` — needs Ghidra/IDA |
-| Target-free PE tools | Succeeded (see `NUSA_INSTALLER_STATIC_ANALYSIS.md` §10) |
-| `capture_browser_scenario` | Succeeded (2 runs) |
-| `close_binary` | Succeeded; reference artifact hashes unchanged |
-
-Capabilities that require an external engine (not installed by decision): disassembly listings,
-pseudocode/decompilation, function/call graphs, cross-references, string-reference tracing,
-native value tracing. Runtime tools (Frida, GDB, rizin debug, process capture) are advertised but
-were not used — runtime analysis is out of scope.

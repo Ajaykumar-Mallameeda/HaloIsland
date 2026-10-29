@@ -5,7 +5,7 @@
 | Status | **PROPOSED** — awaiting owner approval at the Phase 3 gate |
 | Date | 2026-10-27 |
 | Decision confidence | **Medium** overall. High for runtime/platform choices (§2, §5–§8); Medium for the overlay rendering path: option C provisionally selected after S1/S2 (§13.1) |
-| Inputs | `NUSA_EVIDENCE_REGISTER.md`, `NUSA_FEATURE_MATRIX.md`, `ENVIRONMENT_AUDIT.md`, `EXTERNAL_REFERENCES.md` |
+| Inputs | Reference-behaviour notes (kept private, not published), `ENVIRONMENT_AUDIT.md`, `EXTERNAL_REFERENCES.md` |
 | Related | `PRODUCT_REQUIREMENTS.md`, `SECURITY_AND_PRIVACY_DESIGN.md`, `TESTING_STRATEGY.md` |
 
 Everything in this document is **PROPOSED** design for our product unless it cites evidence. No

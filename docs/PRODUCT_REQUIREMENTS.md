@@ -5,7 +5,7 @@
 | Status | **PROPOSED** (Phase 3) — awaiting owner approval |
 | Date | 2026-10-27 |
 | Architecture | [`ARCHITECTURE_DECISION_RECORD.md`](ARCHITECTURE_DECISION_RECORD.md) (ADR-001) |
-| Reference evidence | [`NUSA_FEATURE_MATRIX.md`](NUSA_FEATURE_MATRIX.md), [`NUSA_EVIDENCE_REGISTER.md`](NUSA_EVIDENCE_REGISTER.md) |
+| Reference evidence | Behavioural notes on reference products (kept private, not published) |
 
 This document defines **our** product. Reference behaviour is cited only to explain a choice; it is
 never a requirement in itself. Everything here is PROPOSED.

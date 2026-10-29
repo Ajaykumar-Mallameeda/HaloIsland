@@ -48,5 +48,4 @@ used for *our* design, not as evidence about Nusa's internals.
 | Tool | Version | Use |
 |---|---|---|
 | REA (`rea-agents`, MIT) | 6.8.0 | PE parsers, browser scenario capture |
-| Project scripts `tools/re-analysis/` | — | Phase 1 static analysis (unchanged in Phase 2) |
 | Microsoft Edge (headless, via REA/Playwright) | Chromium 156.0.4314.42 | Website observation |

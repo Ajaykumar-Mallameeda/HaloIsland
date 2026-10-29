@@ -170,4 +170,4 @@ off.
 - [ ] Export and delete-all-data work (`FR-APP-06`)
 - [ ] Privacy policy text written (required for Store listing)
 - [ ] Third-party notices complete; no GPL/LGPL code unless approved
-- [ ] No reference-product material in the repository (`REVERSE_ENGINEERING_WORKFLOW.md` §6)
+- [ ] No reference-product material in the repository
