@@ -5,7 +5,7 @@
 | Date | 2026-10-29 |
 | Repository | `C:\dev\Notch\advanced-windows-island` (canonical). The OneDrive copy was not touched: clean, still at `9f7d5fb` |
 | Starting point | `4f26bc9` (M3 gate), branch `main`, clean tree, no remotes |
-| End point | the last commit in §14 (`docs: record the post-gate features and the final numbers`), clean tree, no remotes, **nothing pushed** |
+| End point | the last commit in §14 (`feat: add a development MSIX package and record the approval round`), clean tree, no remotes, **nothing pushed** |
 | Machine | 1920×1080 @ 120 Hz, 125 %, one display, Windows 11 (build 26300) |
 | Detail | Per-feature records: [`PROJECT_STATUS.md`](PROJECT_STATUS.md) §9 · research: [`RESEARCH_EXPANSION_CAMPAIGN.md`](RESEARCH_EXPANSION_CAMPAIGN.md) · motion: [`MOTION_SYSTEM.md`](MOTION_SYSTEM.md) · packaging: [`PACKAGING_FEASIBILITY.md`](PACKAGING_FEASIBILITY.md) |
 
@@ -21,11 +21,15 @@
   - media session switching and seeking;
   - light, dark and system themes, with pill content choices;
   - a clipboard and file shelf;
-  - activity animations.
-- **Tests:** they went from 319 unit and 52 desktop tests to **480 unit** and **84 desktop** tests,
+  - activity animations;
+  - after the first gate: island position, Bluetooth audio pills, shelf drag-out, a camera-in-use indicator and a
+    brightness pill;
+  - a signed development MSIX (install needs one elevated step by the owner).
+- **Tests:** they went from 319 unit and 52 desktop tests to **482 unit** and **86 desktop** tests,
   all passing at the final gate.
-- **Blocked:** live Outlook use (needs the owner's app registration and sign-in), MSIX packaging and
-  notification mirroring (owner decision), and the microphone indicator (no documented API).
+- **Blocked:** live Outlook use (needs the owner's app registration and sign-in), installing the dev MSIX (one
+  elevated step), release signing and notification mirroring (owner decision), and the microphone indicator (no
+  documented API).
 - **Not done:** a Narrator check by ear (needs a person).
 
 ## Added after the first gate ("continue")
@@ -36,15 +40,31 @@
 | J-F04 Bluetooth audio connect/disconnect pills (no battery) | `2de698c` | PASS (real bus read; transitions synthetic) |
 | H-F02 Shelf drag-out (copy or link, never move) | `a4b03d7` | PASS (real drag) |
 | K / C-F08 Camera-in-use indicator (off by default) | `53046ef` | PASS (real passive monitor; transitions synthetic) |
-| J-F03 Brightness | WMI `WmiMonitorBrightness` + `WmiMonitorBrightnessEvent` via `System.Management` (owner-approved) | PASS, read-only |
 
-**Second gate on the final HEAD:**
+**Owner approval round (2026-10-29: "All four"):**
+
+| Item | Commit | State |
+|---|---|---|
+| J-F03 Brightness pill (built-in screen, read-only; adds `System.Management`) | `76f99a5`, `19a2c1a` | PASS (real WMI read; changes synthetic). The WMI start-up first cost 60 ms of start-up time; it was moved off the UI thread |
+| K-1 Camera indicator turned on in the owner's settings | — (user data, not in Git) | Done: `%LOCALAPPDATA%\ProjectHalo\settings.json` now has `showCameraActivity: true`; Halo loaded it with 0 invalid fields and started `camera.watch` |
+| L-F02 Development MSIX, self-signed | this update | PARTIAL: built and signed; install waits for one elevated step (§15) |
+| Narrator check by ear | — | The owner's task |
+
+**Second gate** (before the approval round): unit 480/480, island desktop 84/84, spike desktop 5/5, smoke
+`APP-SMOKE-120-130250` valid.
+
+**Third gate on the final code (after the approval round):**
 - locked restore OK;
 - clean `--no-incremental` Release build: 0 warnings, 0 errors;
-- unit **480/480**;
-- island desktop **84/84**;
+- unit **482/482**;
+- island desktop **86/86**;
 - spike desktop **5/5**;
-- smoke `APP-SMOKE-120-130250` valid.
+- smoke `APP-SMOKE-120-141648` valid.
+
+One gate attempt ran plain `dotnet test`, which runs both desktop suites at once. They compete for the screen, so
+that run (one failure) is not counted. The documented separate commands were used instead. During the gate, the
+timer desktop test failed once because it read the alert list too early. It now waits for the alert, with the
+same assertion (`19a2c1a`).
 
 ## 1. Starting state
 
@@ -187,15 +207,15 @@ Primary sources only. The source table is in RESEARCH_EXPANSION_CAMPAIGN §1.
 | J-F02 Seeking | **PASS**: only when the session allows it. A real UIA seek to 50 % moved the player's position |
 | J-F03 Brightness | **PASS**: built-in screen level pill; read-only; unit +2, desktop +2 |
 | J-F04 Bluetooth headphones | **PASS, connection only** (added after the first gate): "Connected/Disconnected · name" pills from the endpoint's documented device properties. The real bus was read; the transitions were synthetic. **Battery never shown**: no documented API |
-| K / C-F08 Camera and microphone | Camera (added after the first gate): **PASS, off by default**. Media Foundation's passive sensor activity reports; only "in use or not" is kept. The real monitor was started; transitions were synthetic; no camera was opened. Turning it on is the owner's choice (K-1). Microphone: **BLOCKED**, no documented API |
+| K / C-F08 Camera and microphone | Camera (added after the first gate): **PASS, off by default**. Media Foundation's passive sensor activity reports; only "in use or not" is kept. The real monitor was started; transitions were synthetic; no camera was opened. The owner turned it on in their own settings on 2026-10-29 (verified: `camera.watch` running at start-up). Microphone: **BLOCKED**, no documented API |
 | H-F02 Shelf | **PASS**: pin on request only, copy back to the real clipboard, file references, "missing" flag, clear-all deletes the file. **Drag-out** (added after the first gate): copy or link only, never move. A real drag into a drop target delivered the file, and the original stayed |
 
 ## 10. Tests
 
 | Suite | Start | End |
 |---|---|---|
-| Unit (Core + App + spikes) | 319 | **480** passed, 0 failed |
-| Island desktop (`Category=Integration`) | 52 | **84** passed, 0 failed |
+| Unit (Core + App + spikes) | 319 | **482** passed, 0 failed |
+| Island desktop (`Category=Integration`) | 52 | **86** passed, 0 failed |
 | Spike desktop | 5 | **5/5** |
 | Locked restore / clean Release build | OK / 0 warnings | locked restore OK / `--no-incremental` Release build 0 warnings, 0 errors |
 
@@ -215,6 +235,7 @@ Primary sources only. The source table is in RESEARCH_EXPANSION_CAMPAIGN §1.
 | I-F04 position (after the first gate) | 5 | 1 |
 | J-F04 Bluetooth audio (after the first gate) | 11 | 1 |
 | K camera indicator, message IDs (after the first gate) | 5 | 2 |
+| J-F03 brightness (approval round) | 2 | 2 |
 
 **Intermittents (audit trail):**
 - One tasks-window failure. It was first blamed on a stale window handle, which was wrong. The failing call is
@@ -238,18 +259,20 @@ Primary sources only. The source table is in RESEARCH_EXPANSION_CAMPAIGN §1.
 | Bluetooth audio | The real endpoint's bus (`intelaudio`) read from its property store | Connect and disconnect (no headset available) |
 | Camera indicator | The real Media Foundation monitor started (passive) | In-use transitions (a camera is never opened) |
 | Shelf drag-out | A real `SendInput` drag into a WPF drop target (copy; the original stays) | — |
+| Brightness | The real panel level read through WMI (10 %) | Changes (Halo never sets brightness) |
+| MSIX | Package built and signed; packaged payload started and exited | Install not yet run (needs the owner's elevated step) |
 
 ## 12. Performance
 
 `Halo.Spikes.Harness app-check` runs at 120 Hz; each is valid by the harness's own checks:
 
-| Measurement | M3 gate (`…-013355`) | First gate (`…-034653`) | Final (`APP-SMOKE-120-130250`) |
-|---|---|---|---|
-| Start → first frame, p50 of 5 | 230.5 ms | 266.0 ms | **277.1 ms** (it now also loads `state.json`, `tasks.json` and `shelf.json` and reads the theme) |
-| Idle 90 s: CPU / attributed frames | 15.6 ms / 160 (baseline failed; not attributable) | 15.6 ms / 1 | **31.3 ms / 1** (two scheduler ticks; the one frame is the minute clock) |
-| Private memory / working set | 19.3 / 73.6 MB | 20.1 / 77.5 MB | **20.4 / 77.7 MB** |
-| Transitions (20, UIA-driven) | 17/20 valid; 1 long frame; p95 8.9 ms | 20/20; 1 long; p95 8.9 ms | **20/20 valid**; 1 with one long frame; p95 8.8 ms; max 16.5 ms |
-| Exit p50; Halo processes left | 75.7 ms; 0 | 76.2 ms; 0 | **73.2 ms; 0** |
+| Measurement | M3 gate (`…-013355`) | First gate (`…-034653`) | Second gate (`…-130250`) | Final (`APP-SMOKE-120-141648`) |
+|---|---|---|---|---|
+| Start → first frame, p50 of 5 | 230.5 ms | 266.0 ms | 277.1 ms | **287.2 ms** (337.0 ms in `…-140922` before the WMI start moved off the UI thread) |
+| Idle 90 s: CPU / attributed frames | 15.6 ms / 160 (baseline failed; not attributable) | 15.6 ms / 1 | 31.3 ms / 1 | **0 ms / 1** (the one frame is the minute clock) |
+| Private memory / working set | 19.3 / 73.6 MB | 20.1 / 77.5 MB | 20.4 / 77.7 MB | **20.9 MB** private |
+| Transitions (20, UIA-driven) | 17/20 valid; 1 long frame; p95 8.9 ms | 20/20; 1 long; p95 8.9 ms | 20/20; p95 8.8 ms; max 16.5 ms | **20/20 valid**; p95 8.8 ms; max 17.0 ms |
+| Exit p50; Halo processes left | 75.7 ms; 0 | 76.2 ms; 0 | 73.2 ms; 0 | **78.2 ms; 0** |
 
 - **Budgets:** no budget was changed, and these are **SMOKE observations, not verdicts**.
 - **Not measured** (still open): PB-02, the PB-03 interpretation (owner decision E2), formal PB-05 (including the
@@ -257,8 +280,12 @@ Primary sources only. The source table is in RESEARCH_EXPANSION_CAMPAIGN §1.
 
 ## 13. Privacy, authentication and dependencies
 
-- **Dependencies:** **none added.** There are no new NuGet packages, the Windows App SDK was not installed, and no
-  cloud resources were created.
+- **Dependencies:** one added, with the owner's approval: `System.Management` 10.0.14 (MIT, Microsoft), plus its
+  dependency `System.CodeDom` 10.0.14, used by Halo.App only for the brightness pill. The Windows App SDK was not
+  installed, and no cloud resources were created.
+- **Signing:** a self-signed certificate `CN=ProjectHalo Dev` is in the owner's personal certificate store. Its
+  private key was never exported. Only the public `.cer` is written, to the ignored `artifacts/` folder. Nothing
+  certificate-related is committed.
 - **Network:** the default build still makes no network connections. The Graph code is unreachable without a
   token source.
 - **New local files, all in `%LOCALAPPDATA%\ProjectHalo` and versioned JSON written atomically:**
@@ -269,8 +296,9 @@ Primary sources only. The source table is in RESEARCH_EXPANSION_CAMPAIGN §1.
   media titles never reach `halo.log`.
 - **Never added:**
   - clipboard listeners or keyboard hooks;
-  - any camera or microphone **access**. The optional, off-by-default camera indicator only reads Windows'
-    activity reports and never opens a camera;
+  - any camera or microphone **access**. The camera indicator (off by default; the owner turned it on) only reads
+    Windows' activity reports and never opens a camera;
+  - brightness changes. Halo only reads the level;
   - changes to Windows settings;
   - telemetry;
   - automatic sending, deleting, accepting or modifying of anything.
@@ -297,7 +325,10 @@ Primary sources only. The source table is in RESEARCH_EXPANSION_CAMPAIGN §1.
 | `2de698c` | feat: show when Bluetooth audio connects or disconnects |
 | `a4b03d7` | feat: drag pinned files out of the shelf as copies |
 | `53046ef` | feat: add an opt-in camera-in-use indicator from Windows' activity reports |
-| (this update) | `docs: record the post-gate features and the final numbers` |
+| `5ce9db2` | docs: record the post-gate features and the final numbers |
+| `76f99a5` | feat: show a brightness pill for the built-in screen (J-F03) |
+| `19a2c1a` | fix: start the brightness watcher off the UI thread |
+| (this update) | `feat: add a development MSIX package and record the approval round` |
 
 ## 15. Remaining blockers and owner decisions
 
@@ -305,9 +336,8 @@ Primary sources only. The source table is in RESEARCH_EXPANSION_CAMPAIGN §1.
 |---|---|---|
 | — | A person runs a Narrator check by ear (~10 min) | A11y sign-off |
 | E1–E3 | Earlier owner decisions (PROJECT_STATUS §5) | ADR approval, PB-03 wording, outstanding perf runs |
-| L-1 | Package Halo as MSIX, and choose a signing route | Notification mirroring (O-F01), toasts, Start with Windows, clean install tests (L-F02/L-F03) |
+| L-1 | Run `packaging\install-dev.ps1` elevated once (dev MSIX is built and signed); later choose the release name and signing route | Install test of the dev package; notification mirroring (O-F01), toasts, Start with Windows |
 | E-1 | Entra app registration and owner sign-in | Live Outlook mail and calendar |
-| K-1 | Turn on the camera-in-use indicator (built, off by default) | Camera indicator in daily use |
 | O-F02 | Keyboard-state indicators | Caps Lock and input-language pills |
 | D7 | Second monitor; clean PC or VM | Multi-monitor and mixed DPI; install tests |
 
@@ -328,4 +358,15 @@ Run a 10-minute Narrator check of the island:
 - a Do Not Disturb summary;
 - the expanded island's buttons and sliders.
 
-Then decide L-1 and E-1, which unlock the next largest features: notification mirroring and live Outlook.
+Install the dev package from an **elevated** PowerShell:
+
+```powershell
+cd C:\dev\Notch\advanced-windows-island
+.\packaging\install-dev.ps1
+```
+
+Then launch "Halo (dev)" from Start. To remove it, run `.\packaging\uninstall-dev.ps1 -RemoveCertificate`, also
+elevated. Close the unpackaged Halo first, because it is single-instance.
+
+After that, decide the release name and signing (L-1) and E-1. They unlock the next largest features: notification
+mirroring and live Outlook.

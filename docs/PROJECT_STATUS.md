@@ -1473,6 +1473,30 @@ Smoke `APP-SMOKE-120-130250` (valid; SMOKE only):
 | Transitions | 20/20 valid; p95 8.8 ms; max 16.5 ms |
 | Exit p50 | 73.2 ms; 0 processes left |
 
+### Third gate after the owner's approval round — PASS
+
+On the final code (`19a2c1a` plus the packaging commit):
+- locked restore passed;
+- clean `--no-incremental` Release build: 0 warnings;
+- unit **482/482**;
+- island desktop **86/86**;
+- spike desktop **5/5**.
+
+Smoke `APP-SMOKE-120-141648` (valid; SMOKE only):
+
+| Measurement | Value |
+|---|---|
+| Start → first frame p50 | 287.2 ms. It was 337.0 ms in `APP-SMOKE-120-140922`, while the WMI brightness start-up ran on the UI thread (fixed in `19a2c1a`) |
+| Idle 90 s | 0 ms CPU, 1 attributed frame |
+| Private memory | 20.9 MB |
+| Transitions | 20/20 valid; p95 8.8 ms; max 17.0 ms |
+| Exit p50 | 78.2 ms; 0 processes left |
+
+Also done in this round:
+- the camera indicator was turned on in the owner's settings;
+- a development MSIX was built and signed ([`PACKAGING_FEASIBILITY.md`](PACKAGING_FEASIBILITY.md) §5). Installing
+  it needs one elevated step.
+
 ## Next recommended action
 
 The expansion campaign's report is in [`EXPANSION_CAMPAIGN_REPORT.md`](EXPANSION_CAMPAIGN_REPORT.md).
@@ -1483,9 +1507,9 @@ The expansion campaign's report is in [`EXPANSION_CAMPAIGN_REPORT.md`](EXPANSION
    UIA delivery is proven by tests; speech is not.
 2. **Owner decisions:**
    - E1–E3 (§5);
-   - L-1, whether to package Halo as MSIX ([`PACKAGING_FEASIBILITY.md`](PACKAGING_FEASIBILITY.md));
+   - L-1, the release name and signing route (a dev MSIX is built: run `packaging\install-dev.ps1` elevated once to
+     install it, [`PACKAGING_FEASIBILITY.md`](PACKAGING_FEASIBILITY.md) §5);
    - E-1, an Entra app registration and sign-in for Outlook mail and calendar;
-   - K-1, the camera-in-use indicator;
    - O-F02, the keyboard indicators.
 3. **Next engineering items:**
    - Outlook token source (system browser + PKCE, Credential Manager) once E-1 is done, then wire

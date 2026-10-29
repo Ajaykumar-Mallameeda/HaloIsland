@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Report only, 2026-10-29. No package was built, installed or signed, and the installation was not changed (owner decision L-1) |
+| Status | 2026-10-29: owner approved a **local development MSIX** signed with a self-signed certificate (§5). Release signing and the public name are still open (L-1) |
 | Sources | RESEARCH_EXPANSION_CAMPAIGN §1 S6, S10; ADR-001 §11; SECURITY_AND_PRIVACY_DESIGN §4, §8 |
 
 ## 1. What packaging would unlock
@@ -39,9 +39,33 @@
 
 ## 4. L-F02 / L-F03 status
 
-- **L-F02 (implement the chosen path): BLOCKED.** It needs decision L-1 (package or not) and a signing route. No
-  packaging project was added, because one without a decided identity and certificate would be a placeholder.
-- **L-F03 (clean install and uninstall test): BLOCKED.** It needs a package (L-F02) and a clean machine or VM
-  (owner decision D7).
+- **L-F02 (implement the chosen path): PARTIAL.** A development MSIX is built and signed (§5). Release identity and
+  signing remain owner decision L-1.
+- **L-F03 (clean install and uninstall test): WAITING ON OWNER.** Install needs one elevated step (§5); a clean machine
+  or VM is still decision D7.
 - **What was verified for the unpackaged build in this campaign:** launch and exit, single instance, tray icon
   removed on exit, no orphaned process after the desktop suites (final verification in PROJECT_STATUS §9).
+
+## 5. Development MSIX (owner-approved 2026-10-29)
+
+Scripts in `packaging/`; all output goes to `artifacts/msix/` (ignored by Git; no package, certificate or key is
+committed).
+
+| Script | What it does |
+|---|---|
+| `build-msix.ps1` | `dotnet publish` (Release, framework-dependent with the x64 apphost, no runtime identifier so the lock files stay valid: needs the .NET 10 Desktop Runtime); draws the logo PNGs at build time; fills `Package.appxmanifest`; `makeappx pack`; signs with a self-signed code-signing certificate `CN=ProjectHalo Dev` kept in `Cert:\CurrentUser\My` (private key never exported); exports the public `.cer` |
+| `install-dev.ps1` | **Elevated.** Imports the `.cer` into `Cert:\LocalMachine\TrustedPeople`, then `Add-AppxPackage` |
+| `uninstall-dev.ps1` | `Remove-AppxPackage`; with `-RemoveCertificate` (elevated) also removes the dev certificate from all three stores. Leaves `%LOCALAPPDATA%\ProjectHalo` alone |
+
+- **Manifest:** identity `ProjectHalo.Island.Dev`, publisher `CN=ProjectHalo Dev`, `Windows.FullTrustApplication`,
+  only `runFullTrust`. No startup task, notification listener or other capability yet.
+- **Verified here:** package built (14 files) and signed (SHA-256); the packaged payload starts, reaches `ready`
+  and exits with no process left; `signtool verify /pa` reports the chain ends in an untrusted root, as expected
+  before trust.
+- **Not yet verified: install.** Importing the certificate into the *user's* Trusted People store is not enough:
+  `Add-AppxPackage` failed with 0x800B0109 ("root certificate … must be trusted"). The machine store needs admin
+  rights, which this session does not have, so the owner runs `install-dev.ps1` once from an elevated PowerShell.
+  The per-user entry was removed again.
+- **To check after install (L-F03):** launch from Start, single instance, tray icon, settings persistence (a packaged
+  full-trust app's new writes under AppData may be redirected to the package's private copy), uninstall leaves no
+  process. A clean machine or VM (D7) is still needed for a true clean-install test.
