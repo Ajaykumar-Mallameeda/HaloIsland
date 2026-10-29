@@ -59,6 +59,9 @@ public static class TimerActivities
         {
             CountdownState.Running or CountdownState.Paused => new IslandActivity(TimerId, ActivityKind.Timer, AlertPriority.Normal)
             {
+                Provider = LiveProviders.Timer,
+                Relevance = LiveProviders.CountdownRelevance,
+                Lifecycle = timer.State == CountdownState.Paused ? ActivityLifecycle.Paused : ActivityLifecycle.Active,
                 Glyph = TimerGlyph,
                 CompactText = CountdownTimer.Format(remaining),
                 Title = CountdownTimer.Format(remaining),
@@ -71,6 +74,8 @@ public static class TimerActivities
             },
             CountdownState.Completed => new IslandActivity(TimerId, ActivityKind.Timer, AlertPriority.High)
             {
+                Provider = LiveProviders.Timer,
+                Relevance = LiveProviders.CountdownRelevance,
                 Glyph = DoneGlyph,
                 CompactText = "Time's up",
                 Title = "Time's up",
@@ -104,6 +109,9 @@ public static class TimerActivities
         var position = string.Create(CultureInfo.CurrentCulture, $"{session.CycleIndex} of {session.Plan.CycleLength}");
         return new IslandActivity(FocusId, ActivityKind.Focus, AlertPriority.Normal)
         {
+            Provider = LiveProviders.Focus,
+            Relevance = LiveProviders.CountdownRelevance,
+            Lifecycle = paused ? ActivityLifecycle.Paused : ActivityLifecycle.Active,
             Glyph = session.Phase == FocusPhase.Work ? FocusGlyph : BreakGlyph,
             Tone = ToneOf(session.Phase),
             CompactText = CountdownTimer.Format(remaining),

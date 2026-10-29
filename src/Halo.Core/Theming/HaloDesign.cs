@@ -142,6 +142,9 @@ public static class HaloDesign
             ActivityKind.Reminder => Tone.Reminder,
             ActivityKind.Task => Tone.Tasks,
             ActivityKind.Notification or ActivityKind.Calendar => Tone.Notification,
+            ActivityKind.Media => Tone.Media,
+            ActivityKind.Power => Tone.Charging,
+            ActivityKind.Network => Tone.Offline,
             _ => Tone.Neutral,
         };
     }

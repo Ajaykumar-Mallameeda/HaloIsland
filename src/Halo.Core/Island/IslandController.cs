@@ -238,6 +238,17 @@ public sealed class IslandController
         return new IslandTransition(previous, State);
     }
 
+    /// <summary>
+    /// Live Activity Engine 2.0: whether a live activity asks for the compact island. The only effect is the choice
+    /// between the line and the compact pill while nothing else is shown.
+    /// </summary>
+    public IslandTransition SetLive(bool live) =>
+        IsShutDown || State.Live == live ? Unchanged() : Commit(new IslandTransition(State, State with { Live = live }));
+
+    /// <summary>Turns thin-line idle mode on or off (settings).</summary>
+    public IslandTransition SetLineIdle(bool lineIdle) =>
+        IsShutDown || State.LineIdle == lineIdle ? Unchanged() : Commit(new IslandTransition(State, State with { LineIdle = lineIdle }));
+
     /// <summary>Stops every timer, drops queued alerts and ignores every later input or callback (application exit).</summary>
     public void Shutdown()
     {

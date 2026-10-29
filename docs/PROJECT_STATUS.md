@@ -1,6 +1,6 @@
 # Project Status — Project Halo
 
-Last updated: 2026-10-29 (Visual Experience 2.0 done, see the section before "Next recommended action"; §9 for the expansion campaign, §8 for M1–M3)
+Last updated: 2026-10-29 (Live Activity Engine 2.0 done, see the section before "Next recommended action"; Visual Experience 2.0 before it; see the section before "Next recommended action"; §9 for the expansion campaign, §8 for M1–M3)
 
 ## Current phase
 
@@ -1522,6 +1522,30 @@ Design and evidence: [`VISUAL_EXPERIENCE_2.md`](VISUAL_EXPERIENCE_2.md). Commits
   - high contrast and a live media session checked by eye;
   - page-slide frame pacing (no harness marker);
   - 60 Hz.
+
+### Live Activity Engine 2.0 and Island Silhouette 2.0 — PASS; Windows-wide notifications BLOCKED (owner opt-in)
+
+Report: [`LIVE_ACTIVITY_ENGINE_2_REPORT.md`](LIVE_ACTIVITY_ENGINE_2_REPORT.md). Design:
+[`LIVE_ACTIVITY_ENGINE_2_DESIGN.md`](LIVE_ACTIVITY_ENGINE_2_DESIGN.md).
+
+- **What changed:**
+  - idle is a thin line, and clicks below or beside it reach the app underneath;
+  - live activities grow the line into a floating pill;
+  - a second activity shows in a detached bubble, and clicking it swaps the two without opening the island or taking
+    focus;
+  - one deterministic scheduler: critical → urgent → picked → priority → running → relevance → first started;
+  - lifecycle: end, dismiss, expiry, provider stop and history;
+  - new charging and offline activities;
+  - Reduce Motion is respected;
+  - new settings: `idleLine` and `rotateActivities`.
+- **Superseded:** the VX 2.0 flush-top silhouette and its shoulders. The surface, page frame and feature pages stay.
+- **Tests:** Core 479/479, App unit 14/14, spike unit 79/79, island desktop 90/90, spike desktop 5/5, Release build with
+  0 warnings.
+- **Smoke:** `APP-SMOKE-120-180643`, valid. First frame 319 ms, idle CPU 0 ms, private memory 24.1 MB, transition p95
+  9.0 ms. More transitions contain one long frame (8 of 20); a formal PB-05 run is still needed.
+- **Blocked:** reading other apps' notifications. The adapter is built, but the capability, opt-in and consent prompt
+  wait for the owner's decision.
+- **Not installed:** the installed MSIX is still 0.1.0.0.
 
 ## Next recommended action
 

@@ -60,21 +60,64 @@ public static class MotionVocabulary
     /// <summary>Apple's guidance caps Live Activity animations at 2 s; Halo's longest sequence stays far below it.</summary>
     public static readonly TimeSpan Ceiling = TimeSpan.FromSeconds(2);
 
+    /// <summary>
+    /// Durations of one kind of motion. Morph and fade timing depend on the pair of presentations (see
+    /// <see cref="MotionTiming"/>); this overload gives the compact ↔ expanded values.
+    /// </summary>
     public static MotionSpec For(MotionKind kind, bool reducedMotion, bool expanding = false) => (kind, reducedMotion) switch
     {
-        (MotionKind.Morph, false) => MotionSpec.Ms(350),
+        (MotionKind.Morph, false) => MotionSpec.Ms(expanding ? 300 : 260),
         (MotionKind.Morph, true) => MotionSpec.Instant,
         (MotionKind.FadeOut, false) => MotionSpec.Ms(110),
         (MotionKind.FadeOut, true) => MotionSpec.Ms(150),
-        (MotionKind.FadeIn, false) => MotionSpec.Ms(200, expanding ? 150 : 170),
+        (MotionKind.FadeIn, false) => MotionSpec.Ms(180, expanding ? 120 : 110),
         (MotionKind.FadeIn, true) => MotionSpec.Ms(150),
-        (MotionKind.Settle, false) => MotionSpec.Ms(320, 60),
+        (MotionKind.Settle, false) => MotionSpec.Ms(260, 40),
         (MotionKind.Swap, false) => MotionSpec.Ms(160, 90),
         (MotionKind.Level, false) => MotionSpec.Ms(240),
         (MotionKind.Emphasis, false) => MotionSpec.Ms(400),
         (MotionKind.Arrival, false) => MotionSpec.Ms(260),
         _ => MotionSpec.Instant, // Settle, Swap, Level, Emphasis and Arrival are off with reduced motion
     };
+}
+
+/// <summary>
+/// Live Activity Engine 2.0: morph and fade timing per pair of presentations. Apple publishes no curve for the Dynamic
+/// Island; what it documents is that Live Activity animations last at most 2 s, that layout changes keep existing
+/// elements and move them to their new positions, and that content changes use a content-replace (fade) transition.
+/// Halo's values: the line grows into a pill in 220 ms; opening takes 300 ms with a slight overshoot (the island's
+/// "springy" open), closing 260 ms without overshoot; pill ↔ alert 240 ms.
+/// </summary>
+public static class MotionTiming
+{
+    /// <summary>The overshoot of an opening morph (fraction of the size change); the canvas margin leaves room for it.</summary>
+    public const double OpenOvershoot = 0.03;
+
+    public static (MotionSpec Morph, MotionSpec FadeOut, MotionSpec FadeIn) For(IslandPresentation from, IslandPresentation to, bool reducedMotion)
+    {
+        if (reducedMotion)
+        {
+            return (MotionSpec.Instant, MotionSpec.Ms(150), MotionSpec.Ms(150));
+        }
+
+        if (from == IslandPresentation.Line || to == IslandPresentation.Line)
+        {
+            // The line has no content: the pill's content fades in once the pill has mostly grown.
+            return (MotionSpec.Ms(220), MotionSpec.Ms(90), MotionSpec.Ms(150, 90));
+        }
+
+        if (to == IslandPresentation.Expanded)
+        {
+            return (MotionVocabulary.For(MotionKind.Morph, false, expanding: true), MotionVocabulary.For(MotionKind.FadeOut, false), MotionVocabulary.For(MotionKind.FadeIn, false, expanding: true));
+        }
+
+        if (from == IslandPresentation.Expanded)
+        {
+            return (MotionVocabulary.For(MotionKind.Morph, false), MotionVocabulary.For(MotionKind.FadeOut, false), MotionVocabulary.For(MotionKind.FadeIn, false));
+        }
+
+        return (MotionSpec.Ms(240), MotionSpec.Ms(100), MotionSpec.Ms(160, 90)); // compact ↔ alert
+    }
 }
 
 /// <summary>A finite set of steps started together for one change. Every plan ends by <see cref="Duration"/>.</summary>
@@ -102,11 +145,12 @@ public static class MotionPlanner
         }
 
         var expanding = to == IslandPresentation.Expanded;
+        var (morph, fadeOut, fadeIn) = MotionTiming.For(from, to, reducedMotion);
         var steps = new List<MotionStep>(4)
         {
-            new(MotionChannel.Shape, MotionKind.Morph, MotionVocabulary.For(MotionKind.Morph, reducedMotion)),
-            new(MotionChannel.Content, MotionKind.FadeOut, MotionVocabulary.For(MotionKind.FadeOut, reducedMotion)),
-            new(MotionChannel.Content, MotionKind.FadeIn, MotionVocabulary.For(MotionKind.FadeIn, reducedMotion, expanding)),
+            new(MotionChannel.Shape, MotionKind.Morph, morph),
+            new(MotionChannel.Content, MotionKind.FadeOut, fadeOut),
+            new(MotionChannel.Content, MotionKind.FadeIn, fadeIn),
         };
         if (expanding && !reducedMotion)
         {

@@ -52,7 +52,7 @@ internal sealed partial class IslandWindow
     /// <summary>Private activity text (tasks, previews) is shown only when the user allows previews (D-F03).</summary>
     private bool ShowPrivate => _settings.ShowPreviews;
 
-    private IReadOnlyList<IslandPage> Pages => IslandPages.Available(_board.Primary is not null, _mediaSnapshot is not null);
+    private IReadOnlyList<IslandPage> Pages => IslandPages.Available(PageActivity is not null, _mediaSnapshot is not null);
 
     private IslandPage CurrentPage => IslandPages.Resolve(_page, Pages);
 
@@ -261,7 +261,7 @@ internal sealed partial class IslandWindow
             _log?.Write("activity", ("primary", primary is null ? "none" : primary.Id), ("count", _board.Count), ("emphasis", primary?.Emphasis == true ? 1 : 0), ("reason", reason));
         }
 
-        _visuals?.ShowActivity(primary, _board.OthersCount, ShowPrivate, _reducedMotion);
+        PublishBoard(reason);
         if (primary?.Emphasis == true && (primary.Kind is ActivityKind.Timer or ActivityKind.Focus) && _countdown.State != CountdownState.Completed && State.Visible)
         {
             _visuals?.Emphasise(MotionPlanner.Emphasis(primary.Kind == ActivityKind.Focus ? _focus.Countdown.Remaining : _countdown.Remaining, _reducedMotion));
@@ -381,7 +381,7 @@ internal sealed partial class IslandWindow
     /// <summary>Runs an action of the primary activity by its index (island button or UIA). Stale indexes are ignored.</summary>
     private void RunPrimaryAction(int index, string source)
     {
-        if (_board.Primary is not { } primary || index < 0 || index >= primary.Actions.Count)
+        if (PageActivity is not { } primary || index < 0 || index >= primary.Actions.Count)
         {
             _log?.Write("activity.action", ("action", "none"), ("result", "stale"), ("source", source));
             return;
@@ -543,9 +543,9 @@ internal sealed partial class IslandWindow
     }
 
     /// <summary>The primary activity as UIA sees it: private text redacted unless previews are allowed.</summary>
-    private IslandActivity? AccessibleActivity() => _board.Primary is { } a && a.Privacy == ActivityPrivacy.Private && !ShowPrivate
+    private IslandActivity? AccessibleActivity() => PageActivity is { } a && a.Privacy == ActivityPrivacy.Private && !ShowPrivate
         ? a with { Accessible = a.RedactedText, Title = a.RedactedText }
-        : _board.Primary;
+        : PageActivity;
 
     private void StopActivityTimers()
     {

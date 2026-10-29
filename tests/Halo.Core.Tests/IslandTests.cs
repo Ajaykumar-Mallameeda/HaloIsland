@@ -13,59 +13,104 @@ public class IslandLayoutTests
         var layout = IslandLayout.Compute(WorkArea125, 120);
 
         Assert.Equal(1.25, layout.Scale);
-        // Visual Experience 2.0 (flush top, 460 × 196 expanded, 14 DIP margin for the shoulders).
+        // Live Activity Engine 2.0 (floating 8 DIP below the top, 460 × 196 expanded, 14 DIP margin for the overshoot).
         Assert.Equal(610, layout.Canvas.Width); // (460 + 2 × 14) × 1.25 = 610
-        Assert.Equal(263, layout.Canvas.Height); // (0 + 196 + 14) × 1.25 = 262.5 → 263
+        Assert.Equal(273, layout.Canvas.Height); // (8 + 196 + 14) × 1.25 = 272.5 → 273
         Assert.Equal(0, layout.Canvas.Top);
         Assert.Equal((1920 - 610) / 2, layout.Canvas.Left);
     }
 
     [Fact]
-    public void ShapesAreTopCentredInsideTheCanvas()
+    public void ShapesFloatTopCentredInsideTheCanvas()
     {
         var layout = IslandLayout.Compute(WorkArea125, 120);
 
-        foreach (var shape in new[] { layout.Compact, layout.Expanded })
+        foreach (var shape in new[] { layout.Compact, layout.Expanded, layout.Alert })
         {
             Assert.Equal(layout.Canvas.Width / 2.0, shape.CenterX, 0.5);
-            Assert.Equal(0, shape.Top); // flush with the top of the work area
-            Assert.True(shape.Right <= layout.Canvas.Width && shape.Bottom <= layout.Canvas.Height);
-
-            // Room for the shoulders on both sides.
-            Assert.True(shape.Left - layout.Shoulder >= 0 && shape.Right + layout.Shoulder <= layout.Canvas.Width);
+            Assert.Equal(10, shape.Top); // Live Activity Engine 2.0: 8 DIP below the top edge (floating, no notch)
+            Assert.True(shape.Left >= 0 && shape.Right <= layout.Canvas.Width && shape.Bottom <= layout.Canvas.Height);
         }
 
         Assert.Equal(295, layout.Compact.Width);
-        Assert.Equal(45, layout.Compact.Height);
-        Assert.Equal(22.5, layout.Compact.Radius, 6); // a pill: radius = half the compact height
+        Assert.Equal(48, layout.Compact.Height); // 38 DIP × 1.25 = 47.5 → 48
+        Assert.Equal(24, layout.Compact.Radius, 6); // a pill: radius = half the compact height
         Assert.Equal(575, layout.Expanded.Width);
         Assert.Equal(245, layout.Expanded.Height);
-        Assert.Equal(13, layout.Shoulder); // 10 DIP × 1.25 = 12.5 → 13
+        Assert.Equal(50, layout.Expanded.Radius, 6);
+    }
+
+    [Theory]
+    [InlineData(96, 2)]
+    [InlineData(120, 3)]
+    [InlineData(144, 3)]
+    [InlineData(192, 4)]
+    public void TheIdleLineIsAThinCentredCapsuleAtEveryScale(int dpi, int thickness)
+    {
+        var layout = IslandLayout.Compute(new PixelRect(0, 0, 3840, 2160), dpi);
+        var line = layout.Line;
+        Assert.Equal(thickness, line.Height); // 2–4 physical pixels
+        Assert.Equal(line.Height / 2, line.Radius, 6); // rounded ends
+        Assert.Equal(layout.Canvas.Width / 2.0, line.CenterX, 0.5);
+        Assert.Equal(Math.Round(IslandLayout.LineWidthDip * dpi / 96.0, MidpointRounding.AwayFromZero), line.Width);
+        Assert.True(line.Bottom <= layout.Compact.Top, "the line sits in the gap above where the pill appears");
+
+        // The pointer zone is larger than the line, starts at the top edge, and stays inside the pill's own zone, so
+        // moving from the line to the pill never counts as leaving the island.
+        var hit = layout.LineHit;
+        Assert.Equal(0, hit.Top);
+        Assert.True(hit.Left <= line.Left && hit.Right >= line.Right && hit.Bottom >= line.Bottom);
+        foreach (var (x, y) in new[] { (hit.Left, 0.0), (hit.Right - 1, hit.Bottom - 1), (hit.CenterX, hit.Bottom - 1) })
+        {
+            Assert.True(layout.Hit(IslandPresentation.Line, x, y));
+            Assert.True(layout.Hit(IslandPresentation.Compact, x, y));
+        }
+
+        Assert.False(layout.Hit(IslandPresentation.Line, hit.CenterX, hit.Bottom + 1)); // below the zone: the app's click
+        Assert.False(layout.Hit(IslandPresentation.Line, hit.Left - 1, 0));
     }
 
     [Fact]
-    public void TheDrawnShapeStartsAboveTheWindowSoOnlyItsLowerCornersShow()
+    public void TheDetachedBubbleSitsBesideTheCompactPillInsideTheCanvas()
+    {
+        foreach (var dpi in new[] { 96, 120, 144, 192 })
+        {
+            var layout = IslandLayout.Compute(new PixelRect(0, 0, 3840, 2160), dpi);
+            var m = layout.Minimal;
+            Assert.Equal(layout.Compact.Height, m.Height);
+            Assert.Equal(m.Height, m.Width); // a circle
+            Assert.Equal(layout.Compact.Top, m.Top);
+            Assert.True(m.Left > layout.Compact.Right, "detached: a gap separates it from the pill");
+            Assert.True(m.Right <= layout.Expanded.Right && m.Right <= layout.Canvas.Width, "inside the open island's footprint");
+        }
+    }
+
+    [Fact]
+    public void TheRegionReachesTheTopEdgeSoTheGapIsPartOfTheIsland()
     {
         var layout = IslandLayout.Compute(WorkArea125, 120);
         foreach (var shape in new[] { layout.Compact, layout.Expanded, layout.Alert })
         {
-            var drawn = shape.Drawn();
-            Assert.Equal(shape.Bottom, drawn.Bottom, 6);
-            Assert.Equal(-Math.Min(shape.Radius, shape.Height / 2), drawn.Top, 6);
-            Assert.Equal((shape.Left, shape.Width, shape.Radius), (drawn.Left, drawn.Width, drawn.Radius));
+            var reach = shape.Reach();
+            Assert.Equal(shape.Bottom, reach.Bottom, 6);
+            Assert.True(reach.Top <= -shape.Radius + 0.001, "the rounded top corners lie above the window");
+            Assert.Equal((shape.Left, shape.Width, shape.Radius), (reach.Left, reach.Width, reach.Radius));
         }
+
+        Assert.Equal(layout.LineHit, layout.RegionFor(IslandPresentation.Line));
     }
 
     [Fact]
-    public void TopCornersAreSquareForHitTesting()
+    public void TheFloatingIslandCountsItsGapForHitTesting()
     {
-        var box = new RoundedBox(0, 0, 200, 40, 20);
-        Assert.False(box.Contains(1, 1)); // the plain rounded box excludes its top-left corner
-        Assert.True(box.ContainsSquareTop(1, 1)); // the flush-top island includes it
-        Assert.True(box.ContainsSquareTop(199, 0));
-        Assert.False(box.ContainsSquareTop(1, 39)); // lower corners stay round
-        Assert.False(box.ContainsSquareTop(100, 41));
-        Assert.False(box.ContainsSquareTop(-1, 5));
+        var box = new RoundedBox(0, 10, 200, 40, 20);
+        Assert.False(box.Contains(1, 11)); // the plain rounded box excludes its top-left corner
+        Assert.True(box.ContainsWithGap(1, 0)); // the gap above the island belongs to it
+        Assert.True(box.ContainsWithGap(199, 5));
+        Assert.True(box.ContainsWithGap(1, 29)); // up to where the upper corners end
+        Assert.False(box.ContainsWithGap(1, 49)); // lower corners stay round
+        Assert.False(box.ContainsWithGap(100, 51));
+        Assert.False(box.ContainsWithGap(-1, 5));
     }
 
     [Theory]

@@ -86,6 +86,7 @@ internal sealed unsafe partial class IslandWindow : IDisposable
     private const int MenuExpand = 1;
     private const int MenuExit = 2;
     private const int MenuCollapse = 3;
+    private const int MenuDismiss = 4;
 
     // Tray menu (FR-APP-01).
     private const int TrayOpen = 11;
@@ -196,6 +197,7 @@ internal sealed unsafe partial class IslandWindow : IDisposable
             ("invalid_fields", _store.LastIssues.Count),
             ("dpi", (int)PrimaryWorkArea().Dpi));
         _reducedMotion = !AnimationsEnabled() || _settings.ReduceMotion;
+        _ = _controller.SetLineIdle(_settings.IdleLine); // the island starts as it will rest: the line or the pill
         _taskbarCreated = RegisterWindowMessageW("TaskbarCreated");
         _clock = ClockFace.Read(DateTimeOffset.Now, CultureInfo.CurrentCulture);
 
@@ -205,6 +207,8 @@ internal sealed unsafe partial class IslandWindow : IDisposable
         _target = CreateTarget(_compositor, _hwnd);
         _text = new TextRenderer(_compositor);
         _visuals = new IslandVisuals(_compositor, _target, _text, _layout);
+        _visuals.ApplyLayout(_layout, State);
+        ApplyRegion(union: false);
         _visuals.ShowClock(_clock);
         _automation = new IslandAutomationProvider(_hwnd, WmAutomationRequest);
         PublishAutomation();
@@ -226,6 +230,7 @@ internal sealed unsafe partial class IslandWindow : IDisposable
         InitActivities();
         InitReminders();
         InitShelf();
+        ProbeNotificationAccess();
         _ = ShowWindow(_hwnd, SwShowNoActivate);
 
         // Completes once the first frame of the visual tree has been committed to DWM.
@@ -359,7 +364,7 @@ internal sealed unsafe partial class IslandWindow : IDisposable
 
     private nint? Handle(nint hwnd, uint msg, nint wParam, nint lParam)
     {
-        if ((HandleActivityMessage(msg, wParam) ?? HandleReminderMessage(msg, wParam)) is { } handled)
+        if ((HandleLiveMessage(msg, wParam, lParam) ?? HandleActivityMessage(msg, wParam) ?? HandleReminderMessage(msg, wParam)) is { } handled)
         {
             return handled;
         }
@@ -834,12 +839,18 @@ internal sealed unsafe partial class IslandWindow : IDisposable
             ArmActivityTimers(); // per-second redraws only while the island can be seen
         }
 
+        if (transition.PresentationChanged || transition.VisibilityChanged)
+        {
+            ShowSecondary(); // the detached bubble belongs to the compact presentation
+            ArmRotation();
+        }
+
         if (transition.PresentationChanged)
         {
             ApplyRegion(union: true);
             var plan = _motion.Begin(MotionPlanner.Transition(transition.Previous.Presentation, state.Presentation, _reducedMotion));
             var id = plan?.Id ?? 0;
-            _log?.Write("transition.start", ("dir", state.IsExpanded ? "expand" : "collapse"), ("source", source));
+            _log?.Write("transition.start", ("dir", state.IsExpanded ? "expand" : "collapse"), ("to", state.Presentation.ToString().ToLowerInvariant()), ("source", source));
             var batch = _visuals?.Animate(transition, plan, _reducedMotion);
             if (batch is not null)
             {
@@ -951,25 +962,6 @@ internal sealed unsafe partial class IslandWindow : IDisposable
         _visuals?.ApplyLayout(_layout, State);
         _log?.Write("placement", ("reason", reason), ("left", c.Left), ("top", c.Top), ("width", c.Width), ("height", c.Height), ("dpi", (int)dpi));
         PublishAutomation();
-    }
-
-    private void ApplyRegion(bool union)
-    {
-        // Visual Experience 2.0: the drawn shape starts above the window (only its lower corners show), and the strip
-        // along the top edge covers the concave shoulders, which would otherwise be clipped by the region.
-        static (int, int, int, int, int) Shape(RoundedBox r) =>
-            ((int)Math.Floor(r.Left), (int)Math.Floor(r.Top), (int)Math.Ceiling(r.Right), (int)Math.Ceiling(r.Bottom), (int)Math.Round(r.Radius));
-        var s = (int)_layout.Shoulder;
-        (int, int, int, int, int) Strip(RoundedBox r) => ((int)Math.Floor(r.Left) - s, (int)Math.Floor(r.Top), (int)Math.Ceiling(r.Right) + s, (int)Math.Floor(r.Top) + s, 0);
-        if (union)
-        {
-            SetRoundedRegion(_hwnd, Shape(_layout.Compact.Drawn()), Shape(_layout.Expanded.Drawn()), Strip(_layout.Expanded));
-        }
-        else
-        {
-            var shape = _layout.ShapeFor(State.Presentation);
-            SetRoundedRegion(_hwnd, Shape(shape.Drawn()), Strip(shape));
-        }
     }
 
     /// <summary>Puts the current settings into effect: hover timing, motion, full-screen suppression.</summary>
@@ -1095,6 +1087,22 @@ internal sealed unsafe partial class IslandWindow : IDisposable
             }
         }
 
+        // Live Activity Engine 2.0: thin-line idle, rotation, and the providers that follow display settings.
+        Present(_controller.SetLineIdle(s.IdleLine), "settings");
+        if (!s.ShowBattery)
+        {
+            _ = _board.StopProvider(Halo.Core.Activities.LiveProviders.Power);
+            _pluggedAt = null;
+        }
+
+        if (!s.ShowNetwork)
+        {
+            _ = _board.StopProvider(Halo.Core.Activities.LiveProviders.Network);
+        }
+
+        Put(Halo.Core.Activities.MediaActivities.ActivityId, Halo.Core.Activities.MediaActivities.For(_mediaSnapshot, s.PillShowsMedia));
+        PublishBoard("settings");
+
         _log?.Write("settings.applied", ("reason", reason), ("hover", s.HoverToExpand ? 1 : 0), ("dwell_ms", s.HoverDwellMs), ("grace_ms", s.LeaveGraceMs), ("reduce_motion", s.ReduceMotion ? 1 : 0), ("fullscreen", s.HideInFullscreen ? 1 : 0));
     }
 
@@ -1175,7 +1183,7 @@ internal sealed unsafe partial class IslandWindow : IDisposable
         _visuals.ApplyPalette(palette, State);
         ApplyPage(animate: false);
         UpdateStatus();
-        _visuals.ShowActivity(_board.Primary, _board.OthersCount, ShowPrivate, reducedMotion: true);
+        _visuals.ShowActivity(PageActivity, PillOthers, ShowPrivate, reducedMotion: true);
         _log?.Write("theme", ("mode", _settings.Theme.ToString().ToLowerInvariant()), ("light", palette.Fill.Luminance > 0.5 ? 1 : 0), ("accent", _settings.AccentBars ? 1 : 0), ("high_contrast", highContrast is null ? 0 : 1), ("reason", reason));
     }
 
@@ -1401,6 +1409,7 @@ internal sealed unsafe partial class IslandWindow : IDisposable
 
         _mediaSnapshot = snapshot;
         _visuals?.ShowMedia(snapshot, DateTimeOffset.Now, _reducedMotion);
+        PublishMedia(snapshot);
         ApplyPage(animate: false); // a session appearing or ending adds or removes the media page
         PublishAutomation();
         UpdateMediaTick();
@@ -1543,8 +1552,10 @@ internal sealed unsafe partial class IslandWindow : IDisposable
             return; // several notifications for one change: nothing new
         }
 
+        var previous = _battery.Current;
         var alert = _battery.Update(reading);
         UpdateStatus();
+        PublishPower(previous, reading);
         _log?.Write("power", ("battery", reading.HasBattery ? 1 : 0), ("percent", reading.Percent ?? -1), ("source", reading.Source.ToString().ToLowerInvariant()), ("charging", reading.Charging ? 1 : 0), ("reason", reason));
         if (alert is not null)
         {
@@ -1573,6 +1584,7 @@ internal sealed unsafe partial class IslandWindow : IDisposable
         }
         var alert = _networkMonitor.Update(reading);
         UpdateStatus();
+        PublishNetwork(reading);
         _log?.Write("network", ("state", reading.State.ToString().ToLowerInvariant()), ("kind", reading.Kind.ToString().ToLowerInvariant()), ("reason", reason));
         if (reading.State == NetworkState.Unknown)
         {
@@ -1788,7 +1800,7 @@ internal sealed unsafe partial class IslandWindow : IDisposable
     };
 
     /// <summary>True when a client-area point lies inside the shape of the current (target) presentation.</summary>
-    private bool InsideTarget(int clientX, int clientY) => _layout.ShapeFor(State.Presentation).ContainsSquareTop(clientX, clientY);
+    private bool InsideTarget(int clientX, int clientY) => _layout.Hit(State.Presentation, clientX, clientY);
 
     private void SetHovered(bool hovered)
     {
@@ -1899,9 +1911,15 @@ internal sealed unsafe partial class IslandWindow : IDisposable
         // The item reflects the state when the menu opens; it maps to Expand or Collapse, never Toggle, so it does
         // what its label says even if the state changes while the menu is open.
         var expanded = State.IsExpanded;
-        var command = RunMenu(x, y, 0, [(expanded ? MenuCollapse : MenuExpand, expanded ? "Collapse" : "Expand", false), (0, null, false), (MenuExit, "Exit Halo", false)], 0);
+        var dismiss = _board.Primary is { Dismissible: true } ? "Dismiss " + Halo.Core.Activities.IslandPages.Title(Halo.Core.Activities.IslandPage.Activity, _board.Primary).ToLowerInvariant() : null;
+        var command = dismiss is null
+            ? RunMenu(x, y, 0, [(expanded ? MenuCollapse : MenuExpand, expanded ? "Collapse" : "Expand", false), (0, null, false), (MenuExit, "Exit Halo", false)], 0)
+            : RunMenu(x, y, 0, [(expanded ? MenuCollapse : MenuExpand, expanded ? "Collapse" : "Expand", false), (MenuDismiss, dismiss, false), (0, null, false), (MenuExit, "Exit Halo", false)], 0);
         switch (command)
         {
+            case MenuDismiss:
+                DismissPrimary("menu");
+                break;
             case MenuExpand:
                 Apply(IslandInput.Expand, "menu");
                 break;

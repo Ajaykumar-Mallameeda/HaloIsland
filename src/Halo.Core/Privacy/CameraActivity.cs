@@ -43,6 +43,9 @@ public sealed class CameraActivityMonitor(uint ownProcessId)
     public IslandActivity? Activity() => InUse
         ? new IslandActivity(ActivityId, ActivityKind.System, AlertPriority.Normal)
         {
+            Provider = LiveProviders.Camera,
+            Relevance = LiveProviders.CameraRelevance,
+            Dismissible = false, // a privacy indicator stays while the camera is in use
             Glyph = CameraGlyph,
             Tone = Theming.Tone.Camera,
             CompactText = "Camera on",

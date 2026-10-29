@@ -13,9 +13,10 @@ public class MotionTests
         var steps = MotionPlanner.Transition(IslandPresentation.Compact, IslandPresentation.Expanded, reducedMotion: false);
         Assert.Equal([MotionKind.Morph, MotionKind.FadeOut, MotionKind.FadeIn, MotionKind.Settle], steps.Select(s => s.Kind));
         var plan = new MotionPlan(1, steps);
-        Assert.Equal(TimeSpan.FromMilliseconds(350), plan.Spec(MotionKind.Morph).Duration); // the duration measured for PB-05
-        Assert.Equal(TimeSpan.FromMilliseconds(150), plan.Spec(MotionKind.FadeIn).Delay);
-        Assert.Equal(TimeSpan.FromMilliseconds(380), plan.Duration);
+        // Live Activity Engine 2.0: 300 ms open (was 350 ms), content in from 120 ms, everything done by 300 ms.
+        Assert.Equal(TimeSpan.FromMilliseconds(300), plan.Spec(MotionKind.Morph).Duration);
+        Assert.Equal(TimeSpan.FromMilliseconds(120), plan.Spec(MotionKind.FadeIn).Delay);
+        Assert.Equal(TimeSpan.FromMilliseconds(300), plan.Duration);
     }
 
     [Fact]
@@ -23,7 +24,8 @@ public class MotionTests
     {
         var plan = new MotionPlan(1, MotionPlanner.Transition(IslandPresentation.Expanded, IslandPresentation.Compact, false));
         Assert.False(plan.Has(MotionKind.Settle));
-        Assert.Equal(TimeSpan.FromMilliseconds(170), plan.Spec(MotionKind.FadeIn).Delay);
+        Assert.Equal(TimeSpan.FromMilliseconds(260), plan.Spec(MotionKind.Morph).Duration);
+        Assert.Equal(TimeSpan.FromMilliseconds(110), plan.Spec(MotionKind.FadeIn).Delay);
     }
 
     [Fact]

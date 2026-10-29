@@ -13,12 +13,12 @@ using Windows.UI.Composition;
 namespace Halo.App.Island;
 
 /// <summary>
-/// The island's Windows.UI.Composition visual tree (ADR-001 §4.5, option C), Visual Experience 2.0:
+/// The island's Windows.UI.Composition visual tree (ADR-001 §4.5, option C), Live Activity Engine 2.0:
 /// <list type="bullet">
-/// <item>a flush-top surface: a rounded shape that starts above the top edge of the work area, so only its lower corners
-/// show, filled with a subtle vertical gradient and lit by a rim along its lower edge;</item>
-/// <item>two concave shoulders that join it to the screen edge, driven by expressions on the shape, so they follow every
-/// morph in DWM without managed code per frame;</item>
+/// <item>a floating surface: one rounded shape below the top edge of the work area, filled with a subtle vertical
+/// gradient and lit by a rim along its lower edge. The same shape is the idle line (a grey capsule), the compact and
+/// alert pills and the open island, so every change is one continuous morph;</item>
+/// <item>Apple's minimal presentation: a detached circle beside the compact pill for the second live activity;</item>
 /// <item>compact, alert and expanded content cross-fading inside a clip that follows the shape. The expanded content has a
 /// header row, a body that slides between pages, chevrons and page dots.</item>
 /// </list>
@@ -59,10 +59,16 @@ internal sealed partial class IslandVisuals : IDisposable
     private readonly CompositionColorGradientStop _rimFade;
     private readonly CompositionColorGradientStop _rimMid;
     private readonly CompositionColorGradientStop _rimEdge;
-    private readonly CompositionColorBrush _shoulderColor;
-    private readonly SpriteVisual _shoulderLeft;
-    private readonly SpriteVisual _shoulderRight;
-    private readonly CompositionColorGradientStop[] _shoulderStops;
+    private readonly CompositionEasingFunction _open;
+    private bool _line;
+
+    // Detached minimal bubble (second live activity).
+    private readonly ContainerVisual _bubble;
+    private readonly CompositionRoundedRectangleGeometry _bubbleShape;
+    private readonly TextLine _bubbleGlyph;
+    private readonly Ring _bubbleRing;
+    private IslandActivity? _secondary;
+    private bool _bubbleShown;
 
     private readonly ContainerVisual _compactContent;
     private readonly ContainerVisual _expandedContent;
@@ -95,6 +101,7 @@ internal sealed partial class IslandVisuals : IDisposable
     private readonly SpriteVisual _compactLevelFill;
     private readonly CompositionColorBrush _compactLevelBrush;
     private PillContent _pill = PillContent.Default;
+    private CompactLead _lead;
     private string _pillBattery = string.Empty;
 
     // Expanded frame: header (title, date and time, status), chrome (chevrons, dots), body (pages and controls).
@@ -124,6 +131,9 @@ internal sealed partial class IslandVisuals : IDisposable
         _layout = layout;
         _ease = compositor.CreateCubicBezierEasingFunction(new Vector2(0.33f, 1f), new Vector2(0.68f, 1f));
 
+        // Opening overshoots by about MotionTiming.OpenOvershoot (3 %) and settles, like the Dynamic Island's open.
+        _open = compositor.CreateCubicBezierEasingFunction(new Vector2(0.25f, 0.9f), new Vector2(0.35f, 1.12f));
+
         _root = compositor.CreateContainerVisual();
         _island = compositor.CreateContainerVisual();
 
@@ -152,11 +162,19 @@ internal sealed partial class IslandVisuals : IDisposable
         sprite.StrokeThickness = 1;
         shapeVisual.Shapes.Add(sprite);
 
-        // Shoulders: a square of the surface colour masked by a radial gradient, which leaves a concave quarter circle.
-        _shoulderColor = compositor.CreateColorBrush(default);
-        _shoulderStops = new CompositionColorGradientStop[4];
-        _shoulderLeft = Shoulder(new Vector2(0, 1), 0);
-        _shoulderRight = Shoulder(new Vector2(1, 1), 2);
+        // The detached bubble shares the surface brushes, so it always matches the island.
+        _bubble = compositor.CreateContainerVisual();
+        _bubble.Opacity = 0;
+        var bubbleShapes = compositor.CreateShapeVisual();
+        _bubbleShape = compositor.CreateRoundedRectangleGeometry();
+        var bubbleSprite = compositor.CreateSpriteShape(_bubbleShape);
+        bubbleSprite.FillBrush = fill;
+        bubbleSprite.StrokeBrush = rim;
+        bubbleSprite.StrokeThickness = 1;
+        bubbleShapes.Shapes.Add(bubbleSprite);
+        _bubble.Children.InsertAtTop(bubbleShapes);
+        _bubbleRing = new Ring(this, _bubble);
+        _bubbleGlyph = new TextLine(this, _bubble);
 
         // Content is clipped to the animated shape so it never shows outside the island mid-transition.
         var content = compositor.CreateContainerVisual();
@@ -229,9 +247,8 @@ internal sealed partial class IslandVisuals : IDisposable
         _alertContent.Children.InsertAtTop(_alertFill);
 
         _island.Children.InsertAtTop(shapeVisual);
-        _island.Children.InsertAtTop(_shoulderLeft);
-        _island.Children.InsertAtTop(_shoulderRight);
         _island.Children.InsertAtTop(content);
+        _island.Children.InsertAtTop(_bubble);
         _root.Children.InsertAtTop(_island);
         target.Root = _root;
         ApplySurfaceColours(hovered: false);
@@ -247,21 +264,23 @@ internal sealed partial class IslandVisuals : IDisposable
         _island.Size = canvas;
         foreach (var child in _island.Children)
         {
-            if (child != _shoulderLeft && child != _shoulderRight)
-            {
-                child.Size = canvas;
-            }
+            child.Size = canvas;
         }
 
-        var drawn = layout.ShapeFor(state.Presentation).Drawn();
-        _shape.Size = new Vector2((float)drawn.Width, (float)drawn.Height);
-        _shape.Offset = new Vector2((float)drawn.Left, (float)drawn.Top);
-        _shape.CornerRadius = new Vector2((float)drawn.Radius);
-        PlaceShoulders(layout);
+        foreach (var child in _bubble.Children)
+        {
+            child.Size = canvas;
+        }
+
+        var shape = layout.ShapeFor(state.Presentation);
+        _shape.Size = new Vector2((float)shape.Width, (float)shape.Height);
+        _shape.Offset = new Vector2((float)shape.Left, (float)shape.Top);
+        _shape.CornerRadius = new Vector2((float)shape.Radius);
         _island.CenterPoint = new Vector3((float)(layout.Canvas.Width / 2.0), (float)layout.Compact.Top, 0);
         _island.Scale = Vector3.One;
+        _line = state.Presentation == IslandPresentation.Line;
         ApplySurfaceColours(state.Hovered);
-        _compactContent.Opacity = state.Presentation == IslandPresentation.Compact ? 1 : 0;
+        _compactContent.Opacity = state.Presentation == IslandPresentation.Compact ? 1 : 0; // the line shows no content
         _expandedContent.Opacity = state.Presentation == IslandPresentation.Expanded ? 1 : 0;
         _alertContent.Opacity = state.Presentation == IslandPresentation.Alert ? 1 : 0;
         _expandedContent.Offset = Vector3.Zero;
@@ -277,6 +296,7 @@ internal sealed partial class IslandVisuals : IDisposable
         PlacePages(layout);
         PlaceVolume(layout);
         PlaceAlert(layout);
+        PlaceBubble(layout);
         RedrawAll();
     }
 
@@ -462,6 +482,29 @@ internal sealed partial class IslandVisuals : IDisposable
         DrawAlert(MotionPlanner.Level(before, alert?.Content.ClampedLevel, reducedMotion));
     }
 
+    /// <summary>
+    /// What leads the compact pill (Live Activity Engine 2.0): the scheduler's primary activity is either media or
+    /// another activity; with none, the pill (shown while hovered) has the date or what is paused.
+    /// </summary>
+    public void ShowLead(CompactLead lead)
+    {
+        if (lead == _lead)
+        {
+            return;
+        }
+
+        _lead = lead;
+        DrawText();
+    }
+
+    /// <summary>The compact pill's left slot: the lead if the user's pill options allow it, else the next option.</summary>
+    private PillSlot CompactSlot() => _lead switch
+    {
+        CompactLead.Media => _pill.Slot(hasActivity: false, hasMedia: _media is not null),
+        CompactLead.Activity => _pill.Slot(hasActivity: _activity is not null, hasMedia: _media is not null),
+        _ => _pill.Slot(hasActivity: false, hasMedia: _media is not null),
+    };
+
     /// <summary>Shows a new clock reading; only lines whose text changed are redrawn.</summary>
     public void ShowClock(ClockReading reading)
     {
@@ -475,11 +518,23 @@ internal sealed partial class IslandVisuals : IDisposable
     /// </summary>
     public CompositionScopedBatch? Animate(IslandTransition transition, MotionPlan? plan, bool reducedMotion)
     {
-        if (transition.HoverChanged)
+        var toLine = transition.Next.Presentation == IslandPresentation.Line;
+        if (transition.PresentationChanged && toLine != _line)
         {
-            var hovered = transition.Next.Hovered;
-            _surfaceBottom.StartAnimation("Color", ColorTo(ToColor(hovered ? _palette.HoverFill : _palette.SurfaceBottom), 140));
-            _rimEdge.StartAnimation("Color", ColorTo(ToColor(hovered ? _palette.HoverEdge : _palette.Rim), 140));
+            // The line is a grey capsule; the pill and the open island are the dark surface. The colour follows the morph.
+            _line = toLine;
+            var ms = plan is null || plan.Spec(MotionKind.Morph).IsInstant ? 1 : Ms(plan.Spec(MotionKind.Morph).Duration);
+            var (top, bottom, rim) = Surface(transition.Next.Hovered);
+            _surfaceTop.StartAnimation("Color", ColorTo(top, ms));
+            _surfaceBottom.StartAnimation("Color", ColorTo(bottom, ms));
+            _rimEdge.StartAnimation("Color", ColorTo(rim, ms));
+            _rimMid.StartAnimation("Color", ColorTo(_palette.HighContrast ? rim : Color.FromArgb(0, rim.R, rim.G, rim.B), ms));
+        }
+        else if (transition.HoverChanged)
+        {
+            var (_, bottom, rim) = Surface(transition.Next.Hovered);
+            _surfaceBottom.StartAnimation("Color", ColorTo(bottom, 140));
+            _rimEdge.StartAnimation("Color", ColorTo(rim, 140));
         }
 
         if (transition.PressChanged)
@@ -493,20 +548,31 @@ internal sealed partial class IslandVisuals : IDisposable
             return null;
         }
 
-        var target = _layout.ShapeFor(transition.Next.Presentation).Drawn();
+        // Every geometry animation starts from the current (possibly mid-flight) value, so an interrupted morph continues
+        // from where it is instead of jumping back; a newer StartAnimation replaces the older one on each property.
+        var target = _layout.ShapeFor(transition.Next.Presentation);
         var morph = plan.Spec(MotionKind.Morph);
         var shapeMs = morph.IsInstant ? 1 : Ms(morph.Duration);
+        var easing = transition.Next.Presentation == IslandPresentation.Expanded && !morph.IsInstant ? _open : _ease;
         var batch = _compositor.CreateScopedBatch(CompositionBatchTypes.Animation);
-        _shape.StartAnimation("Size", Vector2To(new Vector2((float)target.Width, (float)target.Height), shapeMs));
-        _shape.StartAnimation("Offset", Vector2To(new Vector2((float)target.Left, (float)target.Top), shapeMs));
+        _shape.StartAnimation("Size", Vector2To(new Vector2((float)target.Width, (float)target.Height), shapeMs, easing));
+        _shape.StartAnimation("Offset", Vector2To(new Vector2((float)target.Left, (float)target.Top), shapeMs, easing));
         _shape.StartAnimation("CornerRadius", Vector2To(new Vector2((float)target.Radius), shapeMs));
 
-        // Outgoing content leaves fast; incoming content waits until the shape has mostly grown or shrunk.
-        var (outgoing, incoming) = (ContentFor(transition.Previous.Presentation), ContentFor(transition.Next.Presentation));
+        // Outgoing content leaves fast; incoming content waits until the shape has mostly grown or shrunk. The line has
+        // no content, so all three contents fade out towards it.
         var fadeOut = plan.Spec(MotionKind.FadeOut);
         var fadeIn = plan.Spec(MotionKind.FadeIn);
-        outgoing.StartAnimation("Opacity", ScalarTo(0, Ms(fadeOut.Duration), Ms(fadeOut.Delay)));
-        incoming.StartAnimation("Opacity", ScalarTo(1, Ms(fadeIn.Duration), Ms(fadeIn.Delay)));
+        var incoming = ContentFor(transition.Next.Presentation);
+        foreach (var content in new[] { _compactContent, _expandedContent, _alertContent })
+        {
+            if (content != incoming)
+            {
+                content.StartAnimation("Opacity", ScalarTo(0, Ms(fadeOut.Duration), Ms(fadeOut.Delay)));
+            }
+        }
+
+        incoming?.StartAnimation("Opacity", ScalarTo(1, Ms(fadeIn.Duration), Ms(fadeIn.Delay)));
         if (plan.Has(MotionKind.Settle))
         {
             var settle = plan.Spec(MotionKind.Settle);
@@ -626,65 +692,99 @@ internal sealed partial class IslandVisuals : IDisposable
         return bar;
     }
 
-    private SpriteVisual Shoulder(Vector2 center, int stopIndex)
-    {
-        var mask = _compositor.CreateRadialGradientBrush();
-        mask.EllipseCenter = center;
-        mask.EllipseRadius = Vector2.One;
-        _shoulderStops[stopIndex] = _compositor.CreateColorGradientStop(0.9f, Color.FromArgb(0, 0, 0, 0));
-        _shoulderStops[stopIndex + 1] = _compositor.CreateColorGradientStop(1f, Color.FromArgb(255, 0, 0, 0));
-        mask.ColorStops.Add(_compositor.CreateColorGradientStop(0f, Color.FromArgb(0, 0, 0, 0)));
-        mask.ColorStops.Add(_shoulderStops[stopIndex]);
-        mask.ColorStops.Add(_shoulderStops[stopIndex + 1]);
-        var brush = _compositor.CreateMaskBrush();
-        brush.Source = _shoulderColor;
-        brush.Mask = mask;
-        var visual = _compositor.CreateSpriteVisual();
-        visual.Brush = brush;
-        return visual;
-    }
+    /// <summary>
+    /// The idle line's colour: a mid grey that reads on dark and light wallpapers alike without drawing the eye (the
+    /// system text colour in high contrast).
+    /// </summary>
+    private Color LineColor => _palette.HighContrast ? Primary : Color.FromArgb(200, 128, 128, 128);
 
-    /// <summary>The shoulders sit just outside the shape's top corners and follow its width through every morph.</summary>
-    private void PlaceShoulders(IslandLayout layout)
+    /// <summary>Gradient top, gradient bottom and rim colours for the current presentation.</summary>
+    private (Color Top, Color Bottom, Color Rim) Surface(bool hovered)
     {
-        var s = (float)layout.Shoulder;
-        var top = (float)layout.Compact.Top;
-        foreach (var visual in new[] { _shoulderLeft, _shoulderRight })
+        var p = _palette;
+        if (_line)
         {
-            visual.Size = new Vector2(s, s);
-            visual.IsVisible = s >= 2 && !_palette.HighContrast;
+            return (LineColor, LineColor, Color.FromArgb(0, 0, 0, 0));
         }
 
-        // A one-pixel anti-aliased edge whatever the size.
-        var edge = Math.Clamp(1 - (1.2f / Math.Max(1, s)), 0.5f, 0.99f);
-        foreach (var i in new[] { 0, 2 })
-        {
-            _shoulderStops[i].Offset = edge;
-        }
-
-        var left = _compositor.CreateExpressionAnimation("Vector3(g.Offset.X - s, t, 0)");
-        left.SetReferenceParameter("g", _shape);
-        left.SetScalarParameter("s", s);
-        left.SetScalarParameter("t", top);
-        _shoulderLeft.StartAnimation("Offset", left);
-        var right = _compositor.CreateExpressionAnimation("Vector3(g.Offset.X + g.Size.X, t, 0)");
-        right.SetReferenceParameter("g", _shape);
-        right.SetScalarParameter("t", top);
-        _shoulderRight.StartAnimation("Offset", right);
+        return (ToColor(p.SurfaceTop), ToColor(hovered ? p.HoverFill : p.SurfaceBottom), ToColor(hovered ? p.HoverEdge : p.Rim));
     }
 
     private void ApplySurfaceColours(bool hovered)
     {
-        var p = _palette;
-        _surfaceTop.Color = ToColor(p.SurfaceTop);
-        _surfaceBottom.Color = ToColor(hovered ? p.HoverFill : p.SurfaceBottom);
-        _shoulderColor.Color = ToColor(p.SurfaceTop);
+        var (top, bottom, rim) = Surface(hovered);
+        _surfaceTop.Color = top;
+        _surfaceBottom.Color = bottom;
 
-        // High contrast: a full outline. Otherwise the rim is invisible near the screen edge and lights the lower edge.
-        var rim = hovered ? p.HoverEdge : p.Rim;
-        _rimFade.Color = p.HighContrast ? ToColor(rim) : WithAlpha(rim, 0);
-        _rimMid.Color = p.HighContrast ? ToColor(rim) : WithAlpha(rim, 0);
-        _rimEdge.Color = ToColor(rim);
+        // High contrast: a full outline. Otherwise the rim lights only the lower edge of the floating island.
+        var hc = _palette.HighContrast && !_line;
+        _rimFade.Color = hc ? rim : Color.FromArgb(0, rim.R, rim.G, rim.B);
+        _rimMid.Color = hc ? rim : Color.FromArgb(0, rim.R, rim.G, rim.B);
+        _rimEdge.Color = rim;
+    }
+
+    /// <summary>Places the detached bubble at <see cref="IslandLayout.Minimal"/>; it scales from its own centre.</summary>
+    private void PlaceBubble(IslandLayout layout)
+    {
+        var m = layout.Minimal;
+        _bubbleShape.Offset = new Vector2((float)m.Left, (float)m.Top);
+        _bubbleShape.Size = new Vector2((float)m.Width, (float)m.Height);
+        _bubbleShape.CornerRadius = new Vector2((float)m.Radius);
+        _bubble.CenterPoint = new Vector3((float)(m.Left + (m.Width / 2)), (float)(m.Top + (m.Height / 2)), 0);
+        _bubbleGlyph.Place(m.Left, m.Top, m.Width, m.Height, Format(IconFont, 13, Regular, TextAlign.Center), Primary);
+        _bubbleRing.Place(m.Left + (m.Width / 2), m.Top + (m.Height / 2), m.Height - layout.Dip(12), layout.Dip(2.5));
+        _bubble.Opacity = _bubbleShown ? 1 : 0;
+        _bubble.Scale = Vector3.One;
+        DrawBubble();
+    }
+
+    /// <summary>
+    /// Apple's minimal presentation: the second live activity as a detached circle beside the compact pill, with its
+    /// glyph and, for countdowns, a progress ring. <paramref name="shown"/> is false outside the compact presentation.
+    /// It appears by growing out of the island's edge and leaves by shrinking back (opacity only with reduced motion).
+    /// </summary>
+    public void ShowSecondary(IslandActivity? activity, bool shown, bool reducedMotion)
+    {
+        var levelBefore = _secondary?.Level;
+        _secondary = activity;
+        shown &= activity is not null;
+        DrawBubble(MotionPlanner.Level(levelBefore, activity?.Level, reducedMotion));
+        if (shown == _bubbleShown)
+        {
+            return;
+        }
+
+        _bubbleShown = shown;
+        var ms = reducedMotion ? 120 : shown ? 240 : 160;
+        _bubble.StartAnimation("Opacity", ScalarTo(shown ? 1 : 0, ms));
+        if (!reducedMotion)
+        {
+            if (shown)
+            {
+                _bubble.Scale = new Vector3(0.55f, 0.55f, 1);
+            }
+
+            _bubble.StartAnimation("Scale", Vector3To(shown ? Vector3.One : new Vector3(0.55f, 0.55f, 1), ms));
+        }
+    }
+
+    /// <summary>True when the bubble is shown (the window adds it to the input region).</summary>
+    public bool SecondaryShown => _bubbleShown;
+
+    private void DrawBubble(IReadOnlyList<MotionStep>? level = null)
+    {
+        var a = _secondary;
+        var tone = a is null ? Tone.Neutral : HaloDesign.ToneOf(a);
+        var accent = tone == Tone.Neutral ? Primary : Accent(tone);
+        var ring = a is { Level: not null, Kind: ActivityKind.Timer or ActivityKind.Focus or ActivityKind.Power };
+        _bubbleGlyph.SetColor(accent);
+        _ = _bubbleGlyph.Show(a?.Glyph ?? string.Empty);
+        _bubbleRing.Visual.IsVisible = ring;
+        _bubbleRing.SetColor(accent);
+        if (ring)
+        {
+            _bubbleRing.SetLevel(Math.Clamp(a!.Level!.Value, 0, 1), level is { Count: > 0 } steps ? Ms(steps[0].Spec.Duration) : 0);
+        }
     }
 
     private static float Snap(double px) => (float)Math.Round(px);
@@ -727,7 +827,7 @@ internal sealed partial class IslandVisuals : IDisposable
     [
         _compactDate, _compactTime, _compactMediaGlyph, _compactMediaTitle, _compactActivityGlyph, _compactActivityText,
         _headerGlyph, _headerTitle, _headerDate, _headerTime, _statusGlyphs, _statusText,
-        _alertGlyph, _alertWide, _alertNarrow, _alertValue, .. PageLines(),
+        _alertGlyph, _alertWide, _alertNarrow, _alertValue, _bubbleGlyph, .. PageLines(),
     ];
 
     private bool DrawStatus()
@@ -750,10 +850,11 @@ internal sealed partial class IslandVisuals : IDisposable
         return ok;
     }
 
-    private ContainerVisual ContentFor(IslandPresentation presentation) => presentation switch
+    private ContainerVisual? ContentFor(IslandPresentation presentation) => presentation switch
     {
         IslandPresentation.Expanded => _expandedContent,
         IslandPresentation.Alert => _alertContent,
+        IslandPresentation.Line => null,
         _ => _compactContent,
     };
 
@@ -820,11 +921,12 @@ internal sealed partial class IslandVisuals : IDisposable
         var ok = true;
         if (_clock is { } clock)
         {
-            var slot = _pill.Slot(_activity is not null, _media is not null);
+            var slot = CompactSlot();
             ok &= _compactDate.Show(slot == PillSlot.Date ? clock.ShortDate : string.Empty);
             ok &= _compactTime.Show(_pillBattery.Length > 0 ? $"{_pillBattery}  ·  {clock.TimeWithDesignator}" : clock.TimeWithDesignator, clock.Designator.Length);
         }
 
+        DrawBubble();
         ok &= DrawHeader();
         ok &= DrawStatus();
         ok &= DrawPages();
@@ -839,10 +941,10 @@ internal sealed partial class IslandVisuals : IDisposable
         return a;
     }
 
-    private Vector2KeyFrameAnimation Vector2To(Vector2 to, int ms)
+    private Vector2KeyFrameAnimation Vector2To(Vector2 to, int ms, CompositionEasingFunction? easing = null)
     {
         var a = _compositor.CreateVector2KeyFrameAnimation();
-        a.InsertKeyFrame(1f, to, _ease);
+        a.InsertKeyFrame(1f, to, easing ?? _ease);
         a.Duration = TimeSpan.FromMilliseconds(ms);
         return a;
     }
@@ -1017,4 +1119,12 @@ internal sealed partial class IslandVisuals : IDisposable
             _level = l;
         }
     }
+}
+
+/// <summary>What leads the compact pill: nothing live, a media session, or another activity.</summary>
+internal enum CompactLead
+{
+    None,
+    Media,
+    Activity,
 }

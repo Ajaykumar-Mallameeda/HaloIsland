@@ -647,6 +647,16 @@ internal static unsafe partial class Native
     [return: MarshalAs(UnmanagedType.Bool)]
     public static partial bool GetSystemPowerStatus(out SystemPowerStatus status);
 
+    /// <summary>True when the process has package identity (runs from the MSIX). APPMODEL_ERROR_NO_PACKAGE = 15700.</summary>
+    public static bool HasPackageIdentity()
+    {
+        uint length = 0;
+        return GetCurrentPackageFullName(ref length, null) != 15700;
+    }
+
+    [LibraryImport("kernel32.dll")]
+    private static partial int GetCurrentPackageFullName(ref uint length, char* name);
+
     [LibraryImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static partial bool UnregisterPowerSettingNotification(nint handle);

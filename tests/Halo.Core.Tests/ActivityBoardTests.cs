@@ -10,13 +10,16 @@ public class ActivityBoardTests
     private readonly ManualClock _time = new();
 
     [Fact]
-    public void TheHighestPriorityIsPrimaryThenTheMostRecent()
+    public void TheHighestPriorityIsPrimaryThenTheFirstStarted()
     {
+        // Live Activity Engine 2.0 (Apple's rule): with equal priority and relevance the first activity started stays in
+        // the island; the newer one waits beside it (secondary). Previously the most recent one took over.
         var board = new ActivityBoard(_time);
         board.Upsert(A("timer", AlertPriority.Normal));
         _time.Advance(TimeSpan.FromSeconds(1));
         board.Upsert(A("note", AlertPriority.Normal));
-        Assert.Equal("note", board.Primary!.Id);
+        Assert.Equal("timer", board.Primary!.Id);
+        Assert.Equal("note", board.Secondary!.Id);
 
         board.Upsert(A("reminder", AlertPriority.High));
         Assert.Equal("reminder", board.Primary!.Id);
@@ -32,15 +35,16 @@ public class ActivityBoardTests
         board.Upsert(A("b", AlertPriority.Normal));
         _time.Advance(TimeSpan.FromSeconds(1));
 
-        var again = board.Upsert(A("a", AlertPriority.Normal));
+        var again = board.Upsert(A("b", AlertPriority.Normal));
         Assert.False(again.Changed);
-        Assert.Equal("b", board.Primary!.Id); // a repeated identical update does not jump to the front
-
-        var real = board.Upsert(A("a", AlertPriority.Normal) with { CompactText = "04:58" });
-        Assert.True(real.Changed);
-        Assert.True(real.PrimaryChanged);
         Assert.Equal("a", board.Primary!.Id);
-        Assert.Equal(1, board.Count - 1);
+
+        // A real update (a tick) changes content but never the order: progress cannot take the island.
+        var real = board.Upsert(A("b", AlertPriority.Normal) with { CompactText = "04:58" });
+        Assert.True(real.Changed);
+        Assert.False(real.PrimaryChanged);
+        Assert.Equal("a", board.Primary!.Id);
+        Assert.Equal("04:58", board.Secondary!.CompactText);
     }
 
     [Fact]

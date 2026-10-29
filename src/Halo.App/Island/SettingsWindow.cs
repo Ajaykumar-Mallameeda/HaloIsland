@@ -43,6 +43,8 @@ internal sealed unsafe class SettingsWindow : IDisposable
     private const int OffsetStep = 20;
     private const int IdCamera = 126;
     private const int IdBrightness = 127;
+    private const int IdIdleLine = 128;
+    private const int IdRotate = 129;
     private const int IdClose = 2; // IDCANCEL: Esc and the Close button
     private const int IdDwellValue = 202;
     private const int IdGraceValue = 203;
@@ -235,6 +237,10 @@ internal sealed unsafe class SettingsWindow : IDisposable
         Add(IdCamera, "BUTTON", "Show when an app uses the &camera (off by default)", BsAutoCheckBox | WsTabStop, 450, r, 330, 22);
         r += 24;
         Add(0, "STATIC", "Reads Windows' camera activity reports. Only \u201cin use or not\u201d is kept; no app names.", 0, 468, r, 320, 34);
+        r += 42;
+        Add(IdIdleLine, "BUTTON", "&Idle as a thin line (grows when something is live)", BsAutoCheckBox | WsTabStop, 450, r, 330, 22);
+        r += 30;
+        Add(IdRotate, "BUTTON", "Rotate the pill bet&ween live activities (every 8 s)", BsAutoCheckBox | WsTabStop, 450, r, 330, 22);
         foreach (var label in new[] { "Dark", "Light", "Match Windows" })
         {
             _ = SendMessageText(_controls[IdTheme], CbAddString, 0, label);
@@ -295,6 +301,8 @@ internal sealed unsafe class SettingsWindow : IDisposable
             Check(IdPillBattery, s.PillShowsBattery);
             Check(IdCamera, s.ShowCameraActivity);
             Check(IdBrightness, s.ShowBrightness);
+            Check(IdIdleLine, s.IdleLine);
+            Check(IdRotate, s.RotateActivities);
             _ = SendMessageW(_controls[IdOffset], TbmSetPos, 1, s.IslandOffsetDip);
             _ = SetWindowTextW(_controls[IdOffsetValue], s.IslandOffsetDip == 0 ? "Centre" : s.IslandOffsetDip < 0 ? $"{-s.IslandOffsetDip} left" : $"{s.IslandOffsetDip} right");
             _ = SetWindowTextW(_controls[IdHotkeyStatus], s.Hotkey == HotkeyChoice.Off ? string.Empty : _owner.HotkeyStatus == "in_use" ? "In use by another app" : "Ready");
@@ -352,6 +360,8 @@ internal sealed unsafe class SettingsWindow : IDisposable
             PillShowsBattery = IsChecked(IdPillBattery),
             ShowCameraActivity = IsChecked(IdCamera),
             ShowBrightness = IsChecked(IdBrightness),
+            IdleLine = IsChecked(IdIdleLine),
+            RotateActivities = IsChecked(IdRotate),
             IslandOffsetDip = Math.Clamp(Position(IdOffset, OffsetStep), HaloSettings.MinOffsetDip, HaloSettings.MaxOffsetDip),
         };
         _owner.UpdateSettings(s);
@@ -386,7 +396,7 @@ internal sealed unsafe class SettingsWindow : IDisposable
                     case IdHover or IdFullscreen or IdMotion or IdStartExpanded or IdAnnounce or IdMedia or IdVolume or IdBattery or IdNetwork or IdReminders or IdPreviews:
                         Commit();
                         return 0;
-                    case IdAccent or IdPillActivity or IdPillMedia or IdPillDate or IdPillBattery or IdCamera or IdBrightness:
+                    case IdAccent or IdPillActivity or IdPillMedia or IdPillDate or IdPillBattery or IdCamera or IdBrightness or IdIdleLine or IdRotate:
                         Commit();
                         return 0;
                     case IdHotkey or IdTheme when ((wParam >> 16) & 0xFFFF) == 1: // CBN_SELCHANGE

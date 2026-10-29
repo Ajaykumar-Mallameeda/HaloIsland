@@ -76,7 +76,7 @@ internal sealed partial class IslandWindow
             state.IsExpanded,
             AccessibleName,
             AccessibleDescription,
-            _layout.ShapeFor(state.Presentation),
+            state.Presentation == IslandPresentation.Line ? _layout.LineHit : _layout.ShapeFor(state.Presentation), // the line: its pointer zone, not 2 px
             _layout.Canvas.Left,
             _layout.Canvas.Top,
             state.Visible,

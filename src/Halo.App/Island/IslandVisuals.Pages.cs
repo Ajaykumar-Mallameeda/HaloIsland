@@ -560,7 +560,7 @@ internal sealed partial class IslandVisuals
         var ring = a is { Level: not null, Kind: ActivityKind.Timer or ActivityKind.Focus };
         var tone = a is null ? Tone.Neutral : HaloDesign.ToneOf(a);
         var accent = tone == Tone.Neutral ? Primary : Accent(tone);
-        var inPill = a is not null && _pill.Slot(true, _media is not null) == PillSlot.Activity;
+        var inPill = a is not null && CompactSlot() == PillSlot.Activity;
         _compactActivity.IsVisible = inPill;
         _compactRing.Visual.IsVisible = inPill && ring;
         _compactRing.SetColor(accent);
@@ -685,7 +685,7 @@ internal sealed partial class IslandVisuals
         var hasArt = m?.Art is { Count: > 0 };
 
         // The compact slot shows one thing: the primary activity, else what is playing, else the date.
-        var compactMedia = m is not null && _pill.Slot(_activity is not null, true) == PillSlot.Media;
+        var compactMedia = m is not null && CompactSlot() == PillSlot.Media;
         _compactArt.IsVisible = compactMedia && hasArt;
         ok &= _compactMediaGlyph.Show(!compactMedia || hasArt ? string.Empty : m!.IsPlaying ? "" : "");
         ok &= _compactMediaTitle.Show(!compactMedia ? string.Empty : m!.Title.Length > 0 ? m.Title : m.Headline);

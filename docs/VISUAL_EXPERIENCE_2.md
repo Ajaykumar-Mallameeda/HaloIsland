@@ -1,5 +1,7 @@
 # Halo Visual Experience 2.0
 
+> **Superseded in part (2026-10-29):** the flush-top silhouette with concave shoulders was replaced by the floating pill, thin-line idle and detached bubble of [Live Activity Engine 2.0](LIVE_ACTIVITY_ENGINE_2_DESIGN.md). The surface, tones, page frame and in-island pages described here still apply.
+
 | Field | Value |
 |---|---|
 | Status | Implemented 2026-10-29 on `main` (local commits only) |

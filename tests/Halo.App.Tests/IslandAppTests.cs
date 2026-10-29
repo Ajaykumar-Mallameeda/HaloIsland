@@ -574,11 +574,9 @@ public sealed partial class IslandAppTests
 
     private static void AssertRegion(nint hwnd, RoundedBox shape)
     {
-        // Visual Experience 2.0: the region is the flush-top silhouette. The drawn shape starts above the window by its
-        // radius, and a strip along the top covers the concave shoulders on both sides.
-        var shoulder = ExpectedLayout().Shoulder;
-        var drawn = shape.Drawn();
-        var expected = new RoundedBox(shape.Left - shoulder, drawn.Top, shape.Width + (2 * shoulder), drawn.Height, shape.Radius);
+        // Live Activity Engine 2.0: the region is the floating shape extended up to the top edge (the gap belongs to the
+        // island); the idle line's region is its pointer zone.
+        var expected = shape.Top == 0 && shape.Radius == 0 ? shape : shape.Reach();
         Assert.NotEqual(0, GetWindowRgnBox(hwnd, out var box));
         Assert.InRange(box.Left, (int)Math.Floor(expected.Left) - 1, (int)Math.Floor(expected.Left) + 1);
         Assert.InRange(box.Top, (int)Math.Floor(expected.Top) - 1, (int)Math.Floor(expected.Top) + 1);
@@ -884,6 +882,7 @@ public sealed partial class IslandAppTests
             // A test may pass the folder of an earlier run to check what survives a restart.
             var dataDir = dataDirectory ?? Path.Combine(Path.GetTempPath(), "halo-desktop-tests", Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(dataDir);
+            settingsJson = ClockPillIdle(settingsJson, dataDir);
             if (settingsJson is not null)
             {
                 File.WriteAllText(Path.Combine(dataDir, "settings.json"), settingsJson);
@@ -911,6 +910,35 @@ public sealed partial class IslandAppTests
             island.Hwnd = OwnIslandWindow(island.Pid);
             Assert.NotEqual(0, island.Hwnd);
             return island;
+        }
+
+        /// <summary>
+        /// Live Activity Engine 2.0: the island now rests as a thin line by default. Most desktop tests exercise the
+        /// clock pill as the idle island (a supported setting), so they run with <c>idleLine</c> off unless the test sets
+        /// it; the line itself is covered by IslandAppTests.Line. Unparseable JSON (corruption tests) is left as is, and
+        /// an existing settings file (restart tests) is kept.
+        /// </summary>
+        private static string? ClockPillIdle(string? json, string dataDir)
+        {
+            if (json is null)
+            {
+                return File.Exists(Path.Combine(dataDir, "settings.json")) ? null : "{ \"schemaVersion\": 1, \"idleLine\": false }";
+            }
+
+            try
+            {
+                if (JsonNode.Parse(json) is not JsonObject node || node.ContainsKey("idleLine"))
+                {
+                    return json;
+                }
+
+                node["idleLine"] = false;
+                return node.ToJsonString();
+            }
+            catch (System.Text.Json.JsonException)
+            {
+                return json;
+            }
         }
 
         public JsonObject WaitFor(string name, int skip = 0)

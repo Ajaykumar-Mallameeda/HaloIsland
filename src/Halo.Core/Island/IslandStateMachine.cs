@@ -1,13 +1,23 @@
 namespace Halo.Core.Island;
 
-/// <summary>Presentations implemented in the first vertical slice (ADR-001 §6.1 defines the full set).</summary>
+/// <summary>
+/// What the island looks like (ADR-001 §6.1, Live Activity Engine 2.0). Exactly one at a time; the window morphs
+/// between them.
+/// </summary>
 public enum IslandPresentation
 {
+    /// <summary>A floating pill: the clock while hovered, else the primary live activity.</summary>
     Compact,
     Expanded,
 
     /// <summary>A transient event panel (volume, battery, network…): a wider pill that never pins.</summary>
     Alert,
+
+    /// <summary>
+    /// Idle (Live Activity Engine 2.0): a thin rounded line at the top centre. Shown while thin-line mode is on, no live
+    /// activity asks for the compact island, no alert shows, and the pointer is not on the island.
+    /// </summary>
+    Line,
 }
 
 /// <summary>
@@ -112,9 +122,23 @@ public readonly record struct IslandState(IslandPhase Phase, bool Hovered, bool 
     /// </summary>
     public bool Visible => !Hidden || Alert is { AllowedWhenSuppressed: true };
 
+    /// <summary>A live activity asks for the compact island (set from the activity board's primary activity).</summary>
+    public bool Live { get; init; }
+
+    /// <summary>Thin-line idle mode is on (the setting); off = the idle island is the clock pill.</summary>
+    public bool LineIdle { get; init; }
+
     public bool IsExpanded => Phase is IslandPhase.ExpandedByHover or IslandPhase.CollapsePending or IslandPhase.ExpandedPinned;
 
-    public IslandPresentation Presentation => IsExpanded ? IslandPresentation.Expanded : Alert is not null ? IslandPresentation.Alert : IslandPresentation.Compact;
+    /// <summary>
+    /// Precedence: expanded, then a transient alert, then the compact pill when something asks for it (a live activity,
+    /// the pointer resting on the island, a press, or thin-line mode off), else the line.
+    /// </summary>
+    public IslandPresentation Presentation =>
+        IsExpanded ? IslandPresentation.Expanded
+        : Alert is not null ? IslandPresentation.Alert
+        : !LineIdle || Live || Hovered || Pressed || Phase != IslandPhase.Collapsed ? IslandPresentation.Compact
+        : IslandPresentation.Line;
 
     /// <summary>The timer this phase waits for, if any.</summary>
     public IslandTimer PendingTimer => Phase switch

@@ -109,6 +109,15 @@ public sealed record HaloSettings
     /// <summary>J-F03: a brightness pill when the built-in panel's brightness changes (read-only; nothing on external monitors).</summary>
     public bool ShowBrightness { get; init; } = true;
 
+    /// <summary>
+    /// Live Activity Engine 2.0: while nothing is live, the island rests as a thin line at the top centre and grows into
+    /// the pill when the pointer reaches it. Off = the idle island is the clock pill.
+    /// </summary>
+    public bool IdleLine { get; init; } = true;
+
+    /// <summary>Step through live activities that tie for the island every few seconds. Off by default.</summary>
+    public bool RotateActivities { get; init; }
+
     /// <summary>Serialises to the versioned JSON file format (indented, stable key order).</summary>
     public string ToJson()
     {
@@ -142,6 +151,8 @@ public sealed record HaloSettings
             w.WriteNumber("islandOffsetDip", IslandOffsetDip);
             w.WriteBoolean("showCameraActivity", ShowCameraActivity);
             w.WriteBoolean("showBrightness", ShowBrightness);
+            w.WriteBoolean("idleLine", IdleLine);
+            w.WriteBoolean("rotateActivities", RotateActivities);
             w.WriteEndObject();
         }
 
@@ -270,6 +281,8 @@ public sealed record HaloSettings
                 IslandOffsetDip = Int("islandOffsetDip", d.IslandOffsetDip, MinOffsetDip, MaxOffsetDip),
                 ShowCameraActivity = Bool("showCameraActivity", d.ShowCameraActivity),
                 ShowBrightness = Bool("showBrightness", d.ShowBrightness),
+                IdleLine = Bool("idleLine", d.IdleLine),
+                RotateActivities = Bool("rotateActivities", d.RotateActivities),
             };
 
             // Critical must stay below low; otherwise it falls back (to the default, or just under low).
